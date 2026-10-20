@@ -349,7 +349,7 @@ export interface JobCounts {
 export type JobItem =
   // Audit
   | { name: JobName.AuditTableCleanup; data?: IBaseJob }
-  | { name: JobName.AssetFileLocationBackfill; data?: IBaseJob }
+  | { name: JobName.FileLocationBackfill; data?: IBaseJob }
 
   // Backups
   | { name: JobName.DatabaseBackup; data?: IBaseJob }

@@ -570,6 +570,78 @@ where
     )
   )
 
+-- AssetRepository.getAssetsWithoutOriginalFile
+select
+  "asset"."id",
+  "asset"."originalPath" as "path"
+from
+  "asset"
+where
+  not exists (
+    select
+    from
+      "asset_original_file"
+    where
+      "asset_original_file"."assetId" = "asset"."id"
+  )
+  and "asset"."id" > $1::uuid
+order by
+  "asset"."id"
+limit
+  $2
+
+-- AssetRepository.hasAssetsWithoutOriginalFile
+select
+  "asset"."id",
+  "asset"."originalPath" as "path"
+from
+  "asset"
+where
+  not exists (
+    select
+    from
+      "asset_original_file"
+    where
+      "asset_original_file"."assetId" = "asset"."id"
+  )
+order by
+  "asset"."id"
+limit
+  $1
+
+-- AssetRepository.setOriginalFiles
+insert into
+  "asset_original_file" ("assetId", "backendId", "key")
+select
+  "location"."id",
+  "location"."backendId",
+  "location"."key"
+from
+  (
+    values
+      ($1::uuid, $2, $3)
+  ) as "location" ("id", "backendId", "key")
+where
+  exists (
+    select
+    from
+      "asset"
+    where
+      "asset"."id" = "location"."id"
+  )
+  and (
+    "location"."backendId" = $4
+    or not exists (
+      select
+      from
+        "asset_original_file" as "other"
+      where
+        "other"."backendId" = "location"."backendId"
+        and "other"."key" = "location"."key"
+    )
+  )
+on conflict ("assetId") do nothing
+
 -- AssetRepository.detectOfflineExternalAssets
 update "asset"
 set

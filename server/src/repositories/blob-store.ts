@@ -113,11 +113,10 @@ export class BlobIntegrityError extends Error {
   }
 }
 
-const MAX_KEY_BYTES = 1024;
-
 /**
  * Keys are relative, slash-separated and normalized. New keys are random UUIDs, but legacy local files can have any
- * file name, so only structurally unsafe keys are rejected.
+ * file name (including backslashes, which are ordinary characters on Linux, or very long paths), so only structurally
+ * unsafe keys are rejected. Limits of a particular backend, such as a maximum key length, are checked by its driver.
  */
 export const assertValidBlobKey = (key: string) => {
   if (!isValidBlobPath(key)) {
@@ -136,11 +135,7 @@ export const assertValidBlobPrefix = (prefix: string) => {
 };
 
 const isValidBlobPath = (value: string) => {
-  if (value.length === 0 || Buffer.byteLength(value) > MAX_KEY_BYTES) {
-    return false;
-  }
-
-  if (value.startsWith('/') || value.includes('\\') || value.includes('\0')) {
+  if (value.length === 0 || value.startsWith('/') || value.includes('\0')) {
     return false;
   }
 

@@ -4,7 +4,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
-import { MediumTestContext, newMediumService } from 'test/medium.factory.js';
+import { MediumTestContext, mediumFactory, newMediumService } from 'test/medium.factory.js';
 import { factory, newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -699,5 +699,181 @@ describe('asset file storage locations', () => {
   it('should do nothing when no locations are given', async () => {
     const { sut } = setup();
     await expect(sut.setFileLocations([])).resolves.toBe(0);
+  });
+});
+
+const newAssetWithoutOriginalFile = async (ctx: MediumTestContext, originalPath: string) => {
+  const { user } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath });
+  await ctx.database.deleteFrom('asset_original_file').where('assetId', '=', asset.id).execute();
+  return asset;
+};
+
+const getOriginalFile = (ctx: MediumTestContext, assetId: string) =>
+  ctx.database
+    .selectFrom('asset_original_file')
+    .select(['backendId', 'key'])
+    .where('assetId', '=', assetId)
+    .executeTakeFirst();
+
+describe('asset original files', () => {
+  it('should record the original file when creating an asset', async () => {
+    const { ctx } = setup();
+    const { user } = await ctx.newUser();
+    const key = `upload/${newUuid()}.jpg`;
+
+    const { asset } = await ctx.newAsset({ ownerId: user.id, originalFile: { backendId: 'media', key } });
+
+    await expect(getOriginalFile(ctx, asset.id)).resolves.toEqual({ backendId: 'media', key });
+  });
+
+  it('should not create the asset when its original file cannot be recorded', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset: existing } = await ctx.newAsset({ ownerId: user.id });
+    const taken = await getOriginalFile(ctx, existing.id);
+    const id = newUuid();
+
+    await expect(
+      sut.create({ ...mediumFactory.assetInsert({ id, ownerId: user.id }), originalFile: taken! }),
+    ).rejects.toThrow('asset_original_file_backendId_key_idx');
+
+    await expect(ctx.database.selectFrom('asset').select('id').where('id', '=', id).execute()).resolves.toEqual([]);
+  });
+
+  it('should record the original file of every asset created together', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const keys = [`mnt/${newUuid()}/a.jpg`, `mnt/${newUuid()}/b.jpg`];
+
+    const ids = await sut.createAll(
+      keys.map((key) => ({
+        ...mediumFactory.assetInsert({ ownerId: user.id, originalPath: `/${key}` }),
+        originalFile: { backendId: 'host', key },
+      })),
+    );
+
+    expect(ids).toHaveLength(2);
+    const originals = await Promise.all(ids.map((id) => getOriginalFile(ctx, id)));
+    const paths = await ctx.database
+      .selectFrom('asset')
+      .select(['id', 'originalPath'])
+      .where('id', 'in', ids)
+      .execute();
+    for (const [index, id] of ids.entries()) {
+      expect(originals[index]).toEqual({
+        backendId: 'host',
+        key: paths.find((asset) => asset.id === id)!.originalPath.slice(1),
+      });
+    }
+  });
+
+  it('should keep the original file of a moved asset in step with its path', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const key = `library/${newUuid()}/IMG_1.jpg`;
+
+    await sut.updateOriginalPath({
+      id: asset.id,
+      originalPath: `/data/${key}`,
+      originalFile: { backendId: 'media', key },
+    });
+
+    await expect(getOriginalFile(ctx, asset.id)).resolves.toEqual({ backendId: 'media', key });
+    await expect(
+      ctx.database.selectFrom('asset').select('originalPath').where('id', '=', asset.id).executeTakeFirst(),
+    ).resolves.toEqual({ originalPath: `/data/${key}` });
+  });
+
+  it('should record the original file of a moved asset that had none', async () => {
+    const { ctx, sut } = setup();
+    const asset = await newAssetWithoutOriginalFile(ctx, '/data/upload/old.jpg');
+    const key = `library/${newUuid()}/IMG_1.jpg`;
+
+    await sut.updateOriginalPath({
+      id: asset.id,
+      originalPath: `/data/${key}`,
+      originalFile: { backendId: 'media', key },
+    });
+
+    await expect(getOriginalFile(ctx, asset.id)).resolves.toEqual({ backendId: 'media', key });
+  });
+
+  it('should page through assets without an original file', async () => {
+    const db = await getKyselyDB();
+    const { ctx, sut } = setup(db);
+    const assets = [
+      await newAssetWithoutOriginalFile(ctx, '/data/upload/1.jpg'),
+      await newAssetWithoutOriginalFile(ctx, '/data/upload/2.jpg'),
+      await newAssetWithoutOriginalFile(ctx, '/data/upload/3.jpg'),
+    ];
+    const { user } = await ctx.newUser();
+    await ctx.newAsset({ ownerId: user.id });
+    const ids = assets.map(({ id }) => id).toSorted();
+    const pathOf = (id: string) => assets.find((asset) => asset.id === id)!.originalPath;
+
+    await expect(sut.hasAssetsWithoutOriginalFile()).resolves.toBe(true);
+    await expect(sut.getAssetsWithoutOriginalFile({ limit: 2 })).resolves.toEqual([
+      { id: ids[0], path: pathOf(ids[0]) },
+      { id: ids[1], path: pathOf(ids[1]) },
+    ]);
+    await expect(sut.getAssetsWithoutOriginalFile({ afterId: ids[1], limit: 2 })).resolves.toEqual([
+      { id: ids[2], path: pathOf(ids[2]) },
+    ]);
+  });
+
+  it('should report when every asset has an original file', async () => {
+    const db = await getKyselyDB();
+    const { ctx, sut } = setup(db);
+    const { user } = await ctx.newUser();
+    await ctx.newAsset({ ownerId: user.id });
+
+    await expect(sut.hasAssetsWithoutOriginalFile()).resolves.toBe(false);
+  });
+
+  it('should set original files, skipping assets that have one, taken locations and deleted assets', async () => {
+    const { ctx, sut } = setup();
+    const first = await newAssetWithoutOriginalFile(ctx, '/data/upload/first.jpg');
+    const second = await newAssetWithoutOriginalFile(ctx, '/data/upload/second.jpg');
+    const { user } = await ctx.newUser();
+    const { asset: located } = await ctx.newAsset({ ownerId: user.id });
+    const locatedFile = await getOriginalFile(ctx, located.id);
+
+    await expect(
+      sut.setOriginalFiles([
+        { id: first.id, backendId: 'media', key: `upload/${first.id}.jpg` },
+        { id: second.id, ...locatedFile! },
+        { id: located.id, backendId: 'media', key: `upload/${located.id}.jpg` },
+        { id: newUuid(), backendId: 'media', key: `upload/${newUuid()}.jpg` },
+      ]),
+    ).resolves.toBe(1);
+
+    await expect(getOriginalFile(ctx, first.id)).resolves.toEqual({
+      backendId: 'media',
+      key: `upload/${first.id}.jpg`,
+    });
+    await expect(getOriginalFile(ctx, second.id)).resolves.toBeUndefined();
+    await expect(getOriginalFile(ctx, located.id)).resolves.toEqual(locatedFile);
+  });
+
+  it('should set a host original file that another asset already has', async () => {
+    const { ctx, sut } = setup();
+    const path = `/mnt/external/${newUuid()}/IMG_1.jpg`;
+    const first = await newAssetWithoutOriginalFile(ctx, path);
+    const second = await newAssetWithoutOriginalFile(ctx, path);
+    const location = { backendId: 'host', key: path.slice(1) };
+
+    await expect(
+      sut.setOriginalFiles([
+        { id: first.id, ...location },
+        { id: second.id, ...location },
+      ]),
+    ).resolves.toBe(2);
+  });
+
+  it('should do nothing when no original files are given', async () => {
+    const { sut } = setup();
+    await expect(sut.setOriginalFiles([])).resolves.toBe(0);
   });
 });

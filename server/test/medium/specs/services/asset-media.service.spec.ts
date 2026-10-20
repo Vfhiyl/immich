@@ -1,5 +1,6 @@
 import { Kysely } from 'kysely';
 import { randomBytes } from 'node:crypto';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { AssetMediaSize } from 'src/dtos/asset-media.dto.js';
 import { AssetFileType, SharedLinkType } from 'src/enum.js';
@@ -32,6 +33,7 @@ const setup = (db?: Kysely<DB>) => {
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
+  StorageCore.setMediaLocation('/data');
 });
 
 describe(AssetService.name, () => {
@@ -50,20 +52,26 @@ describe(AssetService.name, () => {
       await ctx.newExif({ assetId: asset.id, fileSizeInByte });
       const auth = factory.auth({ user: { id: user.id } });
 
+      const file = mediumFactory.uploadFile({ size: fileSizeInByte });
+      const response = await sut.uploadAsset(
+        auth,
+        {
+          fileModifiedAt: new Date(),
+          fileCreatedAt: new Date(),
+          assetData: Buffer.from('some data'),
+        },
+        file,
+      );
+      expect(response).toEqual({ id: expect.any(String), status: AssetMediaStatus.CREATED });
+
+      // the upload stub lives outside the media location
       await expect(
-        sut.uploadAsset(
-          auth,
-          {
-            fileModifiedAt: new Date(),
-            fileCreatedAt: new Date(),
-            assetData: Buffer.from('some data'),
-          },
-          mediumFactory.uploadFile({ size: fileSizeInByte }),
-        ),
-      ).resolves.toEqual({
-        id: expect.any(String),
-        status: AssetMediaStatus.CREATED,
-      });
+        ctx.database
+          .selectFrom('asset_original_file')
+          .select(['backendId', 'key'])
+          .where('assetId', '=', response.id)
+          .executeTakeFirst(),
+      ).resolves.toEqual({ backendId: 'host', key: 'path/to/file.jpg' });
 
       expect(ctx.getMock(EventRepository).emit).toHaveBeenCalledWith('AssetCreate', {
         asset: expect.objectContaining({}),

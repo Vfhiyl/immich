@@ -897,7 +897,7 @@ export enum JobName {
   AssetExtractMetadataQueueAll = 'AssetExtractMetadataQueueAll',
   AssetExtractMetadata = 'AssetExtractMetadata',
   AssetFileMigration = 'AssetFileMigration',
-  AssetFileLocationBackfill = 'AssetFileLocationBackfill',
+  FileLocationBackfill = 'FileLocationBackfill',
   AssetGenerateThumbnailsQueueAll = 'AssetGenerateThumbnailsQueueAll',
   AssetGenerateThumbnails = 'AssetGenerateThumbnails',
 

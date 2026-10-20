@@ -22,6 +22,8 @@ describe('blob store helpers', () => {
       'upload/user-id/3f/2a/3f2a9c1e.jpg',
       'library/admin/2024/2024-05-01/IMG 1234 (1).HEIC',
       'library/admin/照片/夏天.jpg',
+      String.raw`mnt/photos/a\b.jpg`,
+      `mnt/${'a'.repeat(2000)}`,
       '.immich',
     ])('should accept %s', (key) => {
       expect(() => assertValidBlobKey(key)).not.toThrow();
@@ -36,9 +38,7 @@ describe('blob store helpers', () => {
       ['a trailing current directory segment', 'upload/.'],
       ['an empty segment', 'upload//file'],
       ['a trailing slash', 'upload/'],
-      ['a backslash', String.raw`upload\file`],
       ['a null byte', 'upload/file\0'],
-      ['a key longer than 1024 bytes', 'a'.repeat(1025)],
     ])('should reject %s', (_, key) => {
       expect(() => assertValidBlobKey(key)).toThrow('Invalid blob key');
     });

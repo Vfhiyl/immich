@@ -141,21 +141,44 @@ export class StorageService extends BaseService {
 
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
   async onBootstrapFileLocations() {
-    if (await this.assetRepository.hasFilesWithoutLocation()) {
-      await this.jobRepository.queue({ name: JobName.AssetFileLocationBackfill });
+    const [files, originals] = await Promise.all([
+      this.assetRepository.hasFilesWithoutLocation(),
+      this.assetRepository.hasAssetsWithoutOriginalFile(),
+    ]);
+    if (files || originals) {
+      await this.jobRepository.queue({ name: JobName.FileLocationBackfill });
     }
   }
 
   /** Give files recorded before storage backends existed a backend and key, derived from their path */
-  @OnJob({ name: JobName.AssetFileLocationBackfill, queue: QueueName.BackgroundTask })
-  async handleAssetFileLocationBackfill(): Promise<JobStatus> {
+  @OnJob({ name: JobName.FileLocationBackfill, queue: QueueName.BackgroundTask })
+  async handleFileLocationBackfill(): Promise<JobStatus> {
+    await this.backfillLocations('asset file', {
+      getPage: (options) => this.assetRepository.getFilesWithoutLocation(options),
+      setLocations: (locations) => this.assetRepository.setFileLocations(locations),
+    });
+    await this.backfillLocations('original file', {
+      getPage: (options) => this.assetRepository.getAssetsWithoutOriginalFile(options),
+      setLocations: (locations) => this.assetRepository.setOriginalFiles(locations),
+    });
+
+    return JobStatus.Success;
+  }
+
+  private async backfillLocations(
+    label: string,
+    source: {
+      getPage: (options: { afterId?: string; limit: number }) => Promise<{ id: string; path: string }[]>;
+      setLocations: (locations: { id: string; backendId: string; key: string }[]) => Promise<number>;
+    },
+  ) {
     let afterId: string | undefined;
     let updated = 0;
     let invalid = 0;
     let shared = 0;
 
     while (true) {
-      const files = await this.assetRepository.getFilesWithoutLocation({ afterId, limit: FILE_LOCATION_BATCH_SIZE });
+      const files = await source.getPage({ afterId, limit: FILE_LOCATION_BATCH_SIZE });
       if (files.length === 0) {
         break;
       }
@@ -169,9 +192,7 @@ export class StorageService extends BaseService {
           location = StorageCore.getStorageLocation(file.path);
         } catch (error) {
           invalid++;
-          this.logger.warn(
-            `Unable to determine the storage location of asset file ${file.id} (${file.path}): ${error}`,
-          );
+          this.logger.warn(`Unable to determine the storage location of ${label} ${file.id} (${file.path}): ${error}`);
           continue;
         }
 
@@ -188,7 +209,7 @@ export class StorageService extends BaseService {
         locations.push({ id: file.id, ...location });
       }
 
-      const count = await this.assetRepository.setFileLocations(locations);
+      const count = await source.setLocations(locations);
       updated += count;
       shared += locations.length - count;
 
@@ -197,14 +218,12 @@ export class StorageService extends BaseService {
       }
     }
 
-    this.logger.log(`Assigned a storage location to ${updated} asset file(s)`);
+    this.logger.log(`Assigned a storage location to ${updated} ${label}(s)`);
     if (invalid > 0 || shared > 0) {
       this.logger.warn(
-        `Skipped ${invalid} asset file(s) with an unusable path and ${shared} asset file(s) whose path is shared with another file`,
+        `Skipped ${invalid} ${label}(s) with an unusable path and ${shared} ${label}(s) whose path is shared with another file`,
       );
     }
-
-    return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.FileDelete, queue: QueueName.BackgroundTask })

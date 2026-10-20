@@ -571,6 +571,8 @@ describe(LibraryService.name, () => {
           ownerId: library.ownerId,
           libraryId: library.id,
           originalPath: '/data/user1/photo.jpg',
+          // the storage repository mock sets the media location to /data
+          originalFile: { backendId: 'media', key: 'user1/photo.jpg' },
           type: AssetType.Image,
           originalFileName: 'photo.jpg',
           isExternal: true,

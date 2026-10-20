@@ -153,6 +153,7 @@ export class AssetMediaService extends BaseService {
         checksum: file.checksum,
         checksumAlgorithm: ChecksumAlgorithm.sha1File,
         originalPath: file.originalPath,
+        originalFile: StorageCore.getStorageLocation(file.originalPath),
 
         fileCreatedAt: dto.fileCreatedAt,
         fileModifiedAt: dto.fileModifiedAt,

@@ -14,6 +14,8 @@ import {
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { isEmpty, isUndefined, omitBy } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
+import { randomUUID } from 'node:crypto';
+import type { StorageLocation } from 'src/cores/storage.core.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
@@ -58,6 +60,9 @@ import {
 import { globToPostgresRegex } from 'src/utils/misc.js';
 
 export type AssetStats = Record<AssetType, number>;
+
+/** An asset to create, with the location of its original file */
+export type AssetCreate = Insertable<AssetTable> & { originalFile: StorageLocation };
 
 /** A file to insert or update; the storage location is required so every new row is addressable by backend and key */
 export type AssetFileUpsert = Pick<
@@ -451,17 +456,69 @@ export class AssetRepository {
     });
   }
 
-  create(asset: Insertable<AssetTable>) {
-    return this.db.insertInto('asset').values(asset).returningAll().executeTakeFirstOrThrow();
+  create({ originalFile, ...asset }: AssetCreate) {
+    const id = asset.id ?? randomUUID();
+    return this.db.transaction().execute(async (tx) => {
+      const created = await tx
+        .insertInto('asset')
+        .values({ ...asset, id })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      await tx
+        .insertInto('asset_original_file')
+        .values({ assetId: id, ...originalFile })
+        .execute();
+      return created;
+    });
   }
 
   @ChunkedArray({ chunkSize: 4000 })
-  async createAll(assets: Insertable<AssetTable>[]) {
+  async createAll(assets: AssetCreate[]) {
     if (assets.length === 0) {
       return [];
     }
-    const ids = await this.db.insertInto('asset').values(assets).returning('id').execute();
-    return ids.map(({ id }) => id);
+
+    // ids are generated here (like the database default, v4) so each original file can be matched to its asset
+    const items = assets.map(({ originalFile, ...asset }) => ({
+      asset: { ...asset, id: asset.id ?? randomUUID() },
+      originalFile,
+    }));
+    await this.db.transaction().execute(async (tx) => {
+      await tx
+        .insertInto('asset')
+        .values(items.map(({ asset }) => asset))
+        .execute();
+      await tx
+        .insertInto('asset_original_file')
+        .values(items.map(({ asset, originalFile }) => ({ assetId: asset.id, ...originalFile })))
+        .execute();
+    });
+    return items.map(({ asset }) => asset.id);
+  }
+
+  /** Point an asset at a new original file, e.g. after the storage template moved it */
+  async updateOriginalPath({
+    id,
+    originalPath,
+    originalFile,
+  }: {
+    id: string;
+    originalPath: string;
+    originalFile: StorageLocation;
+  }) {
+    await this.db.transaction().execute(async (tx) => {
+      await tx.updateTable('asset').set({ originalPath }).where('id', '=', asUuid(id)).execute();
+      await tx
+        .insertInto('asset_original_file')
+        .values({ assetId: id, ...originalFile })
+        .onConflict((oc) =>
+          oc.column('assetId').doUpdateSet((eb) => ({
+            backendId: eb.ref('excluded.backendId'),
+            key: eb.ref('excluded.key'),
+          })),
+        )
+        .execute();
+    });
   }
 
   @GenerateSql({ params: [DummyValue.UUID, { year: 2000, day: 1, month: 1 }] })
@@ -1101,6 +1158,57 @@ export class AssetRepository {
             where "other"."backendId" = "location"."backendId" and "other"."key" = "location"."key"
           )
         )
+    `.execute(this.db);
+
+    return Number(result.numAffectedRows ?? 0);
+  }
+
+  @GenerateSql({ params: [{ afterId: DummyValue.UUID, limit: 1000 }] })
+  getAssetsWithoutOriginalFile({ afterId, limit }: { afterId?: string; limit: number }) {
+    return this.db
+      .selectFrom('asset')
+      .select(['asset.id', 'asset.originalPath as path'])
+      .where((eb) =>
+        eb.not(
+          eb.exists(eb.selectFrom('asset_original_file').whereRef('asset_original_file.assetId', '=', 'asset.id')),
+        ),
+      )
+      .$if(afterId !== undefined, (qb) => qb.where('asset.id', '>', asUuid(afterId!)))
+      .orderBy('asset.id')
+      .limit(limit)
+      .execute();
+  }
+
+  @GenerateSql()
+  async hasAssetsWithoutOriginalFile(): Promise<boolean> {
+    const [asset] = await this.getAssetsWithoutOriginalFile({ limit: 1 });
+    return asset !== undefined;
+  }
+
+  /**
+   * Record the original file of assets that do not have one yet, with the same rules as `setFileLocations`. Assets
+   * deleted in the meantime are skipped. Returns the number of assets updated.
+   */
+  @GenerateSql({ params: [[{ id: DummyValue.UUID, backendId: DummyValue.STRING, key: DummyValue.STRING }]] })
+  async setOriginalFiles(files: { id: string; backendId: string; key: string }[]): Promise<number> {
+    if (files.length === 0) {
+      return 0;
+    }
+
+    const rows = sql.join(files.map(({ id, backendId, key }) => sql`(${id}::uuid, ${backendId}, ${key})`));
+    const result = await sql`
+      insert into "asset_original_file" ("assetId", "backendId", "key")
+      select "location"."id", "location"."backendId", "location"."key"
+      from (values ${rows}) as "location" ("id", "backendId", "key")
+      where exists (select from "asset" where "asset"."id" = "location"."id")
+        and (
+          "location"."backendId" = ${BuiltinStorageBackend.Host}
+          or not exists (
+            select from "asset_original_file" as "other"
+            where "other"."backendId" = "location"."backendId" and "other"."key" = "location"."key"
+          )
+        )
+      on conflict ("assetId") do nothing
     `.execute(this.db);
 
     return Number(result.numAffectedRows ?? 0);

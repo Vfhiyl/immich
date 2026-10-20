@@ -356,7 +356,11 @@ export class StorageCore {
   private savePath(pathType: PathType, id: string, newPath: string, ownerId?: string) {
     switch (pathType) {
       case AssetPathType.Original: {
-        return this.assetRepository.update({ id, originalPath: newPath });
+        return this.assetRepository.updateOriginalPath({
+          id,
+          originalPath: newPath,
+          originalFile: StorageCore.getStorageLocation(newPath),
+        });
       }
 
       case AssetFileType.FullSize:

@@ -1,5 +1,4 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Insertable } from 'kysely';
 import { R_OK } from 'node:constants';
 import { Stats } from 'node:fs';
 import path, { isAbsolute, parse } from 'node:path';
@@ -30,8 +29,8 @@ import {
   JobStatus,
   QueueName,
 } from 'src/enum.js';
+import { AssetCreate } from 'src/repositories/asset.repository.js';
 import { AssetSyncResult } from 'src/repositories/library.repository.js';
-import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, findOrFail, handlePromiseError } from 'src/utils/misc.js';
@@ -263,7 +262,7 @@ export class LibraryService extends BaseService {
       return JobStatus.Failed;
     }
 
-    const assetImports: Insertable<AssetTable>[] = [];
+    const assetImports: AssetCreate[] = [];
     await Promise.all(
       job.paths.map(async (path) => {
         try {
@@ -409,6 +408,7 @@ export class LibraryService extends BaseService {
       checksum: this.cryptoRepository.hashSha1(`path:${assetPath}`),
       checksumAlgorithm: ChecksumAlgorithm.sha1Path,
       originalPath: assetPath,
+      originalFile: StorageCore.getStorageLocation(assetPath),
 
       fileCreatedAt: stat.mtime,
       fileModifiedAt: stat.mtime,

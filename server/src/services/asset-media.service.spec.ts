@@ -156,7 +156,7 @@ const assetEntity = Object.freeze({
   id: 'id_1',
   ownerId: 'user_id_1',
   type: AssetType.Video,
-  originalPath: 'fake_path/asset_1.jpeg',
+  originalPath: '/data/fake_path/asset_1.jpeg',
   fileModifiedAt: new Date('2022-06-19T23:41:36.910Z'),
   fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),
   updatedAt: new Date('2022-06-19T23:41:36.910Z'),
@@ -300,7 +300,7 @@ describe(AssetMediaService.name, () => {
     it('should throw an error if the quota is exceeded', async () => {
       const file = {
         uuid: 'random-uuid',
-        originalPath: 'fake_path/asset_1.jpeg',
+        originalPath: '/data/fake_path/asset_1.jpeg',
         mimeType: 'image/jpeg',
         checksum: Buffer.from('file hash', 'utf8'),
         originalName: 'asset_1.jpeg',
@@ -335,7 +335,7 @@ describe(AssetMediaService.name, () => {
     it('should handle a file upload', async () => {
       const file = {
         uuid: 'random-uuid',
-        originalPath: 'fake_path/asset_1.jpeg',
+        originalPath: '/data/fake_path/asset_1.jpeg',
         mimeType: 'image/jpeg',
         checksum: Buffer.from('file hash', 'utf8'),
         originalName: 'asset_1.jpeg',
@@ -349,7 +349,12 @@ describe(AssetMediaService.name, () => {
         status: AssetMediaStatus.CREATED,
       });
 
-      expect(mocks.asset.create).toHaveBeenCalled();
+      expect(mocks.asset.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          originalPath: '/data/fake_path/asset_1.jpeg',
+          originalFile: { backendId: 'media', key: 'fake_path/asset_1.jpeg' },
+        }),
+      );
       expect(mocks.storage.utimes).toHaveBeenCalledWith(
         file.originalPath,
         expect.any(Date),
@@ -360,7 +365,7 @@ describe(AssetMediaService.name, () => {
     it('should handle a duplicate', async () => {
       const file = {
         uuid: 'random-uuid',
-        originalPath: 'fake_path/asset_1.jpeg',
+        originalPath: '/data/fake_path/asset_1.jpeg',
         mimeType: 'image/jpeg',
         checksum: Buffer.from('file hash', 'utf8'),
         originalName: 'asset_1.jpeg',
@@ -379,7 +384,7 @@ describe(AssetMediaService.name, () => {
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: ['fake_path/asset_1.jpeg', undefined] },
+        data: { files: ['/data/fake_path/asset_1.jpeg', undefined] },
       });
       expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });
@@ -387,7 +392,7 @@ describe(AssetMediaService.name, () => {
     it('should throw an error if the duplicate could not be found by checksum', async () => {
       const file = {
         uuid: 'random-uuid',
-        originalPath: 'fake_path/asset_1.jpeg',
+        originalPath: '/data/fake_path/asset_1.jpeg',
         mimeType: 'image/jpeg',
         checksum: Buffer.from('file hash', 'utf8'),
         originalName: 'asset_1.jpeg',
@@ -404,7 +409,7 @@ describe(AssetMediaService.name, () => {
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: ['fake_path/asset_1.jpeg', undefined] },
+        data: { files: ['/data/fake_path/asset_1.jpeg', undefined] },
       });
       expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });

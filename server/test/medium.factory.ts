@@ -30,7 +30,7 @@ import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
-import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { AssetCreate, AssetRepository } from 'src/repositories/asset.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
@@ -197,9 +197,13 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     return { stack: { ...stack, primaryAssetId: assetIds[0] }, result };
   }
 
-  async newAsset(dto: Partial<Insertable<AssetTable>> = {}) {
+  async newAsset({ originalFile, ...dto }: Partial<AssetCreate> = {}) {
     const asset = mediumFactory.assetInsert(dto);
-    const result = await this.get(AssetRepository).create(asset);
+    const result = await this.get(AssetRepository).create({
+      ...asset,
+      // tests often reuse a path for several assets, and a location can only belong to one file
+      originalFile: originalFile ?? { backendId: BuiltinStorageBackend.Media, key: newUuid() },
+    });
     return { asset, result };
   }
 

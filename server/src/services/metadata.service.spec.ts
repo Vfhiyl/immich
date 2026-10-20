@@ -833,6 +833,7 @@ describe(MetadataService.name, () => {
         localDateTime: asset.fileCreatedAt,
         originalFileName: `IMG_${asset.id}.mp4`,
         originalPath: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
+        originalFile: { backendId: 'media', key: expect.stringContaining(`${motionAsset.id}-MP.mp4`) },
         ownerId: asset.ownerId,
         type: AssetType.Video,
       });
@@ -885,6 +886,7 @@ describe(MetadataService.name, () => {
         localDateTime: asset.fileCreatedAt,
         originalFileName: `IMG_${asset.id}.mp4`,
         originalPath: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
+        originalFile: { backendId: 'media', key: expect.stringContaining(`${motionAsset.id}-MP.mp4`) },
         ownerId: asset.ownerId,
         type: AssetType.Video,
       });
@@ -937,6 +939,7 @@ describe(MetadataService.name, () => {
         localDateTime: asset.fileCreatedAt,
         originalFileName: `IMG_${asset.id}.mp4`,
         originalPath: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
+        originalFile: { backendId: 'media', key: expect.stringContaining(`${motionAsset.id}-MP.mp4`) },
         ownerId: asset.ownerId,
         type: AssetType.Video,
       });

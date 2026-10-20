@@ -742,6 +742,7 @@ export class MetadataService extends BaseService {
       if (!motionAsset) {
         try {
           const motionAssetId = this.cryptoRepository.randomUUID();
+          const motionAssetPath = StorageCore.getAndroidMotionPath(asset, motionAssetId);
           motionAsset = await this.assetRepository.create({
             id: motionAssetId,
             libraryId: asset.libraryId,
@@ -752,7 +753,8 @@ export class MetadataService extends BaseService {
             checksum,
             checksumAlgorithm: ChecksumAlgorithm.sha1File,
             ownerId: asset.ownerId,
-            originalPath: StorageCore.getAndroidMotionPath(asset, motionAssetId),
+            originalPath: motionAssetPath,
+            originalFile: StorageCore.getStorageLocation(motionAssetPath),
             originalFileName: `${parse(asset.originalFileName).name}.mp4`,
             visibility: AssetVisibility.Hidden,
           });

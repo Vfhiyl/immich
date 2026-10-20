@@ -209,11 +209,20 @@ describe(StorageService.name, () => {
 
       await sut.onBootstrapFileLocations();
 
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetFileLocationBackfill });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileLocationBackfill });
+    });
+
+    it('should queue the backfill when some assets have no original file location', async () => {
+      mocks.asset.hasAssetsWithoutOriginalFile.mockResolvedValue(true);
+
+      await sut.onBootstrapFileLocations();
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileLocationBackfill });
     });
 
     it('should not queue the backfill when every file has a storage location', async () => {
       mocks.asset.hasFilesWithoutLocation.mockResolvedValue(false);
+      mocks.asset.hasAssetsWithoutOriginalFile.mockResolvedValue(false);
 
       await sut.onBootstrapFileLocations();
 
@@ -221,7 +230,7 @@ describe(StorageService.name, () => {
     });
   });
 
-  describe('handleAssetFileLocationBackfill', () => {
+  describe('handleFileLocationBackfill', () => {
     // the storage repository mock sets the media location to /data
     it('should use the media backend for files under the media location and the host backend otherwise', async () => {
       mocks.asset.getFilesWithoutLocation.mockResolvedValueOnce([
@@ -230,7 +239,7 @@ describe(StorageService.name, () => {
       ]);
       mocks.asset.setFileLocations.mockResolvedValue(2);
 
-      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
 
       expect(mocks.asset.getFilesWithoutLocation).toHaveBeenCalledTimes(1);
       expect(mocks.asset.getFilesWithoutLocation).toHaveBeenCalledWith({ afterId: undefined, limit: 5000 });
@@ -242,7 +251,7 @@ describe(StorageService.name, () => {
     });
 
     it('should do nothing when there are no files without a location', async () => {
-      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
 
       expect(mocks.asset.setFileLocations).not.toHaveBeenCalled();
     });
@@ -254,7 +263,7 @@ describe(StorageService.name, () => {
         .mockResolvedValueOnce([file('file-last', '/data/upload/last.jpg')]);
       mocks.asset.setFileLocations.mockResolvedValueOnce(5000).mockResolvedValueOnce(1);
 
-      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
 
       expect(mocks.asset.getFilesWithoutLocation).toHaveBeenCalledTimes(2);
       expect(mocks.asset.getFilesWithoutLocation).toHaveBeenNthCalledWith(2, { afterId: 'file-4999', limit: 5000 });
@@ -268,7 +277,7 @@ describe(StorageService.name, () => {
         .mockResolvedValueOnce(Array.from({ length: 5000 }, (_, index) => file(`file-${index}`, 'relative/path.jpg')))
         .mockResolvedValueOnce([]);
 
-      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
 
       expect(mocks.asset.getFilesWithoutLocation).toHaveBeenNthCalledWith(2, { afterId: 'file-4999', limit: 5000 });
       expect(mocks.asset.setFileLocations).toHaveBeenCalledWith([]);
@@ -281,7 +290,7 @@ describe(StorageService.name, () => {
       ]);
       mocks.asset.setFileLocations.mockResolvedValue(1);
 
-      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
 
       expect(mocks.asset.setFileLocations).toHaveBeenCalledWith([
         { id: 'file-2', backendId: 'media', key: 'upload/file.jpg' },
@@ -299,7 +308,7 @@ describe(StorageService.name, () => {
       ]);
       mocks.asset.setFileLocations.mockResolvedValue(1);
 
-      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
 
       expect(mocks.asset.setFileLocations).toHaveBeenCalledWith([
         { id: 'file-1', backendId: 'media', key: 'upload/same.jpg' },
@@ -314,7 +323,7 @@ describe(StorageService.name, () => {
       ]);
       mocks.asset.setFileLocations.mockResolvedValue(2);
 
-      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
 
       expect(mocks.asset.setFileLocations).toHaveBeenCalledWith([
         { id: 'file-1', backendId: 'host', key: 'mnt/external/IMG_1.jpg.xmp' },
@@ -330,9 +339,43 @@ describe(StorageService.name, () => {
       ]);
       mocks.asset.setFileLocations.mockResolvedValue(1);
 
-      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
 
       expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('1 asset file(s) whose path is shared'));
+    });
+
+    it('should record the original file of assets the same way', async () => {
+      mocks.asset.getAssetsWithoutOriginalFile.mockResolvedValueOnce([
+        file('asset-1', '/data/library/admin/IMG_1.jpg'),
+        file('asset-2', '/mnt/external/IMG_2.jpg'),
+        file('asset-3', 'relative/IMG_3.jpg'),
+      ]);
+      mocks.asset.setOriginalFiles.mockResolvedValue(2);
+
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.getAssetsWithoutOriginalFile).toHaveBeenCalledWith({ afterId: undefined, limit: 5000 });
+      expect(mocks.asset.setOriginalFiles).toHaveBeenCalledWith([
+        { id: 'asset-1', backendId: 'media', key: 'library/admin/IMG_1.jpg' },
+        { id: 'asset-2', backendId: 'host', key: 'mnt/external/IMG_2.jpg' },
+      ]);
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Unable to determine the storage location of original file asset-3'),
+      );
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Skipped 1 original file(s) with an unusable path'),
+      );
+    });
+
+    it('should page through original files after the last asset of a full batch', async () => {
+      const page = Array.from({ length: 5000 }, (_, index) => file(`asset-${index}`, `/data/upload/${index}.jpg`));
+      mocks.asset.getAssetsWithoutOriginalFile.mockResolvedValueOnce(page).mockResolvedValueOnce([]);
+      mocks.asset.setOriginalFiles.mockResolvedValue(5000);
+
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.getAssetsWithoutOriginalFile).toHaveBeenCalledTimes(2);
+      expect(mocks.asset.getAssetsWithoutOriginalFile).toHaveBeenLastCalledWith({ afterId: 'asset-4999', limit: 5000 });
     });
   });
 });

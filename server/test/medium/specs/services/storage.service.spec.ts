@@ -46,7 +46,7 @@ describe(StorageService.name, () => {
     });
   });
 
-  describe('handleAssetFileLocationBackfill', () => {
+  describe('handleFileLocationBackfill', () => {
     beforeAll(() => {
       StorageCore.setMediaLocation('/data');
     });
@@ -69,7 +69,7 @@ describe(StorageService.name, () => {
       const host = await insert(AssetFileType.Thumbnail, '/mnt/external/thumbnail.webp');
       const unusable = await insert(AssetFileType.Sidecar, 'relative/photo.jpg.xmp');
 
-      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
 
       const files = await ctx.database
         .selectFrom('asset_file')
@@ -101,7 +101,7 @@ describe(StorageService.name, () => {
         ])
         .execute();
 
-      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
 
       const files = await ctx.database.selectFrom('asset_file').select(['backendId', 'key']).execute();
       expect(files).toHaveLength(2);
@@ -126,12 +126,32 @@ describe(StorageService.name, () => {
         ])
         .execute();
 
-      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
 
       await expect(ctx.database.selectFrom('asset_file').select(['backendId', 'key']).execute()).resolves.toEqual([
         { backendId: 'host', key: 'mnt/external/IMG_1.jpg.xmp' },
         { backendId: 'host', key: 'mnt/external/IMG_1.jpg.xmp' },
       ]);
+    });
+
+    it('should record the original file of assets that have none', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user } = await ctx.newUser();
+      const { asset: uploaded } = await ctx.newAsset({ ownerId: user.id, originalPath: '/data/upload/IMG_1.jpg' });
+      const { asset: external } = await ctx.newAsset({ ownerId: user.id, originalPath: '/mnt/photos/IMG_2.jpg' });
+      await ctx.database.deleteFrom('asset_original_file').execute();
+
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      await expect(
+        ctx.database.selectFrom('asset_original_file').select(['assetId', 'backendId', 'key']).execute(),
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          { assetId: uploaded.id, backendId: 'media', key: 'upload/IMG_1.jpg' },
+          { assetId: external.id, backendId: 'host', key: 'mnt/photos/IMG_2.jpg' },
+        ]),
+      );
+      await expect(ctx.get(AssetRepository).hasAssetsWithoutOriginalFile()).resolves.toBe(false);
     });
   });
 });
