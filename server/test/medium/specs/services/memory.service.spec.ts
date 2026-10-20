@@ -1,7 +1,7 @@
 import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetFileType, MemoryType } from 'src/enum.js';
+import { AssetFileType, BuiltinStorageBackend, MemoryType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -56,8 +56,20 @@ const newPersonAsset = async (
     ctx.newJobStatus({ assetId: asset.id }),
     ctx.newAssetFace({ assetId: asset.id, personGroupId }),
     assetRepo.upsertFiles([
-      { assetId: asset.id, type: AssetFileType.Preview, path: '/path/to/preview.jpg' },
-      { assetId: asset.id, type: AssetFileType.Thumbnail, path: '/path/to/thumbnail.jpg' },
+      {
+        assetId: asset.id,
+        type: AssetFileType.Preview,
+        path: '/path/to/preview.jpg',
+        backendId: BuiltinStorageBackend.Host,
+        key: `path/to/${asset.id}/preview.jpg`,
+      },
+      {
+        assetId: asset.id,
+        type: AssetFileType.Thumbnail,
+        path: '/path/to/thumbnail.jpg',
+        backendId: BuiltinStorageBackend.Host,
+        key: `path/to/${asset.id}/thumbnail.jpg`,
+      },
     ]),
   ]);
   return asset;
@@ -349,8 +361,20 @@ describe(MemoryService.name, () => {
         ctx.newExif({ assetId: asset.id, make: 'Canon' }),
         ctx.newJobStatus({ assetId: asset.id }),
         assetRepo.upsertFiles([
-          { assetId: asset.id, type: AssetFileType.Preview, path: '/path/to/preview.jpg' },
-          { assetId: asset.id, type: AssetFileType.Thumbnail, path: '/path/to/thumbnail.jpg' },
+          {
+            assetId: asset.id,
+            type: AssetFileType.Preview,
+            path: '/path/to/preview.jpg',
+            backendId: BuiltinStorageBackend.Host,
+            key: `path/to/${asset.id}/preview.jpg`,
+          },
+          {
+            assetId: asset.id,
+            type: AssetFileType.Thumbnail,
+            path: '/path/to/thumbnail.jpg',
+            backendId: BuiltinStorageBackend.Host,
+            key: `path/to/${asset.id}/thumbnail.jpg`,
+          },
         ]),
       ]);
 
@@ -389,8 +413,20 @@ describe(MemoryService.name, () => {
         ctx.newExif({ assetId: asset.id, make: 'Canon' }),
         ctx.newJobStatus({ assetId: asset.id }),
         assetRepo.upsertFiles([
-          { assetId: asset.id, type: AssetFileType.Preview, path: '/path/to/preview.jpg' },
-          { assetId: asset.id, type: AssetFileType.Thumbnail, path: '/path/to/thumbnail.jpg' },
+          {
+            assetId: asset.id,
+            type: AssetFileType.Preview,
+            path: '/path/to/preview.jpg',
+            backendId: BuiltinStorageBackend.Host,
+            key: `path/to/${asset.id}/preview.jpg`,
+          },
+          {
+            assetId: asset.id,
+            type: AssetFileType.Thumbnail,
+            path: '/path/to/thumbnail.jpg',
+            backendId: BuiltinStorageBackend.Host,
+            key: `path/to/${asset.id}/thumbnail.jpg`,
+          },
         ]),
       ]);
 
@@ -443,8 +479,20 @@ describe(MemoryService.name, () => {
           ctx.newExif({ assetId: asset.id, make: 'Canon' }),
           ctx.newJobStatus({ assetId: asset.id }),
           assetRepo.upsertFiles([
-            { assetId: asset.id, type: AssetFileType.Preview, path: '/path/to/preview.jpg' },
-            { assetId: asset.id, type: AssetFileType.Thumbnail, path: '/path/to/thumbnail.jpg' },
+            {
+              assetId: asset.id,
+              type: AssetFileType.Preview,
+              path: '/path/to/preview.jpg',
+              backendId: BuiltinStorageBackend.Host,
+              key: `path/to/${asset.id}/preview.jpg`,
+            },
+            {
+              assetId: asset.id,
+              type: AssetFileType.Thumbnail,
+              path: '/path/to/thumbnail.jpg',
+              backendId: BuiltinStorageBackend.Host,
+              key: `path/to/${asset.id}/thumbnail.jpg`,
+            },
           ]),
         ]);
       }

@@ -1,11 +1,11 @@
 import { Kysely } from 'kysely';
-import { AssetOrder, AssetOrderBy, AssetVisibility } from 'src/enum.js';
+import { AssetFileType, AssetOrder, AssetOrderBy, AssetVisibility } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
-import { newMediumService } from 'test/medium.factory.js';
-import { factory } from 'test/small.factory.js';
+import { MediumTestContext, newMediumService } from 'test/medium.factory.js';
+import { factory, newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
@@ -507,5 +507,197 @@ describe(AssetRepository.name, () => {
       const { sut } = setup();
       await expect(sut.createAll([])).resolves.toStrictEqual([]);
     });
+  });
+});
+
+const newAssetWithoutFileLocation = async (ctx: MediumTestContext, path: string) => {
+  const { user } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({ ownerId: user.id });
+  const file = await ctx.database
+    .insertInto('asset_file')
+    .values({ assetId: asset.id, type: AssetFileType.Preview, path })
+    .returning(['id'])
+    .executeTakeFirstOrThrow();
+  return { asset, fileId: file.id };
+};
+
+const getFile = (ctx: MediumTestContext, id: string) =>
+  ctx.database
+    .selectFrom('asset_file')
+    .select(['backendId', 'key', 'path'])
+    .where('id', '=', id)
+    .executeTakeFirstOrThrow();
+
+describe('asset file storage locations', () => {
+  it('should store the location when upserting a file and update it when the file moves', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+
+    await sut.upsertFile({
+      assetId: asset.id,
+      type: AssetFileType.Thumbnail,
+      path: '/data/thumbs/old.webp',
+      backendId: 'media',
+      key: `thumbs/${asset.id}/old.webp`,
+    });
+    await sut.upsertFile({
+      assetId: asset.id,
+      type: AssetFileType.Thumbnail,
+      path: '/data/thumbs/new.webp',
+      backendId: 'media',
+      key: `thumbs/${asset.id}/new.webp`,
+    });
+
+    await expect(
+      ctx.database
+        .selectFrom('asset_file')
+        .select(['path', 'backendId', 'key'])
+        .where('assetId', '=', asset.id)
+        .execute(),
+    ).resolves.toEqual([{ path: '/data/thumbs/new.webp', backendId: 'media', key: `thumbs/${asset.id}/new.webp` }]);
+  });
+
+  it('should not allow two files at the same location', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset: first } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: second } = await ctx.newAsset({ ownerId: user.id });
+    const key = `upload/${first.id}/shared.jpg`;
+
+    await sut.upsertFile({ assetId: first.id, type: AssetFileType.Preview, path: '/data/a', backendId: 'media', key });
+
+    await expect(
+      sut.upsertFile({ assetId: second.id, type: AssetFileType.Preview, path: '/data/b', backendId: 'media', key }),
+    ).rejects.toThrow('asset_file_backendId_key_idx');
+  });
+
+  it('should allow several files to share a host file', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset: first } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: second } = await ctx.newAsset({ ownerId: user.id });
+    const path = `/mnt/external/${first.id}/IMG_1.jpg.xmp`;
+    const file = { type: AssetFileType.Sidecar, path, backendId: 'host', key: path.slice(1) };
+
+    await sut.upsertFile({ assetId: first.id, ...file });
+    await sut.upsertFile({ assetId: second.id, ...file });
+
+    await expect(
+      ctx.database.selectFrom('asset_file').select('assetId').where('key', '=', file.key).execute(),
+    ).resolves.toHaveLength(2);
+  });
+
+  it('should not allow a location on a storage backend that does not exist', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+
+    await expect(
+      sut.upsertFile({ assetId: asset.id, type: AssetFileType.Preview, path: '/x', backendId: 'missing', key: 'x' }),
+    ).rejects.toThrow('asset_file_backendId_fkey');
+  });
+
+  it('should only return files without a location, ordered by id and paged after a given id', async () => {
+    const db = await getKyselyDB();
+    const { ctx, sut } = setup(db);
+    const files = [
+      await newAssetWithoutFileLocation(ctx, '/data/upload/1.jpg'),
+      await newAssetWithoutFileLocation(ctx, '/data/upload/2.jpg'),
+      await newAssetWithoutFileLocation(ctx, '/data/upload/3.jpg'),
+    ];
+    const { user } = await ctx.newUser();
+    const { asset: located } = await ctx.newAsset({ ownerId: user.id });
+    await ctx.newAssetFile({ assetId: located.id, type: AssetFileType.Preview, path: '/data/upload/located.jpg' });
+    const ids = files.map(({ fileId }) => fileId).toSorted();
+
+    await expect(sut.hasFilesWithoutLocation()).resolves.toBe(true);
+    await expect(sut.getFilesWithoutLocation({ limit: 2 })).resolves.toEqual([
+      { id: ids[0], path: expect.any(String) },
+      { id: ids[1], path: expect.any(String) },
+    ]);
+    await expect(sut.getFilesWithoutLocation({ afterId: ids[1], limit: 2 })).resolves.toEqual([
+      { id: ids[2], path: expect.any(String) },
+    ]);
+  });
+
+  it('should report when every file has a location', async () => {
+    const db = await getKyselyDB();
+    const { ctx, sut } = setup(db);
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: '/data/upload/located.jpg' });
+
+    await expect(sut.hasFilesWithoutLocation()).resolves.toBe(false);
+    await expect(sut.getFilesWithoutLocation({ limit: 10 })).resolves.toEqual([]);
+  });
+
+  it('should set locations, skipping files that already have one and locations that belong to another file', async () => {
+    const { ctx, sut } = setup();
+    const { fileId: first } = await newAssetWithoutFileLocation(ctx, '/data/upload/first.jpg');
+    const { fileId: second } = await newAssetWithoutFileLocation(ctx, '/data/upload/second.jpg');
+    const { user } = await ctx.newUser();
+    const { asset: other } = await ctx.newAsset({ ownerId: user.id });
+    const takenKey = `upload/${second}/taken.jpg`;
+    await ctx.newAssetFile({
+      assetId: other.id,
+      type: AssetFileType.Preview,
+      path: '/data/taken.jpg',
+      backendId: 'media',
+      key: takenKey,
+    });
+    const { fileId: alreadyLocated } = await newAssetWithoutFileLocation(ctx, '/data/upload/third.jpg');
+    await ctx.database
+      .updateTable('asset_file')
+      .set({ backendId: 'host', key: `already/${alreadyLocated}` })
+      .where('id', '=', alreadyLocated)
+      .execute();
+
+    await expect(
+      sut.setFileLocations([
+        { id: first, backendId: 'media', key: `upload/${first}/first.jpg` },
+        { id: second, backendId: 'media', key: takenKey },
+        { id: alreadyLocated, backendId: 'media', key: `upload/${alreadyLocated}/third.jpg` },
+      ]),
+    ).resolves.toBe(1);
+
+    await expect(getFile(ctx, first)).resolves.toEqual({
+      backendId: 'media',
+      key: `upload/${first}/first.jpg`,
+      path: '/data/upload/first.jpg',
+    });
+    await expect(getFile(ctx, second)).resolves.toEqual({
+      backendId: null,
+      key: null,
+      path: '/data/upload/second.jpg',
+    });
+    await expect(getFile(ctx, alreadyLocated)).resolves.toEqual({
+      backendId: 'host',
+      key: `already/${alreadyLocated}`,
+      path: '/data/upload/third.jpg',
+    });
+  });
+
+  it('should set a host location that already belongs to another file', async () => {
+    const { ctx, sut } = setup();
+    const path = `/mnt/external/${newUuid()}/IMG_1.jpg.xmp`;
+    const { fileId: first } = await newAssetWithoutFileLocation(ctx, path);
+    const { fileId: second } = await newAssetWithoutFileLocation(ctx, path);
+    const location = { backendId: 'host', key: path.slice(1) };
+
+    await expect(
+      sut.setFileLocations([
+        { id: first, ...location },
+        { id: second, ...location },
+      ]),
+    ).resolves.toBe(2);
+
+    await expect(getFile(ctx, first)).resolves.toEqual({ ...location, path });
+    await expect(getFile(ctx, second)).resolves.toEqual({ ...location, path });
+  });
+
+  it('should do nothing when no locations are given', async () => {
+    const { sut } = setup();
+    await expect(sut.setFileLocations([])).resolves.toBe(0);
   });
 });

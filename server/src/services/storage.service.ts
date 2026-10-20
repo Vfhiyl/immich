@@ -6,7 +6,9 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   BootstrapEventPriority,
+  BuiltinStorageBackend,
   DatabaseLock,
+  ImmichWorker,
   JobName,
   JobStatus,
   QueueName,
@@ -15,6 +17,9 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
+
+/** Number of asset files given a storage location per database round trip */
+const FILE_LOCATION_BATCH_SIZE = 5000;
 
 const docsMessage = `Please see https://docs.immich.app/administration/system-integrity#folder-checks for more information.`;
 
@@ -132,6 +137,74 @@ export class StorageService extends BaseService {
         await this.systemMetadataRepository.set(SystemMetadataKey.MediaLocation, { location: current });
       }
     });
+  }
+
+  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  async onBootstrapFileLocations() {
+    if (await this.assetRepository.hasFilesWithoutLocation()) {
+      await this.jobRepository.queue({ name: JobName.AssetFileLocationBackfill });
+    }
+  }
+
+  /** Give files recorded before storage backends existed a backend and key, derived from their path */
+  @OnJob({ name: JobName.AssetFileLocationBackfill, queue: QueueName.BackgroundTask })
+  async handleAssetFileLocationBackfill(): Promise<JobStatus> {
+    let afterId: string | undefined;
+    let updated = 0;
+    let invalid = 0;
+    let shared = 0;
+
+    while (true) {
+      const files = await this.assetRepository.getFilesWithoutLocation({ afterId, limit: FILE_LOCATION_BATCH_SIZE });
+      if (files.length === 0) {
+        break;
+      }
+      afterId = files.at(-1)!.id;
+
+      const seen = new Set<string>();
+      const locations: { id: string; backendId: string; key: string }[] = [];
+      for (const file of files) {
+        let location;
+        try {
+          location = StorageCore.getStorageLocation(file.path);
+        } catch (error) {
+          invalid++;
+          this.logger.warn(
+            `Unable to determine the storage location of asset file ${file.id} (${file.path}): ${error}`,
+          );
+          continue;
+        }
+
+        // Only one file can point to a blob that Immich owns; host files may be shared (see asset_file indexes)
+        if (location.backendId !== BuiltinStorageBackend.Host) {
+          const locationId = `${location.backendId}:${location.key}`;
+          if (seen.has(locationId)) {
+            shared++;
+            continue;
+          }
+          seen.add(locationId);
+        }
+
+        locations.push({ id: file.id, ...location });
+      }
+
+      const count = await this.assetRepository.setFileLocations(locations);
+      updated += count;
+      shared += locations.length - count;
+
+      if (files.length < FILE_LOCATION_BATCH_SIZE) {
+        break;
+      }
+    }
+
+    this.logger.log(`Assigned a storage location to ${updated} asset file(s)`);
+    if (invalid > 0 || shared > 0) {
+      this.logger.warn(
+        `Skipped ${invalid} asset file(s) with an unusable path and ${shared} asset file(s) whose path is shared with another file`,
+      );
+    }
+
+    return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.FileDelete, queue: QueueName.BackgroundTask })

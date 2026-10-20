@@ -521,6 +521,55 @@ order by
 limit
   $4
 
+-- AssetRepository.getFilesWithoutLocation
+select
+  "id",
+  "path"
+from
+  "asset_file"
+where
+  "backendId" is null
+  and "id" > $1::uuid
+order by
+  "id"
+limit
+  $2
+
+-- AssetRepository.hasFilesWithoutLocation
+select
+  "id"
+from
+  "asset_file"
+where
+  "backendId" is null
+limit
+  $1
+
+-- AssetRepository.setFileLocations
+update "asset_file"
+set
+  "backendId" = "location"."backendId",
+  "key" = "location"."key"
+from
+  (
+    values
+      ($1::uuid, $2, $3)
+  ) as "location" ("id", "backendId", "key")
+where
+  "asset_file"."id" = "location"."id"
+  and "asset_file"."backendId" is null
+  and (
+    "location"."backendId" = $4
+    or not exists (
+      select
+      from
+        "asset_file" as "other"
+      where
+        "other"."backendId" = "location"."backendId"
+        and "other"."key" = "location"."key"
+    )
+  )
+
 -- AssetRepository.detectOfflineExternalAssets
 update "asset"
 set

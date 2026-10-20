@@ -1,8 +1,10 @@
-import { SystemMetadataKey } from 'src/enum.js';
+import { JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
+
+const file = (id: string, path: string) => ({ id, path });
 
 describe(StorageService.name, () => {
   let sut: StorageService;
@@ -198,6 +200,139 @@ describe(StorageService.name, () => {
       await sut.handleDeleteFiles({ files: ['path/to/something'] });
 
       expect(mocks.storage.unlink).toHaveBeenCalledWith('path/to/something');
+    });
+  });
+
+  describe('onBootstrapFileLocations', () => {
+    it('should queue the backfill when some files have no storage location', async () => {
+      mocks.asset.hasFilesWithoutLocation.mockResolvedValue(true);
+
+      await sut.onBootstrapFileLocations();
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetFileLocationBackfill });
+    });
+
+    it('should not queue the backfill when every file has a storage location', async () => {
+      mocks.asset.hasFilesWithoutLocation.mockResolvedValue(false);
+
+      await sut.onBootstrapFileLocations();
+
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleAssetFileLocationBackfill', () => {
+    // the storage repository mock sets the media location to /data
+    it('should use the media backend for files under the media location and the host backend otherwise', async () => {
+      mocks.asset.getFilesWithoutLocation.mockResolvedValueOnce([
+        file('file-1', '/data/thumbs/user-id/ab/cd/asset_thumbnail.webp'),
+        file('file-2', '/mnt/external/IMG_1.jpg.xmp'),
+      ]);
+      mocks.asset.setFileLocations.mockResolvedValue(2);
+
+      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.getFilesWithoutLocation).toHaveBeenCalledTimes(1);
+      expect(mocks.asset.getFilesWithoutLocation).toHaveBeenCalledWith({ afterId: undefined, limit: 5000 });
+      expect(mocks.asset.setFileLocations).toHaveBeenCalledWith([
+        { id: 'file-1', backendId: 'media', key: 'thumbs/user-id/ab/cd/asset_thumbnail.webp' },
+        { id: 'file-2', backendId: 'host', key: 'mnt/external/IMG_1.jpg.xmp' },
+      ]);
+      expect(mocks.logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('should do nothing when there are no files without a location', async () => {
+      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.setFileLocations).not.toHaveBeenCalled();
+    });
+
+    it('should continue after the last file of a full batch until no files are left', async () => {
+      const firstBatch = Array.from({ length: 5000 }, (_, index) => file(`file-${index}`, `/data/upload/${index}.jpg`));
+      mocks.asset.getFilesWithoutLocation
+        .mockResolvedValueOnce(firstBatch)
+        .mockResolvedValueOnce([file('file-last', '/data/upload/last.jpg')]);
+      mocks.asset.setFileLocations.mockResolvedValueOnce(5000).mockResolvedValueOnce(1);
+
+      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.getFilesWithoutLocation).toHaveBeenCalledTimes(2);
+      expect(mocks.asset.getFilesWithoutLocation).toHaveBeenNthCalledWith(2, { afterId: 'file-4999', limit: 5000 });
+      expect(mocks.asset.setFileLocations).toHaveBeenNthCalledWith(2, [
+        { id: 'file-last', backendId: 'media', key: 'upload/last.jpg' },
+      ]);
+    });
+
+    it('should page past files it skipped so they are not read again', async () => {
+      mocks.asset.getFilesWithoutLocation
+        .mockResolvedValueOnce(Array.from({ length: 5000 }, (_, index) => file(`file-${index}`, 'relative/path.jpg')))
+        .mockResolvedValueOnce([]);
+
+      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.getFilesWithoutLocation).toHaveBeenNthCalledWith(2, { afterId: 'file-4999', limit: 5000 });
+      expect(mocks.asset.setFileLocations).toHaveBeenCalledWith([]);
+    });
+
+    it('should skip a file whose path cannot be mapped to a storage location', async () => {
+      mocks.asset.getFilesWithoutLocation.mockResolvedValueOnce([
+        file('file-1', 'relative/path.jpg'),
+        file('file-2', '/data/upload/file.jpg'),
+      ]);
+      mocks.asset.setFileLocations.mockResolvedValue(1);
+
+      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.setFileLocations).toHaveBeenCalledWith([
+        { id: 'file-2', backendId: 'media', key: 'upload/file.jpg' },
+      ]);
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('file-1'));
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Skipped 1 asset file(s) with an unusable path'),
+      );
+    });
+
+    it('should only give a location shared by several files in a batch to the first of them', async () => {
+      mocks.asset.getFilesWithoutLocation.mockResolvedValueOnce([
+        file('file-1', '/data/upload/same.jpg'),
+        file('file-2', '/data/upload/same.jpg'),
+      ]);
+      mocks.asset.setFileLocations.mockResolvedValue(1);
+
+      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.setFileLocations).toHaveBeenCalledWith([
+        { id: 'file-1', backendId: 'media', key: 'upload/same.jpg' },
+      ]);
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('1 asset file(s) whose path is shared'));
+    });
+
+    it('should give a host location shared by several files to all of them', async () => {
+      mocks.asset.getFilesWithoutLocation.mockResolvedValueOnce([
+        file('file-1', '/mnt/external/IMG_1.jpg.xmp'),
+        file('file-2', '/mnt/external/IMG_1.jpg.xmp'),
+      ]);
+      mocks.asset.setFileLocations.mockResolvedValue(2);
+
+      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.setFileLocations).toHaveBeenCalledWith([
+        { id: 'file-1', backendId: 'host', key: 'mnt/external/IMG_1.jpg.xmp' },
+        { id: 'file-2', backendId: 'host', key: 'mnt/external/IMG_1.jpg.xmp' },
+      ]);
+      expect(mocks.logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('should count files whose location already belongs to another file as shared', async () => {
+      mocks.asset.getFilesWithoutLocation.mockResolvedValueOnce([
+        file('file-1', '/data/upload/a.jpg'),
+        file('file-2', '/data/upload/b.jpg'),
+      ]);
+      mocks.asset.setFileLocations.mockResolvedValue(1);
+
+      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('1 asset file(s) whose path is shared'));
     });
   });
 });

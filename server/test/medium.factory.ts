@@ -15,6 +15,7 @@ import {
   AlbumUserRole,
   AssetType,
   AssetVisibility,
+  BuiltinStorageBackend,
   ChecksumAlgorithm,
   MemoryType,
   SourceType,
@@ -209,7 +210,12 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
   }
 
   async newAssetFile(dto: Insertable<AssetFileTable>) {
-    const result = await this.get(AssetRepository).upsertFile(dto);
+    const result = await this.get(AssetRepository).upsertFile({
+      ...dto,
+      backendId: dto.backendId ?? BuiltinStorageBackend.Media,
+      // tests often reuse a path for several files, and a location can only belong to one file
+      key: dto.key ?? newUuid(),
+    });
     return { result };
   }
 

@@ -1,4 +1,6 @@
 import { Kysely } from 'kysely';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { AssetFileType, JobStatus } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -41,6 +43,95 @@ describe(StorageService.name, () => {
       storageMock.readFile.mockResolvedValue(Buffer.from('test content'));
 
       await expect(sut.onBootstrap()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('handleAssetFileLocationBackfill', () => {
+    beforeAll(() => {
+      StorageCore.setMediaLocation('/data');
+    });
+
+    afterAll(() => {
+      StorageCore.reset();
+    });
+
+    it('should assign a location to every file without one', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const insert = (type: AssetFileType, path: string) =>
+        ctx.database
+          .insertInto('asset_file')
+          .values({ assetId: asset.id, type, path })
+          .returning(['id'])
+          .executeTakeFirstOrThrow();
+      const media = await insert(AssetFileType.Preview, '/data/thumbs/user/preview.jpeg');
+      const host = await insert(AssetFileType.Thumbnail, '/mnt/external/thumbnail.webp');
+      const unusable = await insert(AssetFileType.Sidecar, 'relative/photo.jpg.xmp');
+
+      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      const files = await ctx.database
+        .selectFrom('asset_file')
+        .select(['id', 'backendId', 'key'])
+        .where('assetId', '=', asset.id)
+        .execute();
+      expect(files).toEqual(
+        expect.arrayContaining([
+          { id: media.id, backendId: 'media', key: 'thumbs/user/preview.jpeg' },
+          { id: host.id, backendId: 'host', key: 'mnt/external/thumbnail.webp' },
+          { id: unusable.id, backendId: null, key: null },
+        ]),
+      );
+      await expect(ctx.get(AssetRepository).getFilesWithoutLocation({ limit: 10 })).resolves.toEqual([
+        { id: unusable.id, path: 'relative/photo.jpg.xmp' },
+      ]);
+    });
+
+    it('should only assign a shared path under the media location to one file', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user } = await ctx.newUser();
+      const { asset: first } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: second } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.database
+        .insertInto('asset_file')
+        .values([
+          { assetId: first.id, type: AssetFileType.Preview, path: '/data/shared.jpeg' },
+          { assetId: second.id, type: AssetFileType.Preview, path: '/data/shared.jpeg' },
+        ])
+        .execute();
+
+      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      const files = await ctx.database.selectFrom('asset_file').select(['backendId', 'key']).execute();
+      expect(files).toHaveLength(2);
+      expect(files).toEqual(
+        expect.arrayContaining([
+          { backendId: 'media', key: 'shared.jpeg' },
+          { backendId: null, key: null },
+        ]),
+      );
+    });
+
+    it('should assign a shared host path to every file', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user } = await ctx.newUser();
+      const { asset: first } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: second } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.database
+        .insertInto('asset_file')
+        .values([
+          { assetId: first.id, type: AssetFileType.Sidecar, path: '/mnt/external/IMG_1.jpg.xmp' },
+          { assetId: second.id, type: AssetFileType.Sidecar, path: '/mnt/external/IMG_1.jpg.xmp' },
+        ])
+        .execute();
+
+      await expect(sut.handleAssetFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      await expect(ctx.database.selectFrom('asset_file').select(['backendId', 'key']).execute()).resolves.toEqual([
+        { backendId: 'host', key: 'mnt/external/IMG_1.jpg.xmp' },
+        { backendId: 'host', key: 'mnt/external/IMG_1.jpg.xmp' },
+      ]);
     });
   });
 });

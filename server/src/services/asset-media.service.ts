@@ -174,6 +174,7 @@ export class AssetMediaService extends BaseService {
         await this.assetRepository.upsertFile({
           assetId: asset.id,
           path: sidecarFile.originalPath,
+          ...StorageCore.getStorageLocation(sidecarFile.originalPath),
           type: AssetFileType.Sidecar,
         });
         await this.storageRepository.utimes(sidecarFile.originalPath, new Date(), new Date(dto.fileModifiedAt));

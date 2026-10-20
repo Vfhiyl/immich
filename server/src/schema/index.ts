@@ -79,6 +79,7 @@ import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
 import { SmartSearchTable } from 'src/schema/tables/smart-search.table.js';
 import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
+import { StorageBackendTable } from 'src/schema/tables/storage-backend.table.js';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
 import { SystemMetadataTable } from 'src/schema/tables/system-metadata.table.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
@@ -150,6 +151,7 @@ export class ImmichDatabase {
     SmartSearchTable,
     StackTable,
     StackAuditTable,
+    StorageBackendTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
@@ -282,6 +284,8 @@ export interface DB {
 
   stack: StackTable;
   stack_audit: StackAuditTable;
+
+  storage_backend: StorageBackendTable;
 
   system_metadata: SystemMetadataTable;
 

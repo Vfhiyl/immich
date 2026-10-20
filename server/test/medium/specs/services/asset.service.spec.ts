@@ -1,4 +1,5 @@
 import { Kysely } from 'kysely';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { AssetFileType, AssetMetadataKey, AssetStatus, JobName, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -42,6 +43,7 @@ const setup = (db?: Kysely<DB>) => {
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
+  StorageCore.setMediaLocation('/data');
 });
 
 describe(AssetService.name, () => {

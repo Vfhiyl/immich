@@ -1942,6 +1942,8 @@ describe(MetadataService.name, () => {
         assetId: asset.id,
         type: AssetFileType.Sidecar,
         path: '/path/to/IMG_123.jpg.xmp',
+        backendId: 'host',
+        key: 'path/to/IMG_123.jpg.xmp',
       });
     });
 
@@ -1961,6 +1963,8 @@ describe(MetadataService.name, () => {
         assetId: asset.id,
         type: AssetFileType.Sidecar,
         path: '/path/to/IMG_123.xmp',
+        backendId: 'host',
+        key: 'path/to/IMG_123.xmp',
       });
     });
 

@@ -4,6 +4,7 @@ import { DateTime, Duration } from 'luxon';
 import type { AssetFile } from 'src/database.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { JobItem, JobOf } from 'src/types.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
 import { AssetResponseDto, SanitizedAssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
@@ -281,9 +282,11 @@ export class AssetService extends BaseService {
     }
 
     await this.storageRepository.copyFile(sourceFile.path, `${targetAsset.originalPath}.xmp`);
+    const sidecarPath = `${targetAsset.originalPath}.xmp`;
     await this.assetRepository.upsertFile({
       assetId: targetAsset.id,
-      path: `${targetAsset.originalPath}.xmp`,
+      path: sidecarPath,
+      ...StorageCore.getStorageLocation(sidecarPath),
       type: AssetFileType.Sidecar,
     });
     await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: { id: targetAsset.id } });

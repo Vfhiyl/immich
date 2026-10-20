@@ -1,9 +1,10 @@
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { VideoInterfaces } from 'src/types.js';
 import { StorageAsset } from 'src/database.js';
 import {
   AssetFileType,
   AssetPathType,
+  BuiltinStorageBackend,
   ImageFormat,
   PathType,
   PersonPathType,
@@ -12,6 +13,7 @@ import {
   UserPathType,
 } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { assertValidBlobKey } from 'src/repositories/blob-store.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -21,6 +23,12 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { getAssetFile } from 'src/utils/asset.util.js';
 import { getConfig } from 'src/utils/config.js';
+
+/** Where a file lives: a storage backend and the key of the file within it */
+export interface StorageLocation {
+  backendId: string;
+  key: string;
+}
 
 export interface MoveRequest {
   entityId: string;
@@ -147,6 +155,29 @@ export class StorageCore {
 
   static isAndroidMotionPath(originalPath: string) {
     return originalPath.startsWith(StorageCore.getBaseFolder(StorageFolder.EncodedVideo));
+  }
+
+  /**
+   * The storage location of a file given by its absolute path: files under the media location belong to the media
+   * backend with a key relative to it, so the key survives a change of media location; anything else (e.g. sidecars
+   * next to external library files) belongs to the host backend.
+   */
+  static getStorageLocation(path: string): StorageLocation {
+    if (!isAbsolute(path)) {
+      throw new Error(`Expected an absolute path: ${path}`);
+    }
+
+    const resolvedPath = resolve(path);
+    const relativePath = relative(resolve(StorageCore.getMediaLocation()), resolvedPath);
+    const isWithinMedia =
+      relativePath !== '' && relativePath !== '..' && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath);
+
+    const location = isWithinMedia
+      ? { backendId: BuiltinStorageBackend.Media, key: relativePath.split(sep).join('/') }
+      : { backendId: BuiltinStorageBackend.Host, key: resolvedPath.slice(1).split(sep).join('/') };
+
+    assertValidBlobKey(location.key);
+    return location;
   }
 
   static isImmichPath(path: string) {
@@ -334,7 +365,12 @@ export class StorageCore {
       case AssetFileType.Preview:
       case AssetFileType.Sidecar:
       case AssetPathType.EncodedVideo: {
-        return this.assetRepository.upsertFile({ assetId: id, type: pathType as AssetFileType, path: newPath });
+        return this.assetRepository.upsertFile({
+          assetId: id,
+          type: pathType as AssetFileType,
+          path: newPath,
+          ...StorageCore.getStorageLocation(newPath),
+        });
       }
 
       case PersonPathType.Face: {

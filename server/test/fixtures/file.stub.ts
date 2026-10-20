@@ -16,7 +16,7 @@ export const fileStub = {
   }),
   photoSidecar: Object.freeze({
     uuid: 'photo-sidecar',
-    originalPath: 'fake_path/photo1.jpeg.xmp',
+    originalPath: '/data/fake_path/photo1.jpeg.xmp',
     originalName: 'photo1.jpeg.xmp',
     checksum: Buffer.from('photo-sidecar file hash', 'utf8'),
     size: 96,

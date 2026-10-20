@@ -370,6 +370,16 @@ export enum StorageFolder {
 
 export const StorageFolderSchema = z.enum(StorageFolder).describe('Storage folder').meta({ id: 'StorageFolder' });
 
+/** Storage backends that always exist. Files under the media location use `Media`; any other absolute path uses `Host`. */
+export enum BuiltinStorageBackend {
+  Media = 'media',
+  Host = 'host',
+}
+
+export enum StorageBackendDriver {
+  Local = 'local',
+}
+
 export enum SystemMetadataKey {
   MediaLocation = 'MediaLocation',
   ReverseGeocodingState = 'reverse-geocoding-state',
@@ -887,6 +897,7 @@ export enum JobName {
   AssetExtractMetadataQueueAll = 'AssetExtractMetadataQueueAll',
   AssetExtractMetadata = 'AssetExtractMetadata',
   AssetFileMigration = 'AssetFileMigration',
+  AssetFileLocationBackfill = 'AssetFileLocationBackfill',
   AssetGenerateThumbnailsQueueAll = 'AssetGenerateThumbnailsQueueAll',
   AssetGenerateThumbnails = 'AssetGenerateThumbnails',
 

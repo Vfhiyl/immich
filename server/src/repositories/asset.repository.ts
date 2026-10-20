@@ -24,6 +24,7 @@ import {
   AssetStatus,
   AssetType,
   AssetVisibility,
+  BuiltinStorageBackend,
   CalendarHeatmapType,
 } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
@@ -57,6 +58,12 @@ import {
 import { globToPostgresRegex } from 'src/utils/misc.js';
 
 export type AssetStats = Record<AssetType, number>;
+
+/** A file to insert or update; the storage location is required so every new row is addressable by backend and key */
+export type AssetFileUpsert = Pick<
+  Insertable<AssetFileTable>,
+  'assetId' | 'path' | 'type' | 'isEdited' | 'isProgressive' | 'isTransparent'
+> & { backendId: string; key: string };
 
 export interface BoundingBox {
   west: number;
@@ -1013,29 +1020,21 @@ export class AssetRepository {
     return { fieldName: 'createdAt', items };
   }
 
-  async upsertFile(
-    file: Pick<
-      Insertable<AssetFileTable>,
-      'assetId' | 'path' | 'type' | 'isEdited' | 'isProgressive' | 'isTransparent'
-    >,
-  ): Promise<void> {
+  async upsertFile(file: AssetFileUpsert): Promise<void> {
     await this.db
       .insertInto('asset_file')
       .values(file)
       .onConflict((oc) =>
         oc.columns(['assetId', 'type', 'isEdited']).doUpdateSet((eb) => ({
           path: eb.ref('excluded.path'),
+          backendId: eb.ref('excluded.backendId'),
+          key: eb.ref('excluded.key'),
         })),
       )
       .execute();
   }
 
-  async upsertFiles(
-    files: Pick<
-      Insertable<AssetFileTable>,
-      'assetId' | 'path' | 'type' | 'isEdited' | 'isProgressive' | 'isTransparent'
-    >[],
-  ): Promise<void> {
+  async upsertFiles(files: AssetFileUpsert[]): Promise<void> {
     if (files.length === 0) {
       return;
     }
@@ -1046,11 +1045,65 @@ export class AssetRepository {
       .onConflict((oc) =>
         oc.columns(['assetId', 'type', 'isEdited']).doUpdateSet((eb) => ({
           path: eb.ref('excluded.path'),
+          backendId: eb.ref('excluded.backendId'),
+          key: eb.ref('excluded.key'),
           isProgressive: eb.ref('excluded.isProgressive'),
           isTransparent: eb.ref('excluded.isTransparent'),
         })),
       )
       .execute();
+  }
+
+  @GenerateSql({ params: [{ afterId: DummyValue.UUID, limit: 1000 }] })
+  getFilesWithoutLocation({ afterId, limit }: { afterId?: string; limit: number }) {
+    return this.db
+      .selectFrom('asset_file')
+      .select(['id', 'path'])
+      .where('backendId', 'is', null)
+      .$if(afterId !== undefined, (qb) => qb.where('id', '>', asUuid(afterId!)))
+      .orderBy('id')
+      .limit(limit)
+      .execute();
+  }
+
+  @GenerateSql()
+  async hasFilesWithoutLocation(): Promise<boolean> {
+    const file = await this.db
+      .selectFrom('asset_file')
+      .select('id')
+      .where('backendId', 'is', null)
+      .limit(1)
+      .executeTakeFirst();
+    return file !== undefined;
+  }
+
+  /**
+   * Set the storage location of files that do not have one yet. A location on a backend that Immich owns is skipped
+   * when it already belongs to another file, so two files never share such a blob. Returns the number of files updated.
+   */
+  @GenerateSql({ params: [[{ id: DummyValue.UUID, backendId: DummyValue.STRING, key: DummyValue.STRING }]] })
+  async setFileLocations(files: { id: string; backendId: string; key: string }[]): Promise<number> {
+    if (files.length === 0) {
+      return 0;
+    }
+
+    const rows = sql.join(files.map(({ id, backendId, key }) => sql`(${id}::uuid, ${backendId}, ${key})`));
+    const result = await sql`
+      update "asset_file"
+      set "backendId" = "location"."backendId", "key" = "location"."key"
+      from (values ${rows}) as "location" ("id", "backendId", "key")
+      where "asset_file"."id" = "location"."id"
+        and "asset_file"."backendId" is null
+        and (
+          "location"."backendId" = ${BuiltinStorageBackend.Host}
+          or not exists (
+            select from "asset_file" as "other"
+            where "other"."backendId" = "location"."backendId" and "other"."key" = "location"."key"
+          )
+        )
+    `.execute(this.db);
+
+    return Number(result.numAffectedRows ?? 0);
   }
 
   async deleteFile({

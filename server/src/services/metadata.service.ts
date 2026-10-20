@@ -464,7 +464,12 @@ export class MetadataService extends BaseService {
 
     await (sidecarPath === null
       ? this.assetRepository.deleteFile({ assetId: asset.id, type: AssetFileType.Sidecar })
-      : this.assetRepository.upsertFile({ assetId: asset.id, type: AssetFileType.Sidecar, path: sidecarPath }));
+      : this.assetRepository.upsertFile({
+          assetId: asset.id,
+          type: AssetFileType.Sidecar,
+          path: sidecarPath,
+          ...StorageCore.getStorageLocation(sidecarPath),
+        }));
 
     return JobStatus.Success;
   }
@@ -525,7 +530,12 @@ export class MetadataService extends BaseService {
     await this.metadataRepository.writeTags(sidecarPath, exif);
 
     if (asset.files.length === 0) {
-      await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath });
+      await this.assetRepository.upsertFile({
+        assetId: id,
+        type: AssetFileType.Sidecar,
+        path: sidecarPath,
+        ...StorageCore.getStorageLocation(sidecarPath),
+      });
     }
 
     await this.assetRepository.unlockProperties(asset.id, lockedProperties);

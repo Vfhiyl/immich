@@ -28,6 +28,10 @@ export class AssetFileFactory {
       isProgressive: false,
       isTransparent: false,
       isEdited,
+      backendId: null,
+      key: null,
+      size: null,
+      checksum: null,
       ...dto,
     });
   }

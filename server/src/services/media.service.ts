@@ -631,6 +631,7 @@ export class MediaService extends BaseService {
       assetId: asset.id,
       type: AssetFileType.EncodedVideo,
       path: output,
+      ...StorageCore.getStorageLocation(output),
       isEdited: false,
     });
 
@@ -807,7 +808,9 @@ export class MediaService extends BaseService {
     }
 
     if (toUpsert.length > 0) {
-      await this.assetRepository.upsertFiles(toUpsert);
+      await this.assetRepository.upsertFiles(
+        toUpsert.map((file) => ({ ...file, ...StorageCore.getStorageLocation(file.path) })),
+      );
     }
 
     if (toDelete.size > 0) {
