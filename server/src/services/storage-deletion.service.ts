@@ -182,6 +182,10 @@ export class StorageDeletionService extends BaseService {
       throw new BadRequestException('The original is in use again');
     }
 
+    const withoutCopies = await this.deleteCopies([row], new Date());
+    if (withoutCopies.length === 0) {
+      throw new InternalServerErrorException('A replica did not delete its copy of the original');
+    }
     const { failed } = await this.storageBackendRepository.getDeletionStore(row.backendId).deleteMany([row.key]);
     if (failed.length > 0) {
       throw new InternalServerErrorException('The storage backend did not delete the original');
@@ -210,7 +214,10 @@ export class StorageDeletionService extends BaseService {
     }
     await this.storageDeletionRepository.remove(stale.map(({ id }) => id));
 
-    for (const [backendId, files] of Map.groupBy(deletable, ({ backendId }) => backendId)) {
+    // a file goes from its backend only once every copy of it is gone, so that nothing keeps a file nobody knows of
+    const withoutCopies = await this.deleteCopies(deletable, now);
+
+    for (const [backendId, files] of Map.groupBy(withoutCopies, ({ backendId }) => backendId)) {
       try {
         const store = this.storageBackendRepository.getDeletionStore(backendId);
         for (const batch of chunk(files, store.limits.maxDeleteBatch)) {
@@ -237,6 +244,68 @@ export class StorageDeletionService extends BaseService {
         );
       }
     }
+  }
+
+  /**
+   * Delete the copies of files from the replicas; returns the files without copies left. A replica may refuse while a
+   * copy is locked (object lock), and the file waits for the next attempt. Copies on a backend that is no longer
+   * configured as a replica cannot be deleted, and are forgotten.
+   */
+  private async deleteCopies<T extends { id: string; backendId: string; key: string }>(
+    files: T[],
+    now: Date,
+  ): Promise<T[]> {
+    const copies = await this.storageReplicaRepository.getCopiesOf(files);
+    if (copies.length === 0) {
+      return files;
+    }
+
+    const replicas = new Set(
+      this.storageBackendRepository.getReplicaSources().map(({ replicaBackendId }) => replicaBackendId),
+    );
+    const kept = new Set<string>();
+    const groups = Map.groupBy(
+      copies,
+      ({ replicaBackendId, sourceBackendId }) => `${replicaBackendId}/${sourceBackendId}`,
+    );
+    for (const group of groups.values()) {
+      const { replicaBackendId, sourceBackendId } = group[0];
+      if (!replicas.has(replicaBackendId)) {
+        this.logger.warn(
+          `Forgetting ${group.length} copies on ${replicaBackendId}, which is no longer configured as a replica`,
+        );
+        await this.storageReplicaRepository.remove(group.map(({ id }) => id));
+        continue;
+      }
+
+      try {
+        const store = this.storageBackendRepository.getReplicaStore(replicaBackendId, sourceBackendId, {
+          deletion: true,
+        });
+        for (const batch of chunk(group, store.limits.maxDeleteBatch)) {
+          const { failed } = await store.deleteMany(batch.map(({ key }) => key));
+          const isFailed = new Set(failed);
+          const [notDeleted, deleted] = partition(batch, ({ key }) => isFailed.has(key));
+          await this.storageReplicaRepository.remove(deleted.map(({ id }) => id));
+          for (const { key } of notDeleted) {
+            kept.add(`${sourceBackendId}:${key}`);
+          }
+        }
+      } catch (error) {
+        this.logger.warn(`Unable to delete copies from replica ${replicaBackendId}: ${error}`);
+        for (const { key } of group) {
+          kept.add(`${sourceBackendId}:${key}`);
+        }
+      }
+    }
+
+    const [waiting, deletable] = partition(files, ({ backendId, key }) => kept.has(`${backendId}:${key}`));
+    await this.storageDeletionRepository.recordFailure(
+      waiting.map(({ id }) => id),
+      'A replica did not delete its copy of the file',
+      now,
+    );
+    return deletable;
   }
 
   private async pause(state: Required<Pick<StorageDeletionState, 'pausedAt' | 'dueOriginals' | 'limit'>>) {

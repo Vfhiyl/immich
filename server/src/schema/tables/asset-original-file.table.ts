@@ -1,4 +1,6 @@
 import {
+  AfterInsertTrigger,
+  AfterUpdateTrigger,
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
@@ -9,6 +11,7 @@ import {
   Timestamp,
 } from '@immich/sql-tools';
 import { BuiltinStorageBackend } from 'src/enum.js';
+import { storage_replica_register } from 'src/schema/functions.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { StorageBackendTable } from 'src/schema/tables/storage-backend.table.js';
 
@@ -17,6 +20,19 @@ import { StorageBackendTable } from 'src/schema/tables/storage-backend.table.js'
  * not touch the asset row, which would make every client sync the asset again.
  */
 @Table('asset_original_file')
+// every original that is recorded gets a copy on each replica of its backend, see storage_replica_source
+@AfterInsertTrigger({
+  name: 'asset_original_file_after_insert',
+  scope: 'statement',
+  referencingNewTableAs: 'recorded_rows',
+  function: storage_replica_register,
+})
+@AfterUpdateTrigger({
+  name: 'asset_original_file_after_update',
+  scope: 'statement',
+  referencingNewTableAs: 'recorded_rows',
+  function: storage_replica_register,
+})
 // see asset_file: blobs that Immich owns are never shared, host files may be
 @Index({
   name: 'asset_original_file_backendId_key_idx',

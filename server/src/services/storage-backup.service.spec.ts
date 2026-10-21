@@ -34,6 +34,30 @@ describe(StorageBackupService.name, () => {
       undefined,
       { keepLast },
     );
+  const configureWithReplica = (keepLast = 14) =>
+    mocks.storageBackend.configure(
+      [
+        {
+          id: 'backups',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Backup,
+          root: join(root, 'bucket'),
+          encrypted: true,
+        },
+        {
+          id: 'copy',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Replica,
+          root: join(root, 'replica'),
+          encrypted: true,
+          replicaOf: [StorageBackendRole.Backup],
+        },
+      ],
+      keys,
+      undefined,
+      { keepLast },
+    );
+  const replicaFolder = () => join(root, 'replica', 'backups');
   const writeBackups = async (...names: string[]) => {
     await fs.mkdir(backupsFolder(), { recursive: true });
     for (const name of names) {
@@ -131,6 +155,51 @@ describe(StorageBackupService.name, () => {
     await sut.handleStoreDatabaseBackups();
 
     await expect(storedNames()).resolves.toEqual([backupName(3), backupName(2), backupName(1)]);
+  });
+
+  describe('replicas', () => {
+    it('should copy the backups to the folder of the backend on each replica, as they are stored', async () => {
+      configureWithReplica();
+      await writeBackups(backupName(1), backupName(2));
+
+      await sut.handleStoreDatabaseBackups();
+
+      const objects = await fs.readdir(join(root, 'bucket'));
+      await expect(fs.readdir(replicaFolder()).then((keys) => keys.toSorted())).resolves.toEqual(objects.toSorted());
+      for (const key of objects) {
+        const stored = await fs.readFile(join(root, 'bucket', key));
+        await expect(fs.readFile(join(replicaFolder(), key))).resolves.toEqual(stored);
+      }
+    });
+
+    it('should copy what a replica is missing, and keep as many backups there', async () => {
+      configureWithReplica(2);
+      await writeBackups(backupName(1));
+      await sut.handleStoreDatabaseBackups();
+      await fs.rm(replicaFolder(), { recursive: true });
+
+      await writeBackups(backupName(2), backupName(3));
+      await sut.handleStoreDatabaseBackups();
+
+      const store = mocks.storageBackend.getEncryptedReplicaStore('copy', 'backups');
+      const names = [];
+      for await (const { key } of store.list()) {
+        const { manifest } = await store.describe(key);
+        names.push(String(manifest.filename));
+      }
+      expect(names.toSorted((a, b) => a.localeCompare(b))).toEqual([backupName(2), backupName(3)]);
+    });
+
+    it('should keep storing backups when a replica fails', async () => {
+      configureWithReplica();
+      await fs.mkdir(join(root, 'replica'), { recursive: true });
+      // a file where the folder of the backend should be
+      await fs.writeFile(replicaFolder(), 'in the way');
+      await writeBackups(backupName(1));
+
+      await expect(sut.handleStoreDatabaseBackups()).resolves.toBe(JobStatus.Success);
+      await expect(storedNames()).resolves.toEqual([backupName(1)]);
+    });
   });
 
   it('should fetch a stored backup into the backups folder, decrypted, to restore it', async () => {

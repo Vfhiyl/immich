@@ -37,6 +37,7 @@ import { StackController } from 'src/controllers/stack.controller.js';
 import { StorageBackupAdminController } from 'src/controllers/storage-backup-admin.controller.js';
 import { StorageCheckAdminController } from 'src/controllers/storage-check-admin.controller.js';
 import { StorageDeletionAdminController } from 'src/controllers/storage-deletion-admin.controller.js';
+import { StorageReplicaAdminController } from 'src/controllers/storage-replica-admin.controller.js';
 import { SyncController } from 'src/controllers/sync.controller.js';
 import { SystemConfigController } from 'src/controllers/system-config.controller.js';
 import { SystemMetadataController } from 'src/controllers/system-metadata.controller.js';
@@ -88,6 +89,7 @@ export const controllers = [
   StackController,
   StorageBackupAdminController,
   StorageCheckAdminController,
+  StorageReplicaAdminController,
   StorageDeletionAdminController,
   SyncController,
   SystemConfigController,

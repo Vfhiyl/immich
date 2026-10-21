@@ -1,10 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import {
   Api,
   ImmichServer,
+  LocalBackend,
   S3Service,
   TestEnvironment,
   eventually,
@@ -248,14 +249,39 @@ describe('storage backends on an S3 service', () => {
   let photo: Buffer;
   let assetId: string;
 
+  const backends = ({ originalsPrefix = 'originals/', withReplica = true } = {}): LocalBackend[] => {
+    const backends: LocalBackend[] = [
+      { id: 'originals', role: 'originals', s3: { service: s3, prefix: originalsPrefix } },
+      { id: 'derived', role: 'derived', s3: { service: s3, prefix: 'derived/' } },
+      { id: 'backups', role: 'backup', s3: { service: s3, prefix: 'backups/' } },
+    ];
+    if (withReplica) {
+      backends.push({
+        id: 'replica',
+        role: 'replica',
+        replicaOf: ['originals', 'backup'],
+        s3: { service: s3, prefix: 'replica/' },
+      });
+    }
+    return backends;
+  };
+  /** Where the replica keeps the copies of a backend */
+  const replicaFolder = (backendId: string) => join(environment.backendRoot('replica'), backendId);
+  /** The copies of a backend on the replica, without the probes of a startup check while it took the backend's place */
+  const listReplica = async (backendId: string) => {
+    let entries: string[] = [];
+    try {
+      entries = await readdir(replicaFolder(backendId));
+    } catch {
+      // the service removes a folder once its last object is gone
+    }
+    return entries.filter((name) => name !== '.immich-probe').toSorted((a, b) => a.localeCompare(b));
+  };
+
   beforeAll(async () => {
     environment = await TestEnvironment.create();
     s3 = await S3Service.start(environment);
-    await environment.writeBackends([
-      { id: 'originals', role: 'originals', s3: { service: s3, prefix: 'originals/' } },
-      { id: 'derived', role: 'derived', s3: { service: s3, prefix: 'derived/' } },
-      { id: 'backups', role: 'backup', s3: { service: s3, prefix: 'backups/' } },
-    ]);
+    await environment.writeBackends(backends());
     server = await ImmichServer.start(environment);
     api = await Api.signUpAdmin();
 
@@ -508,6 +534,43 @@ describe('storage backends on an S3 service', () => {
     expect(local.backups.map(({ filename }) => filename)).toContain(`uploaded-${backup.filename}`);
   });
 
+  it('should copy originals and database backups to the replica, as they are stored', async () => {
+    type Replicas = { replicas: Array<{ id: string; sourceFiles: number; copied: number; pending: number }> };
+    const original = await getOriginal(environment, assetId);
+    await eventually(
+      async () => {
+        const { body } = await api.json<Replicas>('/admin/storage/replicas');
+        expect(body.replicas).toEqual([expect.objectContaining({ id: 'replica', pending: 0, failing: 0 })]);
+        // and the copies of deleted originals, which are kept as long as the originals
+        expect(body.replicas[0].copied).toBeGreaterThanOrEqual(body.replicas[0].sourceFiles);
+        await expect(readFile(join(replicaFolder('originals'), original.key))).resolves.toEqual(
+          await readFile(join(environment.backendRoot('originals'), original.key)),
+        );
+      },
+      { timeout: 60_000 },
+    );
+
+    // copied when they are stored, with the same keys
+    const stored = await environment.listBackend('backups');
+    expect(stored.length).toBeGreaterThan(0);
+    await expect(listReplica('backups')).resolves.toEqual(stored);
+  }, 90_000);
+
+  it('should read the originals from the replica once it takes the place of the lost originals backend', async () => {
+    await server.stop();
+    // the backend points at the folder the replica keeps its copies in
+    await environment.writeBackends(backends({ originalsPrefix: 'replica/originals/', withReplica: false }), {
+      keepMasterKey: true,
+    });
+    server = await ImmichServer.start(environment);
+
+    await expect(api.download(`/assets/${assetId}/original`)).resolves.toEqual({ status: 200, body: photo });
+
+    await server.stop();
+    await environment.writeBackends(backends(), { keepMasterKey: true });
+    server = await ImmichServer.start(environment);
+  });
+
   it('should keep reading files after the master key was rotated, and encrypt new files with the new key', async () => {
     const before = await getOriginal(environment, assetId);
     const output = await runEncryptionTool(['generate-key', '--rotate', environment.masterKeyFile]);
@@ -631,6 +694,7 @@ describe('storage backends on an S3 service', () => {
         await expect(environment.query(`select key from storage_deletion`)).resolves.toEqual([]);
         await expect(environment.listBackend('originals')).resolves.toEqual([]);
         await expect(environment.listBackend('derived')).resolves.toEqual([]);
+        await expect(listReplica('originals')).resolves.toEqual([]);
         await expect(environment.listLocalCopies()).resolves.toEqual([]);
         await expect(environment.listLocalCopies({ cache: true })).resolves.toEqual([]);
       },

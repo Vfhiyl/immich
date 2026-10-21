@@ -271,6 +271,8 @@ export class QueueService extends BaseService {
       { name: JobName.LocalCopyCleanup },
       { name: JobName.StorageDeletionRun },
       { name: JobName.UploadSessionCleanup },
+      // runs every two weeks, which it keeps track of itself
+      { name: JobName.StorageReplicaReconcile },
     ];
 
     if (config.nightlyTasks.databaseCleanup) {

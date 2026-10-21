@@ -11,6 +11,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import {
+  ReplicatedRole,
   StorageBackendConfig,
   StorageBackendsConfig,
   StorageBackendsConfigSchema,
@@ -167,6 +168,8 @@ export class StorageBackendRepository {
   private decrypting = new Map<string, EncryptedBlobStore>();
   private configs = new Map<string, StorageBackendConfig>();
   private deletionStores = new Map<string, BlobStore>();
+  /** The folders replicas keep the copies of each backend in, to write and to delete with */
+  private replicaStores = new Map<string, { write: BlobStore; deletion: BlobStore }>();
   private originalsDeletionDelayDays = DEFAULT_DELETION_DELAY_DAYS;
   private databaseBackupsKeepLast = DEFAULT_DATABASE_BACKUPS_KEEP_LAST;
   private roles = new Map<StorageBackendRole, string>();
@@ -224,6 +227,7 @@ export class StorageBackendRepository {
     this.decrypting.clear();
     this.configs = new Map(backends.map((backend) => [backend.id, backend]));
     this.deletionStores.clear();
+    this.replicaStores.clear();
     this.originalsDeletionDelayDays = delayDays;
     this.databaseBackupsKeepLast = keepLast;
   }
@@ -260,6 +264,69 @@ export class StorageBackendRepository {
       this.deletionStores.set(backendId, store);
     }
     return store;
+  }
+
+  /** Which backend each replica copies, for every role it copies */
+  getReplicaSources(): Array<{ replicaBackendId: string; sourceBackendId: string; role: ReplicatedRole }> {
+    const sources = [];
+    for (const { id, replicaOf } of this.configs.values()) {
+      for (const role of replicaOf ?? []) {
+        const sourceBackendId = this.getBackendFor(role);
+        if (sourceBackendId) {
+          sources.push({ replicaBackendId: id, sourceBackendId, role });
+        }
+      }
+    }
+    return sources;
+  }
+
+  /**
+   * The folder of a replica that holds the copies of a backend, named after it: copies have the keys of their files
+   * there, so the replica can take the place of the backend by configuring the backend with that folder. `deletion`
+   * gives the store with the deletion credentials of the replica, if it has its own.
+   */
+  getReplicaStore(replicaBackendId: string, sourceBackendId: string, { deletion = false } = {}): BlobStore {
+    const id = `${replicaBackendId}/${sourceBackendId}`;
+    let stores = this.replicaStores.get(id);
+    if (!stores) {
+      const config = this.configs.get(replicaBackendId);
+      if (config?.role !== StorageBackendRole.Replica) {
+        throw new Error(`Storage backend ${replicaBackendId} is not a replica`);
+      }
+      stores = this.createReplicaStores(config, sourceBackendId);
+      this.replicaStores.set(id, stores);
+    }
+    return deletion ? stores.deletion : stores.write;
+  }
+
+  /** The folder of a replica that holds the copies of an encrypted backend, which reads what copies describe themselves with */
+  getEncryptedReplicaStore(replicaBackendId: string, sourceBackendId: string): EncryptedBlobStore {
+    if (!this.keys) {
+      throw new Error(`Files on storage backend ${sourceBackendId} are encrypted, but no master key is configured`);
+    }
+    return new EncryptedBlobStore(this.getReplicaStore(replicaBackendId, sourceBackendId), this.keys);
+  }
+
+  private createReplicaStores(config: StorageBackendConfig, sourceBackendId: string) {
+    switch (config.driver) {
+      case StorageBackendDriver.Local: {
+        const store = new LocalBlobStore(join(config.root, sourceBackendId));
+        return { write: store, deletion: store };
+      }
+
+      case StorageBackendDriver.S3: {
+        const prefix = `${config.prefix}${sourceBackendId}/`;
+        const write = new S3BlobStore(createS3Client(config), config.bucket, prefix);
+        const deletion = config.deletionCredentials
+          ? new S3BlobStore(
+              createS3Client({ ...config, credentials: config.deletionCredentials }),
+              config.bucket,
+              prefix,
+            )
+          : write;
+        return { write, deletion };
+      }
+    }
   }
 
   /** The configured backends, with their role */

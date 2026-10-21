@@ -31,6 +31,13 @@ export const newStorageBackendRepositoryMock = (): Mocked<RepositoryInterface<St
     getBackendFor: vitest.fn((role) => real.getBackendFor(role)),
     hasConfiguredBackends: vitest.fn(() => real.hasConfiguredBackends()),
     getConfiguredBackends: vitest.fn(() => real.getConfiguredBackends()),
+    getReplicaSources: vitest.fn(() => real.getReplicaSources()),
+    getEncryptedReplicaStore: vitest.fn((replicaBackendId, sourceBackendId) =>
+      real.getEncryptedReplicaStore(replicaBackendId, sourceBackendId),
+    ),
+    getReplicaStore: vitest.fn((replicaBackendId, sourceBackendId, options) =>
+      real.getReplicaStore(replicaBackendId, sourceBackendId, options),
+    ),
     createOutput: vitest.fn((role, path, options) => real.createOutput(role, path, options)),
     storeFile: vitest.fn((role, path, options) => real.storeFile(role, path, options)),
     keepLocalCopy: vitest.fn((stored, path) => real.keepLocalCopy(stored, path)),

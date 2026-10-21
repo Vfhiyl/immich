@@ -386,6 +386,8 @@ export enum StorageBackendRole {
   Originals = 'originals',
   Derived = 'derived',
   Backup = 'backup',
+  /** Holds copies of the files of other backends, which are only read when a backend is lost */
+  Replica = 'replica',
 }
 
 export enum SystemMetadataKey {
@@ -672,6 +674,8 @@ export enum StorageCheckKind {
   Reconcile = 'reconcile',
   /** Reading files back, decrypting them and comparing their checksum */
   Verify = 'verify',
+  /** Listing each replica and comparing it with the copies that are recorded */
+  ReplicaReconcile = 'replica_reconcile',
 }
 
 export enum StorageCheckStatus {
@@ -951,6 +955,8 @@ export enum JobName {
   DatabaseBackupStore = 'DatabaseBackupStore',
   StorageReconcile = 'StorageReconcile',
   StorageVerify = 'StorageVerify',
+  StorageReplicate = 'StorageReplicate',
+  StorageReplicaReconcile = 'StorageReplicaReconcile',
   AssetGenerateThumbnailsQueueAll = 'AssetGenerateThumbnailsQueueAll',
   AssetGenerateThumbnails = 'AssetGenerateThumbnails',
 
@@ -1084,6 +1090,7 @@ export enum DatabaseLock {
   HlsSessionCleanup = 850,
   // far from upstream values so that new upstream locks do not collide
   StorageBackends = 9100,
+  StorageReplication = 9101,
 }
 
 export enum MaintenanceAction {

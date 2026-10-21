@@ -39,6 +39,7 @@ describe(QueueService.name, () => {
         { name: JobName.LocalCopyCleanup },
         { name: JobName.StorageDeletionRun },
         { name: JobName.UploadSessionCleanup },
+        { name: JobName.StorageReplicaReconcile },
         { name: JobName.AssetDeleteCheck },
         { name: JobName.UserDeleteCheck },
         { name: JobName.PersonCleanup },

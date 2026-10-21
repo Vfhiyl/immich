@@ -90,6 +90,7 @@ import {
 } from 'src/schema/tables/storage-check.table.js';
 import { StorageDeletionTable } from 'src/schema/tables/storage-deletion.table.js';
 import { StorageMasterKeyTable } from 'src/schema/tables/storage-master-key.table.js';
+import { StorageReplicaCopyTable, StorageReplicaSourceTable } from 'src/schema/tables/storage-replica.table.js';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
 import { SystemMetadataTable } from 'src/schema/tables/system-metadata.table.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
@@ -171,6 +172,8 @@ export class ImmichDatabase {
     StorageIssueTable,
     StorageListingTable,
     StorageVerificationTable,
+    StorageReplicaSourceTable,
+    StorageReplicaCopyTable,
     StorageDeletionTable,
     UploadSessionTable,
     StorageMasterKeyTable,
@@ -315,6 +318,8 @@ export interface DB {
   storage_issue: StorageIssueTable;
   storage_listing: StorageListingTable;
   storage_verification: StorageVerificationTable;
+  storage_replica_source: StorageReplicaSourceTable;
+  storage_replica_copy: StorageReplicaCopyTable;
   storage_deletion: StorageDeletionTable;
   upload_session: UploadSessionTable;
   storage_master_key: StorageMasterKeyTable;

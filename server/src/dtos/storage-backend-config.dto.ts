@@ -3,6 +3,13 @@ import { BuiltinStorageBackend, StorageBackendDriver, StorageBackendRole } from 
 
 const builtinIds = new Set<string>(Object.values(BuiltinStorageBackend));
 
+/** The roles whose backends a replica can copy */
+export const REPLICATED_ROLES = [StorageBackendRole.Originals, StorageBackendRole.Backup] as const;
+export type ReplicatedRole = (typeof REPLICATED_ROLES)[number];
+
+/** For a backend with the role replica: the roles whose backends it holds copies of */
+const ReplicaOfSchema = z.array(z.enum(REPLICATED_ROLES)).min(1).optional();
+
 /** Ids are recorded with every file, so they must stay the same for as long as files use the backend */
 const BackendIdSchema = z
   .string()
@@ -21,6 +28,7 @@ const LocalBackendSchema = z
     root: z.string().regex(/^\//, 'Must be an absolute path'),
     /** Whether new files are encrypted; files keep how they were written, whatever this says later */
     encrypted: z.boolean().default(false),
+    replicaOf: ReplicaOfSchema,
   })
   .strict();
 
@@ -67,6 +75,7 @@ const S3BackendSchema = z
     deletionCredentials: S3CredentialsSchema.optional(),
     /** Whether new files are encrypted, by default yes, since the files leave the server */
     encrypted: z.boolean().default(true),
+    replicaOf: ReplicaOfSchema,
   })
   .strict();
 
@@ -119,7 +128,7 @@ export const StorageBackendsConfigSchema = z
       }
       ids.add(backend.id);
 
-      if (roles.has(backend.role)) {
+      if (roles.has(backend.role) && backend.role !== StorageBackendRole.Replica) {
         context.addIssue({
           code: 'custom',
           path: ['backends', index, 'role'],
@@ -137,12 +146,49 @@ export const StorageBackendsConfigSchema = z
         });
       }
 
+      if (backend.role === StorageBackendRole.Replica && !backend.replicaOf) {
+        context.addIssue({
+          code: 'custom',
+          path: ['backends', index, 'replicaOf'],
+          message: 'A replica needs the roles whose backends it copies (replicaOf)',
+        });
+      }
+      if (backend.role !== StorageBackendRole.Replica && backend.replicaOf) {
+        context.addIssue({
+          code: 'custom',
+          path: ['backends', index, 'replicaOf'],
+          message: 'Only a storage backend with the role replica copies other backends',
+        });
+      }
+
       if (backend.encrypted && !encryption) {
         context.addIssue({
           code: 'custom',
           path: ['backends', index, 'encrypted'],
           message: 'An encrypted storage backend needs a master key file (encryption.masterKeyFile)',
         });
+      }
+    }
+
+    // a replica holds the files exactly as they are stored, so that it can take the place of the backend it copies
+    for (const [index, backend] of backends.entries()) {
+      for (const role of backend.replicaOf ?? []) {
+        const source = backends.find((other) => other.role === role);
+        if (!source) {
+          context.addIssue({
+            code: 'custom',
+            path: ['backends', index, 'replicaOf'],
+            message: `No storage backend has the role ${role}`,
+          });
+        } else if (backend.encrypted && !source.encrypted) {
+          context.addIssue({
+            code: 'custom',
+            path: ['backends', index, 'encrypted'],
+            message:
+              `Replicas hold files as they are stored, and storage backend ${source.id} is not encrypted: ` +
+              'encrypt it, or set encrypted: false for this replica',
+          });
+        }
       }
     }
   });

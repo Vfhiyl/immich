@@ -26,7 +26,9 @@ export const serverPort = port;
 
 export interface LocalBackend {
   id: string;
-  role: 'originals' | 'derived' | 'backup';
+  role: 'originals' | 'derived' | 'backup' | 'replica';
+  /** For a replica, the roles whose backends it copies */
+  replicaOf?: Array<'originals' | 'backup'>;
   /** Store the backend's files on an S3 service, below this prefix, instead of a local folder */
   s3?: { service: S3Service; prefix: string };
   /** Whether new files are encrypted; the server encrypts S3 backends unless told otherwise */
@@ -167,17 +169,23 @@ export class TestEnvironment {
     return join(this.root, 'master.key');
   }
 
-  async writeBackends(backends: LocalBackend[]) {
+  /** Write the storage backend configuration, with a new master key unless `keepMasterKey` */
+  async writeBackends(backends: LocalBackend[], { keepMasterKey = false } = {}) {
     const lines = [];
     if (backends.some(({ s3, encrypted }) => encrypted ?? !!s3)) {
-      await rm(this.masterKeyFile, { force: true });
-      await runEncryptionTool(['generate-key', this.masterKeyFile]);
+      if (!keepMasterKey) {
+        await rm(this.masterKeyFile, { force: true });
+        await runEncryptionTool(['generate-key', this.masterKeyFile]);
+      }
       lines.push('encryption:', `  masterKeyFile: ${this.masterKeyFile}`);
     }
 
     lines.push('backends:');
-    for (const { id, role, s3, encrypted } of backends) {
+    for (const { id, role, replicaOf, s3, encrypted } of backends) {
       lines.push(`  - id: ${id}`, `    role: ${role}`);
+      if (replicaOf) {
+        lines.push(`    replicaOf: [${replicaOf.join(', ')}]`);
+      }
       if (encrypted !== undefined) {
         lines.push(`    encrypted: ${encrypted}`);
       }

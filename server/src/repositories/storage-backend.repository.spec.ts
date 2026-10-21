@@ -33,6 +33,16 @@ const s3 = (overrides: Record<string, unknown>) =>
     ],
   });
 
+const replica = (id: string, overrides: object = {}) => ({
+  id,
+  driver: 'local',
+  role: 'replica',
+  root: `/${id}`,
+  replicaOf: ['originals', 'backup'],
+  encrypted: true,
+  ...overrides,
+});
+
 describe(StorageBackendRepository.name, () => {
   let sut: StorageBackendRepository;
   let logger: Mocked<Pick<LoggingRepository, 'setContext' | 'warn' | 'debug'>>;
@@ -144,6 +154,18 @@ describe(StorageBackendRepository.name, () => {
       await fs.writeFile(path, content);
       return path;
     };
+
+    const withReplicas = (...backends: object[]) =>
+      write(
+        JSON.stringify({
+          backends: [
+            { id: 'originals', driver: 'local', role: 'originals', root: '/o', encrypted: true },
+            { id: 'backups', driver: 'local', role: 'backup', root: '/b', encrypted: true },
+            ...backends,
+          ],
+          encryption: { masterKeyFile: '/m' },
+        }),
+      );
 
     beforeEach(async () => {
       directory = await fs.mkdtemp(join(tmpdir(), 'immich-storage-config-'));
@@ -307,6 +329,67 @@ describe(StorageBackendRepository.name, () => {
       await expect(sut.readConfig(await write('backends: []\ndatabaseBackups:\n  keepLast: 0'))).rejects.toThrow(
         'databaseBackups.keepLast',
       );
+    });
+
+    describe('replicas', () => {
+      it('should read any number of replicas, with the roles they copy', async () => {
+        const { backends } = await sut.readConfig(await withReplicas(replica('copy-1'), replica('copy-2')));
+        expect(backends.slice(2)).toEqual([
+          expect.objectContaining({ id: 'copy-1', role: 'replica', replicaOf: ['originals', 'backup'] }),
+          expect.objectContaining({ id: 'copy-2', role: 'replica', replicaOf: ['originals', 'backup'] }),
+        ]);
+      });
+
+      it.each([
+        ['without the roles it copies', replica('copy', { replicaOf: undefined }), 'backends.2.replicaOf: A replica'],
+        ['copying no role', replica('copy', { replicaOf: [] }), 'backends.2.replicaOf'],
+        ['copying derived files', replica('copy', { replicaOf: ['derived'] }), 'backends.2.replicaOf'],
+      ])('should reject a replica %s', async (_, backend, message) => {
+        await expect(sut.readConfig(await withReplicas(backend))).rejects.toThrow(message);
+      });
+
+      it('should need a backend for every role a replica copies', async () => {
+        const path = await write(
+          JSON.stringify({
+            backends: [{ id: 'copy', driver: 'local', role: 'replica', root: '/c', replicaOf: ['originals'] }],
+          }),
+        );
+        await expect(sut.readConfig(path)).rejects.toThrow('No storage backend has the role originals');
+      });
+
+      it('should only let replicas copy other backends', async () => {
+        const path = await write(
+          JSON.stringify({
+            backends: [{ id: 'a', driver: 'local', role: 'originals', root: '/a', replicaOf: ['backup'] }],
+          }),
+        );
+        await expect(sut.readConfig(path)).rejects.toThrow('Only a storage backend with the role replica');
+      });
+
+      it('should not let an encrypted replica copy files that are not encrypted', async () => {
+        const path = await write(
+          JSON.stringify({
+            backends: [
+              { id: 'originals', driver: 'local', role: 'originals', root: '/o' },
+              replica('copy', { replicaOf: ['originals'] }),
+            ],
+            encryption: { masterKeyFile: '/m' },
+          }),
+        );
+        await expect(sut.readConfig(path)).rejects.toThrow('storage backend originals is not encrypted');
+        await expect(
+          sut.readConfig(
+            await write(
+              JSON.stringify({
+                backends: [
+                  { id: 'originals', driver: 'local', role: 'originals', root: '/o' },
+                  replica('copy', { replicaOf: ['originals'], encrypted: false }),
+                ],
+              }),
+            ),
+          ),
+        ).resolves.toBeDefined();
+      });
     });
 
     it('should read an S3 backend that is not encrypted without a master key file', async () => {

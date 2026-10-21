@@ -393,3 +393,18 @@ export const asset_ocr_delete_audit = registerFunction({
       RETURN NULL;
     END`,
 });
+
+export const storage_replica_register = registerFunction({
+  name: 'storage_replica_register',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO storage_replica_copy ("replicaBackendId", "sourceBackendId", "key")
+      SELECT source."replicaBackendId", file."backendId", file."key"
+      FROM recorded_rows file
+      JOIN storage_replica_source source ON source."sourceBackendId" = file."backendId"
+      ON CONFLICT DO NOTHING;
+      RETURN NULL;
+    END`,
+});

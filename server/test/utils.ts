@@ -65,6 +65,7 @@ import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
 import { StorageCheckRepository } from 'src/repositories/storage-check.repository.js';
 import { StorageDeletionRepository } from 'src/repositories/storage-deletion.repository.js';
+import { StorageReplicaRepository } from 'src/repositories/storage-replica.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
@@ -93,6 +94,7 @@ import { newMediaRepositoryMock } from 'test/repositories/media.repository.mock.
 import { newMetadataRepositoryMock } from 'test/repositories/metadata.repository.mock.js';
 import { newStorageBackendRepositoryMock } from 'test/repositories/storage-backend.repository.mock.js';
 import { newStorageDeletionRepositoryMock } from 'test/repositories/storage-deletion.repository.mock.js';
+import { newStorageReplicaRepositoryMock } from 'test/repositories/storage-replica.repository.mock.js';
 import { newStorageRepositoryMock } from 'test/repositories/storage.repository.mock.js';
 import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metadata.repository.mock.js';
 import { ITelemetryRepositoryMock, newTelemetryRepositoryMock } from 'test/repositories/telemetry.repository.mock.js';
@@ -288,6 +290,7 @@ export type ServiceOverrides = {
   storageBackend: StorageBackendRepository;
   storageCheck: StorageCheckRepository;
   storageDeletion: StorageDeletionRepository;
+  storageReplica: StorageReplicaRepository;
   storage: StorageRepository;
   sync: SyncRepository;
   syncCheckpoint: SyncCheckpointRepository;
@@ -380,6 +383,7 @@ export const getMocks = () => {
     storageBackend: newStorageBackendRepositoryMock(),
     storageCheck: automock(StorageCheckRepository),
     storageDeletion: newStorageDeletionRepositoryMock(),
+    storageReplica: newStorageReplicaRepositoryMock(),
     storage: newStorageRepositoryMock(),
     sync: automock(SyncRepository),
     syncCheckpoint: automock(SyncCheckpointRepository),
@@ -458,6 +462,7 @@ export const newTestService = <T extends BaseService>(
     overrides.storageBackend || (mocks.storageBackend as As<StorageBackendRepository>),
     overrides.storageCheck || (mocks.storageCheck as As<StorageCheckRepository>),
     overrides.storageDeletion || (mocks.storageDeletion as As<StorageDeletionRepository>),
+    overrides.storageReplica || (mocks.storageReplica as As<StorageReplicaRepository>),
     overrides.storage || (mocks.storage as As<StorageRepository>),
     overrides.sync || (mocks.sync as As<SyncRepository>),
     overrides.syncCheckpoint || (mocks.syncCheckpoint as As<SyncCheckpointRepository>),

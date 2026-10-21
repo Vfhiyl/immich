@@ -2198,6 +2198,167 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/storage/replicas": {
+      "get": {
+        "description": "Each replica with what it copies, what is copied and what waits, and the last reconciliation",
+        "operationId": "getStorageReplicas",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageReplicaListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the replicas",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage/replicas/{id}/failing": {
+      "get": {
+        "description": "Files whose copy to the replica failed several times, with why",
+        "operationId": "getFailingStorageReplicaCopies",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id of the storage backend of the replica",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageReplicaFailingResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List failing copies",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage/replicas/{id}/retry": {
+      "post": {
+        "description": "Copy the files whose copy to the replica failed again now",
+        "operationId": "retryStorageReplicaCopies",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id of the storage backend of the replica",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageReplicaRetryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retry failed copies",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/users": {
       "get": {
         "description": "Search for users.",
@@ -23623,6 +23784,8 @@
           "DatabaseBackupStore",
           "StorageReconcile",
           "StorageVerify",
+          "StorageReplicate",
+          "StorageReplicaReconcile",
           "AssetGenerateThumbnailsQueueAll",
           "AssetGenerateThumbnails",
           "AuditTableCleanup",
@@ -30791,7 +30954,8 @@
         "description": "Kind of storage check",
         "enum": [
           "reconcile",
-          "verify"
+          "verify",
+          "replica_reconcile"
         ],
         "type": "string"
       },
@@ -31197,6 +31361,153 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "StorageReplicaFailingResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "attempts": {
+                  "description": "Attempts so far",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "backendId": {
+                  "description": "Storage backend of the file",
+                  "type": "string"
+                },
+                "key": {
+                  "description": "Key of the file",
+                  "type": "string"
+                },
+                "lastError": {
+                  "description": "Why the last attempt failed",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "nextAttemptAt": {
+                  "description": "When it is tried again",
+                  "type": "string"
+                },
+                "registeredAt": {
+                  "description": "When the copy was registered",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "backendId",
+                "key",
+                "attempts",
+                "lastError",
+                "nextAttemptAt",
+                "registeredAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "StorageReplicaListResponseDto": {
+        "properties": {
+          "lastReconcileAt": {
+            "description": "When the replicas were last reconciled",
+            "nullable": true,
+            "type": "string"
+          },
+          "replicas": {
+            "items": {
+              "properties": {
+                "copied": {
+                  "description": "Files copied to the replica",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "copiedBytes": {
+                  "description": "Bytes copied to the replica",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "failing": {
+                  "description": "Files whose copy failed several times, which are tried again later",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "id": {
+                  "description": "Id of the storage backend of the replica",
+                  "type": "string"
+                },
+                "oldestPendingAt": {
+                  "description": "Since when the file waiting longest to be copied waits: what losing the backend now would lose",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "pending": {
+                  "description": "Files waiting to be copied",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "replicaOf": {
+                  "description": "Roles whose backends the replica copies",
+                  "items": {
+                    "enum": [
+                      "originals",
+                      "backup"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "sourceFiles": {
+                  "description": "Originals on the backends the replica copies",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "replicaOf",
+                "sourceFiles",
+                "copied",
+                "copiedBytes",
+                "pending",
+                "failing",
+                "oldestPendingAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "lastReconcileAt",
+          "replicas"
+        ],
+        "type": "object"
+      },
+      "StorageReplicaRetryResponseDto": {
+        "properties": {
+          "count": {
+            "description": "Copies that are tried again now",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
         ],
         "type": "object"
       },

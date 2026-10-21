@@ -665,6 +665,48 @@ export type StorageDeletionPurgeDto = {
     /** Password of the administrator, to confirm */
     password: string;
 };
+export type StorageReplicaListResponseDto = {
+    /** When the replicas were last reconciled */
+    lastReconcileAt: string | null;
+    replicas: {
+        /** Files copied to the replica */
+        copied: number;
+        /** Bytes copied to the replica */
+        copiedBytes: number;
+        /** Files whose copy failed several times, which are tried again later */
+        failing: number;
+        /** Id of the storage backend of the replica */
+        id: string;
+        /** Since when the file waiting longest to be copied waits: what losing the backend now would lose */
+        oldestPendingAt: string | null;
+        /** Files waiting to be copied */
+        pending: number;
+        /** Roles whose backends the replica copies */
+        replicaOf: ReplicaOf[];
+        /** Originals on the backends the replica copies */
+        sourceFiles: number;
+    }[];
+};
+export type StorageReplicaFailingResponseDto = {
+    items: {
+        /** Attempts so far */
+        attempts: number;
+        /** Storage backend of the file */
+        backendId: string;
+        /** Key of the file */
+        key: string;
+        /** Why the last attempt failed */
+        lastError: string | null;
+        /** When it is tried again */
+        nextAttemptAt: string;
+        /** When the copy was registered */
+        registeredAt: string;
+    }[];
+};
+export type StorageReplicaRetryResponseDto = {
+    /** Copies that are tried again now */
+    count: number;
+};
 export type UserLicense = {
     /** Activation date */
     activatedAt: string;
@@ -4493,6 +4535,44 @@ export function purgeDeletedOriginal({ id, storageDeletionPurgeDto }: {
  */
 export function resumeStorageDeletion(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchText("/admin/storage/deletions/resume", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * List the replicas
+ */
+export function getStorageReplicas(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageReplicaListResponseDto;
+    }>("/admin/storage/replicas", {
+        ...opts
+    }));
+}
+/**
+ * List failing copies
+ */
+export function getFailingStorageReplicaCopies({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageReplicaFailingResponseDto;
+    }>(`/admin/storage/replicas/${encodeURIComponent(id)}/failing`, {
+        ...opts
+    }));
+}
+/**
+ * Retry failed copies
+ */
+export function retryStorageReplicaCopies({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StorageReplicaRetryResponseDto;
+    }>(`/admin/storage/replicas/${encodeURIComponent(id)}/retry`, {
         ...opts,
         method: "POST"
     }));
@@ -8387,7 +8467,8 @@ export enum NotificationType {
 }
 export enum StorageCheckKind {
     Reconcile = "reconcile",
-    Verify = "verify"
+    Verify = "verify",
+    ReplicaReconcile = "replica_reconcile"
 }
 export enum StorageCheckStatus {
     Running = "running",
@@ -8406,6 +8487,10 @@ export enum StorageIssueKind {
 export enum AssetMediaStatus {
     Created = "created",
     Duplicate = "duplicate"
+}
+export enum ReplicaOf {
+    Originals = "originals",
+    Backup = "backup"
 }
 export enum UserStatus {
     Active = "active",
@@ -8766,6 +8851,8 @@ export enum JobName {
     DatabaseBackupStore = "DatabaseBackupStore",
     StorageReconcile = "StorageReconcile",
     StorageVerify = "StorageVerify",
+    StorageReplicate = "StorageReplicate",
+    StorageReplicaReconcile = "StorageReplicaReconcile",
     AssetGenerateThumbnailsQueueAll = "AssetGenerateThumbnailsQueueAll",
     AssetGenerateThumbnails = "AssetGenerateThumbnails",
     AuditTableCleanup = "AuditTableCleanup",

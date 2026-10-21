@@ -277,6 +277,10 @@ export class JobRepository {
       case JobName.DatabaseBackup: {
         return { deduplication: { id: JobName.DatabaseBackup } };
       }
+      // one run copies everything that is due, and runs are queued every few minutes
+      case JobName.StorageReplicate: {
+        return { deduplication: { id: JobName.StorageReplicate } };
+      }
       default: {
         return null;
       }

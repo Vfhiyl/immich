@@ -44,6 +44,7 @@ import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
 import { StorageCheckRepository } from 'src/repositories/storage-check.repository.js';
 import { StorageDeletionRepository } from 'src/repositories/storage-deletion.repository.js';
+import { StorageReplicaRepository } from 'src/repositories/storage-replica.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
@@ -106,6 +107,7 @@ export const repositories = [
   StorageBackendRepository,
   StorageCheckRepository,
   StorageDeletionRepository,
+  StorageReplicaRepository,
   StorageRepository,
   SyncRepository,
   SyncCheckpointRepository,

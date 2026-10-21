@@ -39,6 +39,7 @@ import { StackService } from 'src/services/stack.service.js';
 import { StorageBackupService } from 'src/services/storage-backup.service.js';
 import { StorageCheckService } from 'src/services/storage-check.service.js';
 import { StorageDeletionService } from 'src/services/storage-deletion.service.js';
+import { StorageReplicaService } from 'src/services/storage-replica.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { SyncService } from 'src/services/sync.service.js';
@@ -98,6 +99,7 @@ export const services = [
   StorageBackupService,
   StorageCheckService,
   StorageDeletionService,
+  StorageReplicaService,
   StorageService,
   StorageTemplateService,
   SyncService,

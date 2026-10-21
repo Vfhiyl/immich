@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { partition } from 'lodash-es';
 import { randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { join } from 'node:path';
@@ -7,7 +8,8 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
 import { StoredDatabaseBackupListResponseDto } from 'src/dtos/storage-backup.dto.js';
 import { JobName, JobStatus, QueueName, StorageBackendRole, StorageFolder } from 'src/enum.js';
-import { BlobManifest } from 'src/repositories/encrypted-blob-store.js';
+import { BlobStore } from 'src/repositories/blob-store.js';
+import { BlobManifest, EncryptedBlobStore } from 'src/repositories/encrypted-blob-store.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isValidDatabaseBackupName, isValidDatabaseRoutineBackupName } from 'src/utils/database-backups.js';
 
@@ -57,8 +59,61 @@ export class StorageBackupService extends BaseService {
       this.logger.log(`Stored database backup ${filename} (${size} bytes) on storage backend ${backendId}`);
     }
 
-    await this.deleteOldBackups(backendId, keepLast);
+    const remaining = await this.deleteOldBackups(
+      await this.listStoredBackups(backendId),
+      keepLast,
+      this.storageBackendRepository.getDeletionStore(backendId),
+      `storage backend ${backendId}`,
+    );
+    await this.copyToReplicas(backendId, remaining, keepLast);
     return JobStatus.Success;
+  }
+
+  /**
+   * Copy the backups to each replica of the backend for backups, as they are stored, and keep as many there: a replica
+   * applies the same rules to what it holds, which may be more than the backend has, e.g. after it refused a deletion
+   */
+  private async copyToReplicas(backendId: string, backups: StoredDatabaseBackup[], keepLast: number) {
+    const replicas = this.storageBackendRepository
+      .getReplicaSources()
+      .filter(({ role }) => role === StorageBackendRole.Backup);
+    const source = this.storageBackendRepository.get(backendId);
+    for (const { replicaBackendId } of replicas) {
+      try {
+        const replica = this.storageBackendRepository.getReplicaStore(replicaBackendId, backendId);
+        const copied = new Set<string>();
+        for await (const { key } of replica.list()) {
+          copied.add(key);
+        }
+        for (const backup of backups) {
+          if (copied.has(backup.key)) {
+            continue;
+          }
+          const stat = await source.head(backup.key);
+          if (!stat) {
+            throw new Error(`${backendId}:${backup.key} was not found`);
+          }
+          await replica.put(backup.key, await source.get(backup.key, { expect: { size: stat.size } }), {
+            sizeHint: stat.size,
+          });
+          const written = await replica.head(backup.key);
+          if (written?.size !== stat.size) {
+            throw new Error(`The replica holds ${written ? written.size : 'no'} bytes of ${stat.size}`);
+          }
+          this.logger.log(`Copied database backup ${backup.filename} to replica ${replicaBackendId}`);
+        }
+
+        await this.deleteOldBackups(
+          await this.listBackups(this.storageBackendRepository.getEncryptedReplicaStore(replicaBackendId, backendId)),
+          keepLast,
+          this.storageBackendRepository.getReplicaStore(replicaBackendId, backendId, { deletion: true }),
+          `replica ${replicaBackendId}`,
+        );
+      } catch (error) {
+        // tried again with the next backup
+        this.logger.error(`Unable to copy database backups to replica ${replicaBackendId}: ${error}`);
+      }
+    }
   }
 
   async getStoredBackups(): Promise<StoredDatabaseBackupListResponseDto> {
@@ -106,8 +161,11 @@ export class StorageBackupService extends BaseService {
   }
 
   /** The backups on the backend, the newest first, each read from its own trailer */
-  private async listStoredBackups(backendId: string): Promise<StoredDatabaseBackup[]> {
-    const store = this.storageBackendRepository.getEncryptedStore(backendId);
+  private listStoredBackups(backendId: string): Promise<StoredDatabaseBackup[]> {
+    return this.listBackups(this.storageBackendRepository.getEncryptedStore(backendId));
+  }
+
+  private async listBackups(store: EncryptedBlobStore): Promise<StoredDatabaseBackup[]> {
     const backups: StoredDatabaseBackup[] = [];
     for await (const { key } of store.list()) {
       let manifest: BlobManifest;
@@ -115,7 +173,7 @@ export class StorageBackupService extends BaseService {
       try {
         ({ manifest, header } = await store.describe(key));
       } catch (error) {
-        this.logger.warn(`Unable to read what ${key} on storage backend ${backendId} is: ${error}`);
+        this.logger.warn(`Unable to read what the stored object ${key} is: ${error}`);
         continue;
       }
       if (manifest.kind !== DATABASE_BACKUP_KIND || typeof manifest.filename !== 'string') {
@@ -137,27 +195,29 @@ export class StorageBackupService extends BaseService {
 
   /**
    * A backup goes once more newer backups exist than it had to wait for when it was taken, or than are kept now if that
-   * is more: a larger number applies to old backups too, a smaller one does not shorten their time
+   * is more: a larger number applies to old backups too, a smaller one does not shorten their time. Returns the
+   * backups that are kept.
    */
-  private async deleteOldBackups(backendId: string, keepLast: number) {
-    const backups = await this.listStoredBackups(backendId);
-    const old = backups.filter((backup, newer) => newer >= Math.max(backup.keepLast, keepLast));
+  private async deleteOldBackups(
+    backups: StoredDatabaseBackup[],
+    keepLast: number,
+    deletionStore: BlobStore,
+    where: string,
+  ): Promise<StoredDatabaseBackup[]> {
+    const [old, kept] = partition(backups, (backup) => backups.indexOf(backup) >= Math.max(backup.keepLast, keepLast));
     if (old.length === 0) {
-      return;
+      return kept;
     }
 
     // a bucket with object lock may refuse, which is fine: the backup is deleted on a later run
-    const { failed } = await this.storageBackendRepository
-      .getDeletionStore(backendId)
-      .deleteMany(old.map(({ key }) => key));
+    const { failed } = await deletionStore.deleteMany(old.map(({ key }) => key));
     for (const backup of old) {
       if (failed.includes(backup.key)) {
-        this.logger.warn(
-          `Unable to delete the old database backup ${backup.filename} from storage backend ${backendId}`,
-        );
+        this.logger.warn(`Unable to delete the old database backup ${backup.filename} from ${where}`);
       } else {
-        this.logger.log(`Deleted the old database backup ${backup.filename} from storage backend ${backendId}`);
+        this.logger.log(`Deleted the old database backup ${backup.filename} from ${where}`);
       }
     }
+    return kept;
   }
 }

@@ -27,6 +27,7 @@ import {
 import { BlobIntegrityError, createVerifyingStream } from 'src/repositories/blob-store.js';
 import { readBlob } from 'src/repositories/storage-backend.repository.js';
 import { FoundIssue, ListedBlob, VerifiableFile } from 'src/repositories/storage-check.repository.js';
+import { ReplicaSource, TRACKED_REPLICA_ROLES, toListingId } from 'src/repositories/storage-replica.repository.js';
 import { StorageCheckStats } from 'src/schema/tables/storage-check.table.js';
 import { BaseService } from 'src/services/base.service.js';
 
@@ -43,6 +44,11 @@ const RECONCILE_MIN_INTERVAL_MS = 60 * 60 * 1000;
 const LISTING_BATCH_SIZE = 1000;
 /** New files are read back a day after they were written, which was verified then */
 const NEW_FILE_DELAY_MS = 24 * 60 * 60 * 1000;
+
+/** Replicas are listed every two weeks: they are only read when a backend is lost, and listing is not free */
+const REPLICA_RECONCILE_INTERVAL_MS = 14 * 24 * 60 * 60 * 1000;
+/** Originals looked at per round trip when registering the copies that are missing */
+const REGISTER_BATCH_SIZE = 10_000;
 
 /** Reports are kept for three years */
 const REPORT_RETENTION_YEARS = 3;
@@ -130,6 +136,53 @@ export class StorageCheckService extends BaseService {
     await this.storageCheckRepository.removeOldReports(
       DateTime.now().minus({ years: REPORT_RETENTION_YEARS }).toJSDate(),
     );
+    return JobStatus.Success;
+  }
+
+  /**
+   * Compare each replica with the copies it should hold: originals without a copy get one registered, copies that are
+   * missing or of another size are made again, and objects that are no copy are reported, never deleted
+   */
+  @OnJob({ name: JobName.StorageReplicaReconcile, queue: QueueName.IntegrityCheck })
+  async handleReplicaReconcile({ force }: IStorageCheckJob = {}): Promise<JobStatus> {
+    const sources = this.storageBackendRepository
+      .getReplicaSources()
+      .filter(({ role }) => TRACKED_REPLICA_ROLES.has(role));
+    if (sources.length === 0) {
+      return JobStatus.Skipped;
+    }
+
+    const last = await this.storageCheckRepository.getLastRun(StorageCheckKind.ReplicaReconcile);
+    if (!force && last && Date.now() - new Date(last.startedAt).getTime() < REPLICA_RECONCILE_INTERVAL_MS) {
+      return JobStatus.Skipped;
+    }
+
+    const replicas = [...new Set(sources.map(({ replicaBackendId }) => replicaBackendId))];
+    const run = await this.storageCheckRepository.startRun(StorageCheckKind.ReplicaReconcile, replicas);
+    const now = new Date();
+    const stats: StorageCheckStats = { backends: replicas, checked: 0, bytes: 0, newIssues: 0, openIssues: 0 };
+    try {
+      for (const [replicaBackendId, ofReplica] of Map.groupBy(sources, ({ replicaBackendId }) => replicaBackendId)) {
+        for (const source of ofReplica) {
+          await this.reconcileReplica(source, now, stats);
+        }
+        await this.storageCheckRepository.resolveUnseen(
+          replicaBackendId,
+          [StorageIssueKind.Missing, StorageIssueKind.SizeMismatch, StorageIssueKind.Untracked],
+          now,
+        );
+      }
+    } catch (error) {
+      this.logger.error(`Reconciliation of replicas failed: ${error}`);
+      await this.storageCheckRepository.finishRun(run.id, StorageCheckStatus.Failed, {
+        ...stats,
+        stoppedBecause: String(error),
+      });
+      throw error;
+    }
+
+    await this.finish(run.id, stats);
+    await this.jobRepository.queue({ name: JobName.StorageReplicate });
     return JobStatus.Success;
   }
 
@@ -385,6 +438,68 @@ export class StorageCheckService extends BaseService {
       );
     } finally {
       await this.storageCheckRepository.clearListing(backendId);
+    }
+  }
+
+  private async reconcileReplica(source: ReplicaSource, now: Date, stats: StorageCheckStats) {
+    const { replicaBackendId, sourceBackendId } = source;
+    let after: string | undefined;
+    let registered = 0;
+    do {
+      const page = await this.storageReplicaRepository.registerMissing(source, REGISTER_BATCH_SIZE, after);
+      registered += page.registered;
+      after = page.lastAssetId;
+    } while (after);
+    if (registered > 0) {
+      this.logger.log(`Registered ${registered} copies of files on ${sourceBackendId} for replica ${replicaBackendId}`);
+    }
+
+    const before = new Date(now.getTime() - STORAGE_CHECK_GRACE_MS);
+    const listingId = toListingId(source);
+    await this.storageCheckRepository.clearListing(listingId);
+    try {
+      let batch: ListedBlob[] = [];
+      for await (const entry of this.storageBackendRepository
+        .getReplicaStore(replicaBackendId, sourceBackendId)
+        .list()) {
+        batch.push(entry);
+        stats.checked++;
+        stats.bytes += entry.size;
+        if (!(batch.length >= LISTING_BATCH_SIZE)) {
+          continue;
+        }
+
+        await this.storageCheckRepository.addToListing(listingId, batch);
+        batch = [];
+      }
+      await this.storageCheckRepository.addToListing(listingId, batch);
+
+      const missing = await this.storageReplicaRepository.findMissing(source, before);
+      const resized = await this.storageReplicaRepository.findSizeMismatches(source);
+      const untracked = await this.storageReplicaRepository.findUntracked(source, before);
+      // copied again right away: a copy made again does no harm, while a missing one is a loss waiting to happen
+      await this.storageReplicaRepository.requeue(
+        source,
+        [...missing, ...resized].map(({ key }) => key),
+        now,
+      );
+
+      // reported with their key on the replica, in the folder of their backend
+      const found: Array<[StorageIssueKind, FoundIssue[]]> = [
+        [StorageIssueKind.Missing, missing],
+        [StorageIssueKind.SizeMismatch, resized],
+        [StorageIssueKind.Untracked, untracked],
+      ];
+      for (const [kind, issues] of found) {
+        stats.newIssues += await this.storageCheckRepository.recordSightings(
+          replicaBackendId,
+          kind,
+          issues.map(({ key, detail }) => ({ key: `${sourceBackendId}/${key}`, detail })),
+          now,
+        );
+      }
+    } finally {
+      await this.storageCheckRepository.clearListing(listingId);
     }
   }
 
