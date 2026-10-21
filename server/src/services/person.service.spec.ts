@@ -1118,6 +1118,20 @@ describe(PersonService.name, () => {
       expect(mocks.machineLearning.detectFaces).not.toHaveBeenCalled();
     });
 
+    it('should detect faces in a leased local copy of the preview and release it afterwards', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();
+      mocks.machineLearning.detectFaces.mockResolvedValue({ imageHeight: 500, imageWidth: 400, faces: [] });
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+      const release = vi.fn().mockResolvedValue(undefined);
+      mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/preview.jpg', [Symbol.asyncDispose]: release });
+
+      await sut.handleDetectFaces({ id: asset.id });
+
+      expect(mocks.storageBackend.lease).toHaveBeenCalledWith(expect.objectContaining({ path: asset.files[0].path }));
+      expect(mocks.machineLearning.detectFaces).toHaveBeenCalledWith('/staging/preview.jpg', expect.any(Object));
+      expect(release).toHaveBeenCalledOnce();
+    });
+
     it('should handle no results', async () => {
       const start = Date.now();
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();

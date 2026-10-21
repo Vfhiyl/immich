@@ -14,7 +14,7 @@ describe(OcrService.name, () => {
     mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
     mocks.assetJob.getForOcr.mockResolvedValue({
       visibility: AssetVisibility.Timeline,
-      previewFile: '/uploads/user-id/thumbs/path.jpg',
+      previewFile: { path: '/uploads/user-id/thumbs/path.jpg', backendId: null, key: null },
     });
   });
 
@@ -167,11 +167,31 @@ describe(OcrService.name, () => {
       expect(mocks.ocr.upsert).toHaveBeenCalledWith(asset.id, [], '');
     });
 
+    it('should read the preview from a leased local file and release it afterwards', async () => {
+      mocks.assetJob.getForOcr.mockResolvedValue({
+        visibility: AssetVisibility.Timeline,
+        previewFile: { path: '/data/thumbs/preview.jpg', backendId: 'media', key: 'thumbs/preview.jpg' },
+      });
+      const release = vi.fn().mockResolvedValue(undefined);
+      mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/preview.jpg', [Symbol.asyncDispose]: release });
+      mocks.machineLearning.ocr.mockResolvedValue({ box: [], boxScore: [], text: [], textScore: [] });
+
+      await sut.handleOcr({ id: 'asset-id' });
+
+      expect(mocks.storageBackend.lease).toHaveBeenCalledWith({
+        path: '/data/thumbs/preview.jpg',
+        backendId: 'media',
+        key: 'thumbs/preview.jpg',
+      });
+      expect(mocks.machineLearning.ocr).toHaveBeenCalledWith('/staging/preview.jpg', expect.any(Object));
+      expect(release).toHaveBeenCalledOnce();
+    });
+
     it('should skip invisible assets', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
       mocks.assetJob.getForOcr.mockResolvedValue({
         visibility: AssetVisibility.Hidden,
-        previewFile: asset.files[0].path,
+        previewFile: { path: asset.files[0].path, backendId: null, key: null },
       });
 
       expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Skipped);

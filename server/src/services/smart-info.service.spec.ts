@@ -211,6 +211,25 @@ describe(SmartInfoService.name, () => {
       expect(mocks.search.upsert).toHaveBeenCalledWith(asset.id, '[0.01, 0.02, 0.03]');
     });
 
+    it('should encode the preview from a leased local file and release it before waiting for the database', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
+      mocks.machineLearning.encodeImage.mockResolvedValue('[0.01, 0.02, 0.03]');
+      mocks.assetJob.getForClipEncoding.mockResolvedValue(asset);
+      const release = vi.fn().mockResolvedValue(undefined);
+      mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/preview.jpg', [Symbol.asyncDispose]: release });
+      mocks.database.isBusy.mockReturnValue(true);
+      mocks.database.wait.mockImplementation(() => {
+        expect(release).toHaveBeenCalledOnce();
+        return Promise.resolve();
+      });
+
+      expect(await sut.handleEncodeClip({ id: asset.id })).toEqual(JobStatus.Success);
+
+      expect(mocks.storageBackend.lease).toHaveBeenCalledWith(asset.files[0]);
+      expect(mocks.machineLearning.encodeImage).toHaveBeenCalledWith('/staging/preview.jpg', expect.any(Object));
+      expect(mocks.database.wait).toHaveBeenCalled();
+    });
+
     it('should skip invisible assets', async () => {
       const asset = AssetFactory.from({ visibility: AssetVisibility.Hidden })
         .file({ type: AssetFileType.Preview })

@@ -335,7 +335,7 @@ describe(PersonRepository.name, () => {
 
       expect(result).toEqual(
         expect.objectContaining({
-          previewPath: 'preview_unedited.jpg',
+          previewFile: { path: 'preview_unedited.jpg', backendId: 'host', key: 'preview_unedited.jpg' },
         }),
       );
     });

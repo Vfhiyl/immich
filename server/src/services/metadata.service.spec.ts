@@ -35,8 +35,8 @@ const forSidecarJob = (
   return {
     id: factory.uuid(),
     originalPath: '/path/to/IMG_123.jpg',
-    files: [],
     ...asset,
+    files: (asset.files ?? []).map((file) => ({ backendId: null, key: null, ...file })),
   };
 };
 
@@ -207,6 +207,23 @@ describe(MetadataService.name, () => {
       expect(mocks.metadata.readTags).toHaveBeenCalledWith('/staging/IMG_1.jpg');
       expect(mocks.storage.stat).toHaveBeenCalledWith('/staging/IMG_1.jpg');
       expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('should read the sidecar from a leased local file', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).build();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      const releases = [vi.fn().mockResolvedValue(undefined), vi.fn().mockResolvedValue(undefined)];
+      mocks.storageBackend.lease
+        .mockResolvedValueOnce({ path: '/staging/original.jpg', [Symbol.asyncDispose]: releases[0] })
+        .mockResolvedValueOnce({ path: '/staging/original.jpg.xmp', [Symbol.asyncDispose]: releases[1] });
+      mockReadTags();
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.storageBackend.lease).toHaveBeenCalledWith(expect.objectContaining({ path: asset.files[0].path }));
+      expect(mocks.metadata.readTags).toHaveBeenCalledWith('/staging/original.jpg.xmp');
+      expect(releases[0]).toHaveBeenCalledOnce();
+      expect(releases[1]).toHaveBeenCalledOnce();
     });
 
     it('should release the leased original when extraction fails', async () => {

@@ -29,6 +29,8 @@ select
         select
           "asset_file"."id",
           "asset_file"."path",
+          "asset_file"."backendId",
+          "asset_file"."key",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -59,6 +61,8 @@ select
         select
           "asset_file"."id",
           "asset_file"."path",
+          "asset_file"."backendId",
+          "asset_file"."key",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -184,6 +188,8 @@ select
         select
           "asset_file"."id",
           "asset_file"."path",
+          "asset_file"."backendId",
+          "asset_file"."key",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -228,6 +234,8 @@ select
         select
           "asset_file"."id",
           "asset_file"."path",
+          "asset_file"."backendId",
+          "asset_file"."key",
           "asset_file"."type",
           "asset_file"."isEdited",
           "asset_file"."isProgressive",
@@ -374,6 +382,8 @@ select
         select
           "asset_file"."id",
           "asset_file"."path",
+          "asset_file"."backendId",
+          "asset_file"."key",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -402,6 +412,8 @@ where
 select
   "asset_file"."id",
   "asset_file"."path",
+  "asset_file"."backendId",
+  "asset_file"."key",
   "asset_file"."type",
   "asset_file"."isEdited"
 from
@@ -459,6 +471,8 @@ select
         select
           "asset_file"."id",
           "asset_file"."path",
+          "asset_file"."backendId",
+          "asset_file"."key",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -499,6 +513,8 @@ select
         select
           "asset_file"."id",
           "asset_file"."path",
+          "asset_file"."backendId",
+          "asset_file"."key",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -523,13 +539,20 @@ select
   "asset"."visibility",
   (
     select
-      "asset_file"."path"
+      to_json(obj)
     from
-      "asset_file"
-    where
-      "asset_file"."assetId" = "asset"."id"
-      and "asset_file"."type" = 'preview'
-      and "asset_file"."isEdited" = false
+      (
+        select
+          "asset_file"."path",
+          "asset_file"."backendId",
+          "asset_file"."key"
+        from
+          "asset_file"
+        where
+          "asset_file"."assetId" = "asset"."id"
+          and "asset_file"."type" = 'preview'
+          and "asset_file"."isEdited" = false
+      ) as obj
   ) as "previewFile"
 from
   "asset"
@@ -567,6 +590,8 @@ select
         select
           "asset_file"."id",
           "asset_file"."path",
+          "asset_file"."backendId",
+          "asset_file"."key",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -652,6 +677,8 @@ select
         select
           "asset_file"."id",
           "asset_file"."path",
+          "asset_file"."backendId",
+          "asset_file"."key",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -783,6 +810,8 @@ select
         select
           "asset_file"."id",
           "asset_file"."path",
+          "asset_file"."backendId",
+          "asset_file"."key",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -825,6 +854,8 @@ select
         select
           "asset_file"."id",
           "asset_file"."path",
+          "asset_file"."backendId",
+          "asset_file"."key",
           "asset_file"."type",
           "asset_file"."isEdited"
         from

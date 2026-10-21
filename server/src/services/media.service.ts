@@ -410,19 +410,25 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
-    const { x1, y1, x2, y2, oldWidth, oldHeight, exifOrientation, previewPath, originalPath } = data;
+    const { x1, y1, x2, y2, oldWidth, oldHeight, exifOrientation, previewFile, originalPath } = data;
+    const isVideo = data.type === AssetType.Video;
+    if (isVideo && !previewFile) {
+      this.logger.error(`Could not generate person thumbnail for video ${personGroupId}: missing preview path`);
+      return JobStatus.Failed;
+    }
+
+    // videos are cropped from their preview, images from their original
+    await using source = await this.storageBackendRepository.lease(
+      isVideo ? previewFile! : toRecordedFile(originalPath, data.originalFile),
+    );
     let inputImage: string | Buffer;
-    if (data.type === AssetType.Video) {
-      if (!previewPath) {
-        this.logger.error(`Could not generate person thumbnail for video ${personGroupId}: missing preview path`);
-        return JobStatus.Failed;
-      }
-      inputImage = previewPath;
+    if (isVideo) {
+      inputImage = source.path;
     } else if (image.extractEmbedded && mimeTypes.isRaw(originalPath)) {
-      const extracted = await this.extractImage(originalPath, image.preview.size);
-      inputImage = extracted ? extracted.buffer : originalPath;
+      const extracted = await this.extractImage(source.path, image.preview.size);
+      inputImage = extracted ? extracted.buffer : source.path;
     } else {
-      inputImage = originalPath;
+      inputImage = source.path;
     }
 
     const decoded = await this.mediaRepository.decodeImage(inputImage, {

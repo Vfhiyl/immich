@@ -14,7 +14,8 @@ export const personThumbnailStub = {
     type: AssetType.Image,
     originalPath: '/original/path.jpg',
     exifOrientation: '1',
-    previewPath: AssetFileFactory.create({ type: AssetFileType.Preview }).path,
+    previewFile: { path: AssetFileFactory.create({ type: AssetFileType.Preview }).path, backendId: null, key: null },
+    originalFile: null,
   }),
   newThumbnailMiddle: Object.freeze({
     ownerId: userStub.admin.id,
@@ -27,7 +28,8 @@ export const personThumbnailStub = {
     type: AssetType.Image,
     originalPath: '/original/path.jpg',
     exifOrientation: '1',
-    previewPath: AssetFileFactory.create({ type: AssetFileType.Preview }).path,
+    previewFile: { path: AssetFileFactory.create({ type: AssetFileType.Preview }).path, backendId: null, key: null },
+    originalFile: null,
   }),
   newThumbnailEnd: Object.freeze({
     ownerId: userStub.admin.id,
@@ -40,7 +42,8 @@ export const personThumbnailStub = {
     type: AssetType.Image,
     originalPath: '/original/path.jpg',
     exifOrientation: '1',
-    previewPath: AssetFileFactory.create({ type: AssetFileType.Preview }).path,
+    previewFile: { path: AssetFileFactory.create({ type: AssetFileType.Preview }).path, backendId: null, key: null },
+    originalFile: null,
   }),
   rawEmbeddedThumbnail: Object.freeze({
     ownerId: userStub.admin.id,
@@ -53,7 +56,8 @@ export const personThumbnailStub = {
     type: AssetType.Image,
     originalPath: '/original/path.dng',
     exifOrientation: '1',
-    previewPath: AssetFileFactory.create({ type: AssetFileType.Preview }).path,
+    previewFile: { path: AssetFileFactory.create({ type: AssetFileType.Preview }).path, backendId: null, key: null },
+    originalFile: null,
   }),
   negativeCoordinate: Object.freeze({
     ownerId: userStub.admin.id,
@@ -66,7 +70,8 @@ export const personThumbnailStub = {
     type: AssetType.Image,
     originalPath: '/original/path.jpg',
     exifOrientation: '1',
-    previewPath: AssetFileFactory.create({ type: AssetFileType.Preview }).path,
+    previewFile: { path: AssetFileFactory.create({ type: AssetFileType.Preview }).path, backendId: null, key: null },
+    originalFile: null,
   }),
   overflowingCoordinate: Object.freeze({
     ownerId: userStub.admin.id,
@@ -79,7 +84,8 @@ export const personThumbnailStub = {
     type: AssetType.Image,
     originalPath: '/original/path.jpg',
     exifOrientation: '1',
-    previewPath: AssetFileFactory.create({ type: AssetFileType.Preview }).path,
+    previewFile: { path: AssetFileFactory.create({ type: AssetFileType.Preview }).path, backendId: null, key: null },
+    originalFile: null,
   }),
   videoThumbnail: Object.freeze({
     ownerId: userStub.admin.id,
@@ -92,6 +98,7 @@ export const personThumbnailStub = {
     type: AssetType.Video,
     originalPath: '/original/path.mp4',
     exifOrientation: '1',
-    previewPath: AssetFileFactory.create({ type: AssetFileType.Preview }).path,
+    previewFile: { path: AssetFileFactory.create({ type: AssetFileType.Preview }).path, backendId: null, key: null },
+    originalFile: null,
   }),
 };

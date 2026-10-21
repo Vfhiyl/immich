@@ -274,6 +274,8 @@ select
         select
           "asset_file"."id",
           "asset_file"."path",
+          "asset_file"."backendId",
+          "asset_file"."key",
           "asset_file"."type",
           "asset_file"."isEdited"
         from

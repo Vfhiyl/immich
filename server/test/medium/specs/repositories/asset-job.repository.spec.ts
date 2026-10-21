@@ -135,7 +135,7 @@ describe(AssetJobRepository.name, () => {
 
       expect(result).toEqual(
         expect.objectContaining({
-          previewFile: 'preview_unedited.jpg',
+          previewFile: { path: 'preview_unedited.jpg', backendId: 'host', key: 'preview_unedited.jpg' },
         }),
       );
     });

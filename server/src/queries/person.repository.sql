@@ -817,14 +817,35 @@ select
   "asset_exif"."orientation" as "exifOrientation",
   (
     select
-      "asset_file"."path"
+      to_json(obj)
     from
-      "asset_file"
-    where
-      "asset_file"."assetId" = "asset"."id"
-      and "asset_file"."type" = 'preview'
-      and "asset_file"."isEdited" = false
-  ) as "previewPath"
+      (
+        select
+          "asset_original_file"."backendId",
+          "asset_original_file"."key"
+        from
+          "asset_original_file"
+        where
+          "asset_original_file"."assetId" = "asset"."id"
+      ) as obj
+  ) as "originalFile",
+  (
+    select
+      to_json(obj)
+    from
+      (
+        select
+          "asset_file"."path",
+          "asset_file"."backendId",
+          "asset_file"."key"
+        from
+          "asset_file"
+        where
+          "asset_file"."assetId" = "asset"."id"
+          and "asset_file"."type" = 'preview'
+          and "asset_file"."isEdited" = false
+      ) as obj
+  ) as "previewFile"
 from
   "person"
   inner join "asset_face" on "asset_face"."id" = "person"."faceAssetId"

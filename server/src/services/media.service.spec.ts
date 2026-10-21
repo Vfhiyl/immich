@@ -1644,6 +1644,65 @@ describe(MediaService.name, () => {
       });
     });
 
+    it('should crop an image from a leased local copy of its original', async () => {
+      const person = PersonFactory.create();
+      mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue({
+        ...personThumbnailStub.newThumbnailMiddle,
+        originalFile: { backendId: 'host', key: personThumbnailStub.newThumbnailMiddle.originalPath.slice(1) },
+      });
+      const release = vi.fn().mockResolvedValue(undefined);
+      mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/original.jpg', [Symbol.asyncDispose]: release });
+      mocks.media.decodeImage.mockResolvedValue({
+        data: Buffer.from(''),
+        info: { width: 1000, height: 1000 } as OutputInfo,
+      });
+
+      await expect(
+        sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId }),
+      ).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.storageBackend.lease).toHaveBeenCalledWith({
+        path: personThumbnailStub.newThumbnailMiddle.originalPath,
+        backendId: 'host',
+        key: personThumbnailStub.newThumbnailMiddle.originalPath.slice(1),
+      });
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith('/staging/original.jpg', expect.any(Object));
+      expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('should crop a video from a leased local copy of its preview', async () => {
+      const person = PersonFactory.create();
+      mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue(personThumbnailStub.videoThumbnail);
+      const release = vi.fn().mockResolvedValue(undefined);
+      mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/preview.jpeg', [Symbol.asyncDispose]: release });
+      mocks.media.decodeImage.mockResolvedValue({
+        data: Buffer.from(''),
+        info: { width: 1000, height: 1000 } as OutputInfo,
+      });
+
+      await expect(
+        sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId }),
+      ).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.storageBackend.lease).toHaveBeenCalledWith(personThumbnailStub.videoThumbnail.previewFile);
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith('/staging/preview.jpeg', expect.any(Object));
+      expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('should fail for a video without a preview, without leasing anything', async () => {
+      const person = PersonFactory.create();
+      mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue({
+        ...personThumbnailStub.videoThumbnail,
+        previewFile: null,
+      });
+
+      await expect(
+        sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId }),
+      ).resolves.toBe(JobStatus.Failed);
+
+      expect(mocks.storageBackend.lease).not.toHaveBeenCalled();
+    });
+
     it('should use preview path if video', async () => {
       const person = PersonFactory.create();
 
@@ -4107,6 +4166,8 @@ describe(MediaService.name, () => {
             assetId: 'asset-id',
             type: AssetFileType.Preview,
             path: '/old/preview.jpg',
+            backendId: null,
+            key: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4116,6 +4177,8 @@ describe(MediaService.name, () => {
             assetId: 'asset-id',
             type: AssetFileType.Thumbnail,
             path: '/old/thumbnail.jpg',
+            backendId: null,
+            key: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4180,6 +4243,8 @@ describe(MediaService.name, () => {
             assetId: 'asset-id',
             type: AssetFileType.Preview,
             path: '/old/preview.jpg',
+            backendId: null,
+            key: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4189,6 +4254,8 @@ describe(MediaService.name, () => {
             assetId: 'asset-id',
             type: AssetFileType.Thumbnail,
             path: '/old/thumbnail.jpg',
+            backendId: null,
+            key: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4205,6 +4272,8 @@ describe(MediaService.name, () => {
           assetId: 'asset-id',
           type: AssetFileType.Preview,
           path: '/old/preview.jpg',
+          backendId: null,
+          key: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4214,6 +4283,8 @@ describe(MediaService.name, () => {
           assetId: 'asset-id',
           type: AssetFileType.Thumbnail,
           path: '/old/thumbnail.jpg',
+          backendId: null,
+          key: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4234,6 +4305,8 @@ describe(MediaService.name, () => {
             assetId: 'asset-id',
             type: AssetFileType.Preview,
             path: '/same/preview.jpg',
+            backendId: null,
+            key: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4243,6 +4316,8 @@ describe(MediaService.name, () => {
             assetId: 'asset-id',
             type: AssetFileType.Thumbnail,
             path: '/same/thumbnail.jpg',
+            backendId: null,
+            key: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4283,6 +4358,8 @@ describe(MediaService.name, () => {
             assetId: 'asset-id',
             type: AssetFileType.Preview,
             path: '/old/preview.jpg',
+            backendId: null,
+            key: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4292,6 +4369,8 @@ describe(MediaService.name, () => {
             assetId: 'asset-id',
             type: AssetFileType.Thumbnail,
             path: '/old/thumbnail.jpg',
+            backendId: null,
+            key: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4346,6 +4425,8 @@ describe(MediaService.name, () => {
           assetId: 'asset-id',
           type: AssetFileType.Thumbnail,
           path: '/old/thumbnail.jpg',
+          backendId: null,
+          key: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4379,6 +4460,8 @@ describe(MediaService.name, () => {
             assetId: 'asset-id',
             type: AssetFileType.Preview,
             path: '/old/preview.jpg',
+            backendId: null,
+            key: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4395,6 +4478,8 @@ describe(MediaService.name, () => {
           assetId: 'asset-id',
           type: AssetFileType.Preview,
           path: '/old/preview.jpg',
+          backendId: null,
+          key: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4415,6 +4500,8 @@ describe(MediaService.name, () => {
             assetId: 'asset-id',
             type: AssetFileType.Preview,
             path: '/old/preview.jpg',
+            backendId: null,
+            key: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4424,6 +4511,8 @@ describe(MediaService.name, () => {
             assetId: 'asset-id',
             type: AssetFileType.Thumbnail,
             path: '/old/thumbnail.jpg',
+            backendId: null,
+            key: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,

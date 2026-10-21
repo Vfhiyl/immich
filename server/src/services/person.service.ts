@@ -397,8 +397,9 @@ export class PersonService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    await using preview = await this.storageBackendRepository.lease(previewFile);
     const { imageHeight, imageWidth, faces } = await this.machineLearningRepository.detectFaces(
-      previewFile.path,
+      preview.path,
       machineLearning.facialRecognition,
     );
     this.logger.debug(`${faces.length} faces detected in ${previewFile.path}`);

@@ -7,6 +7,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
+import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { OcrService } from 'src/services/ocr.service.js';
@@ -18,7 +19,14 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   return newMediumService(OcrService, {
     database: db || defaultDatabase,
-    real: [AssetRepository, AssetJobRepository, ConfigRepository, OcrRepository, SystemMetadataRepository],
+    real: [
+      AssetRepository,
+      AssetJobRepository,
+      ConfigRepository,
+      OcrRepository,
+      StorageBackendRepository,
+      SystemMetadataRepository,
+    ],
     mock: [JobRepository, LoggingRepository, MachineLearningRepository],
   });
 };

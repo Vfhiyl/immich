@@ -242,6 +242,18 @@ export function withOriginalFile(eb: ExpressionBuilder<DB, 'asset'>) {
   ).as('originalFile');
 }
 
+/** A file of an asset with where it is stored, as one value */
+export function withFileLocation(eb: ExpressionBuilder<DB, 'asset'>, type: AssetFileType, isEdited = false) {
+  return jsonObjectFrom(
+    eb
+      .selectFrom('asset_file')
+      .select(['asset_file.path', 'asset_file.backendId', 'asset_file.key'])
+      .whereRef('asset_file.assetId', '=', 'asset.id')
+      .where('asset_file.type', '=', sql.lit(type))
+      .where('asset_file.isEdited', '=', sql.lit(isEdited)),
+  );
+}
+
 export function withFilePath(eb: ExpressionBuilder<DB, 'asset'>, type: AssetFileType, isEdited = false) {
   return eb
     .selectFrom('asset_file')

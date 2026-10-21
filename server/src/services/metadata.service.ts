@@ -586,13 +586,18 @@ export class MetadataService extends BaseService {
     return { width, height };
   }
 
+  private async readSidecarTags(file: AssetFile) {
+    await using sidecar = await this.storageBackendRepository.lease(file);
+    return this.metadataRepository.readTags(sidecar.path);
+  }
+
   private async getExifTags(asset: { originalPath: string; files: AssetFile[]; type: AssetType }) {
     const { sidecarFile } = getAssetFiles(asset.files);
     const shouldProbe = asset.type === AssetType.Video || asset.originalPath.toLowerCase().endsWith('.gif');
 
     const [mediaTags, sidecarTags, videoResult] = await Promise.all([
       this.metadataRepository.readTags(asset.originalPath),
-      sidecarFile ? this.metadataRepository.readTags(sidecarFile.path) : null,
+      sidecarFile ? this.readSidecarTags(sidecarFile) : null,
       shouldProbe ? this.getVideoTags(asset.originalPath) : null,
     ]);
 

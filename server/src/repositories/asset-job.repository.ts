@@ -15,7 +15,7 @@ import {
   withExif,
   withExifInner,
   withFaces,
-  withFilePath,
+  withFileLocation,
   withFiles,
   withOriginalFile,
   withVideoFormat,
@@ -258,7 +258,7 @@ export class AssetJobRepository {
   getForOcr(id: string) {
     return this.db
       .selectFrom('asset')
-      .select((eb) => ['asset.visibility', withFilePath(eb, AssetFileType.Preview).as('previewFile')])
+      .select((eb) => ['asset.visibility', withFileLocation(eb, AssetFileType.Preview).as('previewFile')])
       .where('asset.id', '=', id)
       .executeTakeFirst();
   }

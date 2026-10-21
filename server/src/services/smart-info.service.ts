@@ -5,6 +5,7 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 
 import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { RecordedFile } from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { batched, getCLIPModelInfo, isSmartSearchEnabled } from 'src/utils/misc.js';
 
@@ -100,7 +101,7 @@ export class SmartInfoService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const embedding = await this.machineLearningRepository.encodeImage(asset.files[0].path, machineLearning.clip);
+    const embedding = await this.encodePreview(asset.files[0], machineLearning.clip);
 
     if (this.databaseRepository.isBusy(DatabaseLock.CLIPDimSize)) {
       this.logger.verbose(`Waiting for CLIP dimension size to be updated`);
@@ -116,5 +117,11 @@ export class SmartInfoService extends BaseService {
     await this.searchRepository.upsert(asset.id, embedding);
 
     return JobStatus.Success;
+  }
+
+  /** Holds the preview only while it is encoded, not while waiting for the database */
+  private async encodePreview(file: RecordedFile, config: SystemConfig['machineLearning']['clip']) {
+    await using preview = await this.storageBackendRepository.lease(file);
+    return this.machineLearningRepository.encodeImage(preview.path, config);
   }
 }

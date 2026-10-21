@@ -38,6 +38,9 @@ export type AssetFile = {
   id: string;
   type: AssetFileType;
   path: string;
+  /** Where the file is stored; null until it has been recorded */
+  backendId: string | null;
+  key: string | null;
   isEdited: boolean;
 };
 
@@ -370,10 +373,19 @@ export const columns = {
     'asset.isEdited',
     'asset.isFavorite',
   ],
-  assetFiles: ['asset_file.id', 'asset_file.path', 'asset_file.type', 'asset_file.isEdited'],
+  assetFiles: [
+    'asset_file.id',
+    'asset_file.path',
+    'asset_file.backendId',
+    'asset_file.key',
+    'asset_file.type',
+    'asset_file.isEdited',
+  ],
   assetFilesForThumbnail: [
     'asset_file.id',
     'asset_file.path',
+    'asset_file.backendId',
+    'asset_file.key',
     'asset_file.type',
     'asset_file.isEdited',
     'asset_file.isProgressive',

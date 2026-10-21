@@ -44,7 +44,8 @@ export class OcrService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const ocrResults = await this.machineLearningRepository.ocr(asset.previewFile, machineLearning.ocr);
+    await using preview = await this.storageBackendRepository.lease(asset.previewFile);
+    const ocrResults = await this.machineLearningRepository.ocr(preview.path, machineLearning.ocr);
     const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults);
     await this.ocrRepository.upsert(id, ocrDataList, searchText);
 
