@@ -1,5 +1,5 @@
 import { ChildProcess, spawn } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -26,6 +26,8 @@ export interface LocalBackend {
   role: 'originals' | 'derived' | 'backup';
   /** Store the backend's files on an S3 service, below this prefix, instead of a local folder */
   s3?: { service: S3Service; prefix: string };
+  /** Whether new files are encrypted; the server encrypts S3 backends unless told otherwise */
+  encrypted?: boolean;
 }
 
 /** A versitygw S3 service storing objects as files, so that tests can look at what was stored */
@@ -158,10 +160,23 @@ export class TestEnvironment {
     return this.backendFolders.get(id) ?? join(this.root, 'backends', id);
   }
 
+  get masterKeyFile() {
+    return join(this.root, 'master.key');
+  }
+
   async writeBackends(backends: LocalBackend[]) {
-    const lines = ['backends:'];
-    for (const { id, role, s3 } of backends) {
+    const lines = [];
+    if (backends.some(({ s3, encrypted }) => encrypted ?? !!s3)) {
+      await writeFile(this.masterKeyFile, `${randomBytes(32).toString('base64')}\n`);
+      lines.push('encryption:', `  masterKeyFile: ${this.masterKeyFile}`);
+    }
+
+    lines.push('backends:');
+    for (const { id, role, s3, encrypted } of backends) {
       lines.push(`  - id: ${id}`, `    role: ${role}`);
+      if (encrypted !== undefined) {
+        lines.push(`    encrypted: ${encrypted}`);
+      }
       if (s3) {
         const { service, prefix } = s3;
         this.backendFolders.set(id, join(service.root, service.bucket, prefix));

@@ -242,6 +242,8 @@ export function withOriginalFile(eb: ExpressionBuilder<DB, 'asset'>) {
         'asset_original_file.key',
         // the checksum stays out of JSON, where it would turn into text; reads are verified by size
         'asset_original_file.size',
+        // JSON holds it as hex text, which reads decode
+        'asset_original_file.encryption',
       ])
       .whereRef('asset_original_file.assetId', '=', 'asset.id'),
   ).as('originalFile');
@@ -252,7 +254,7 @@ export function withFileLocation(eb: ExpressionBuilder<DB, 'asset'>, type: Asset
   return jsonObjectFrom(
     eb
       .selectFrom('asset_file')
-      .select(['asset_file.path', 'asset_file.backendId', 'asset_file.key', 'asset_file.size'])
+      .select(['asset_file.path', 'asset_file.backendId', 'asset_file.key', 'asset_file.size', 'asset_file.encryption'])
       .whereRef('asset_file.assetId', '=', 'asset.id')
       .where('asset_file.type', '=', sql.lit(type))
       .where('asset_file.isEdited', '=', sql.lit(isEdited)),

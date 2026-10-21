@@ -7,7 +7,7 @@ import type { JobOf, SystemFlags } from 'src/types.js';
 import { ErrorMessages } from 'src/constants.js';
 import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { StorageBackendConfig } from 'src/dtos/storage-backend-config.dto.js';
+import { StorageBackendConfig, StorageBackendsConfig } from 'src/dtos/storage-backend-config.dto.js';
 import {
   BootstrapEventPriority,
   BuiltinStorageBackend,
@@ -19,6 +19,7 @@ import {
   StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { KeyProvider } from 'src/repositories/key-provider.js';
 import { PersonId } from 'src/repositories/person.repository.js';
 import { isBuiltinStorageBackend } from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -153,9 +154,14 @@ export class StorageService extends BaseService {
   async onBootstrapStorageBackends() {
     const { backendsFile } = this.configRepository.getEnv().storage;
     let backends: StorageBackendConfig[] = [];
+    let keys: KeyProvider | undefined;
     if (backendsFile) {
       try {
-        ({ backends } = await this.storageBackendRepository.readConfig(backendsFile));
+        let encryption: StorageBackendsConfig['encryption'];
+        ({ backends, encryption } = await this.storageBackendRepository.readConfig(backendsFile));
+        if (encryption) {
+          keys = this.storageBackendRepository.readMasterKeys(encryption.masterKeyFile);
+        }
       } catch (error) {
         throw new ImmichStartupError(`Unable to load the storage backend configuration: ${error}`);
       }
@@ -193,7 +199,7 @@ export class StorageService extends BaseService {
       );
     });
 
-    this.storageBackendRepository.configure(backends);
+    this.storageBackendRepository.configure(backends, keys);
 
     for (const backend of backends) {
       await this.probeStorageBackend(backend.id);
@@ -204,15 +210,15 @@ export class StorageService extends BaseService {
     }
   }
 
-  /** Check that a backend accepts writes and returns what was written, then remove the probe */
+  /** Check that a backend accepts writes and returns what was written (encrypted, if it encrypts), then remove the probe */
   private async probeStorageBackend(backendId: string) {
-    const store = this.storageBackendRepository.get(backendId);
+    const store = this.storageBackendRepository.getWriteStore(backendId);
     const key = `${STORAGE_PROBE_PREFIX}/${this.cryptoRepository.randomUUID()}`;
     const content = Buffer.from(`immich storage probe ${key}`);
 
     try {
       const written = await store.put(key, Readable.from([content]));
-      const read = await buffer(await store.get(key, { expect: written }));
+      const read = await buffer(await store.get(key, { expect: written, encryption: written.encryption }));
       if (!read.equals(content)) {
         throw new Error('the probe read back different content');
       }

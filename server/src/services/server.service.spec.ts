@@ -142,6 +142,7 @@ describe(ServerService.name, () => {
           driver: StorageBackendDriver.Local,
           role: StorageBackendRole.Originals,
           root: '/mnt/originals',
+          encrypted: false,
         },
       ]);
 

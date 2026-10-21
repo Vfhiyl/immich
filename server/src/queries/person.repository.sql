@@ -823,7 +823,8 @@ select
         select
           "asset_original_file"."backendId",
           "asset_original_file"."key",
-          "asset_original_file"."size"
+          "asset_original_file"."size",
+          "asset_original_file"."encryption"
         from
           "asset_original_file"
         where
@@ -839,7 +840,8 @@ select
           "asset_file"."path",
           "asset_file"."backendId",
           "asset_file"."key",
-          "asset_file"."size"
+          "asset_file"."size",
+          "asset_file"."encryption"
         from
           "asset_file"
         where
@@ -953,7 +955,9 @@ select
         'key',
         "person_thumbnail_file"."key",
         'size',
-        "person_thumbnail_file"."size"
+        "person_thumbnail_file"."size",
+        'encryption',
+        "person_thumbnail_file"."encryption"
       ) as "file"
     from
       "person"
@@ -973,7 +977,9 @@ select
         'key',
         "person_thumbnail_file"."key",
         'size',
-        "person_thumbnail_file"."size"
+        "person_thumbnail_file"."size",
+        'encryption',
+        "person_thumbnail_file"."encryption"
       ) as "file"
     from
       "person"

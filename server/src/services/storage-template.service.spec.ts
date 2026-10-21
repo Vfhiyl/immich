@@ -105,6 +105,7 @@ describe(StorageTemplateService.name, () => {
           driver: StorageBackendDriver.Local,
           role: StorageBackendRole.Originals,
           root: '/mnt/originals',
+          encrypted: false,
         },
       ]);
 
@@ -123,6 +124,7 @@ describe(StorageTemplateService.name, () => {
           driver: StorageBackendDriver.Local,
           role: StorageBackendRole.Originals,
           root: '/mnt/originals',
+          encrypted: false,
         },
       ]);
 

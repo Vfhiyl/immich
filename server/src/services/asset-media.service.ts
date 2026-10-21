@@ -277,6 +277,7 @@ export class AssetMediaService extends BaseService {
           key: asset.editedKey ?? null,
           size: asset.editedSize,
           checksum: asset.editedChecksum,
+          encryption: asset.editedEncryption,
         }
       : {
           path: asset.originalPath,
@@ -284,6 +285,7 @@ export class AssetMediaService extends BaseService {
           key: asset.originalKey,
           size: asset.originalSize,
           checksum: asset.originalChecksum,
+          encryption: asset.originalEncryption,
         };
     const path = file.path;
 
@@ -319,6 +321,7 @@ export class AssetMediaService extends BaseService {
       key,
       size: fileSize,
       checksum,
+      encryption,
     } = await this.assetRepository.getForThumbnail(id, size, dto.edited ?? false);
 
     if (size === AssetFileType.FullSize && mimeTypes.isWebSupportedImage(originalPath) && !dto.edited) {
@@ -342,7 +345,7 @@ export class AssetMediaService extends BaseService {
 
     return new ImmichFileResponse({
       fileName,
-      ...this.storageBackendRepository.toFileSource({ path, backendId, key, size: fileSize, checksum }),
+      ...this.storageBackendRepository.toFileSource({ path, backendId, key, size: fileSize, checksum, encryption }),
       contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithCache,
     });
@@ -364,6 +367,7 @@ export class AssetMediaService extends BaseService {
           key: asset.encodedVideoKey,
           size: asset.encodedVideoSize,
           checksum: asset.encodedVideoChecksum,
+          encryption: asset.encodedVideoEncryption,
         }
       : {
           path: asset.originalPath,
@@ -371,6 +375,7 @@ export class AssetMediaService extends BaseService {
           key: asset.originalKey,
           size: asset.originalSize,
           checksum: asset.originalChecksum,
+          encryption: asset.originalEncryption,
         };
 
     return new ImmichFileResponse({

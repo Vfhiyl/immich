@@ -44,6 +44,10 @@ export class UserProfileImageFileTable {
   @Column({ type: 'bytea', nullable: true })
   checksum!: Buffer | null;
 
+  /** For an encrypted file, the header that reading it needs (the key it was encrypted with, wrapped) */
+  @Column({ type: 'bytea', nullable: true })
+  encryption!: Buffer | null;
+
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;
 }

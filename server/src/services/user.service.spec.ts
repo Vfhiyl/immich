@@ -137,6 +137,7 @@ describe(UserService.name, () => {
         key: null,
         size: null,
         checksum: null,
+        encryption: null,
       });
       mocks.user.updateProfileImage.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
 
@@ -149,6 +150,7 @@ describe(UserService.name, () => {
           key: expect.stringContaining(`profile/${authStub.admin.user.id}/`),
           size: null,
           checksum: null,
+          encryption: null,
         },
         profileChangedAt: expect.any(Date),
       });
@@ -183,6 +185,7 @@ describe(UserService.name, () => {
         key: 'old',
         size: null,
         checksum: null,
+        encryption: null,
       });
       mocks.user.updateProfileImage.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
 
@@ -203,6 +206,7 @@ describe(UserService.name, () => {
         key: 'old',
         size: null,
         checksum: null,
+        encryption: null,
       });
 
       await sut.deleteProfileImage(authStub.admin);
@@ -257,6 +261,7 @@ describe(UserService.name, () => {
         key: null,
         size: null,
         checksum: null,
+        encryption: null,
       });
 
       await expect(sut.getProfileImage(userStub.admin.id)).rejects.toBeInstanceOf(NotFoundException);
@@ -270,6 +275,7 @@ describe(UserService.name, () => {
         key: 'profile/user/profile.jpg',
         size: null,
         checksum: null,
+        encryption: null,
       });
 
       await expect(sut.getProfileImage(user.id)).resolves.toEqual(
@@ -291,6 +297,7 @@ describe(UserService.name, () => {
         key: null,
         size: null,
         checksum: null,
+        encryption: null,
       });
 
       await expect(sut.getProfileImage(user.id)).resolves.toEqual(

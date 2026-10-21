@@ -61,13 +61,15 @@ import { globToPostgresRegex } from 'src/utils/misc.js';
 export type AssetStats = Record<AssetType, number>;
 
 /** An asset to create, with the location of its original file */
-export type AssetCreate = Insertable<AssetTable> & { originalFile: StorageLocation };
+export type AssetCreate = Insertable<AssetTable> & {
+  originalFile: StorageLocation & { size?: number | null; checksum?: Buffer | null; encryption?: Buffer | null };
+};
 
 /** A file to insert or update; the storage location is required so every new row is addressable by backend and key */
 export type AssetFileUpsert = Pick<
   Insertable<AssetFileTable>,
   'assetId' | 'path' | 'type' | 'isEdited' | 'isProgressive' | 'isTransparent'
-> & { backendId: string; key: string; size?: number | null; checksum?: Buffer | null };
+> & { backendId: string; key: string; size?: number | null; checksum?: Buffer | null; encryption?: Buffer | null };
 
 export interface BoundingBox {
   west: number;
@@ -1087,6 +1089,7 @@ export class AssetRepository {
           key: eb.ref('excluded.key'),
           size: eb.ref('excluded.size'),
           checksum: eb.ref('excluded.checksum'),
+          encryption: eb.ref('excluded.encryption'),
         })),
       )
       .execute();
@@ -1107,6 +1110,7 @@ export class AssetRepository {
           key: eb.ref('excluded.key'),
           size: eb.ref('excluded.size'),
           checksum: eb.ref('excluded.checksum'),
+          encryption: eb.ref('excluded.encryption'),
           isProgressive: eb.ref('excluded.isProgressive'),
           isTransparent: eb.ref('excluded.isTransparent'),
         })),
@@ -1324,6 +1328,7 @@ export class AssetRepository {
             'asset_file.key as editedKey',
             'asset_file.size as editedSize',
             'asset_file.checksum as editedChecksum',
+            'asset_file.encryption as editedEncryption',
           ]),
       )
       .leftJoin('asset_original_file', 'asset_original_file.assetId', 'asset.id')
@@ -1333,6 +1338,7 @@ export class AssetRepository {
         'asset_original_file.key as originalKey',
         'asset_original_file.size as originalSize',
         'asset_original_file.checksum as originalChecksum',
+        'asset_original_file.encryption as originalEncryption',
       ]);
   }
 
@@ -1362,6 +1368,7 @@ export class AssetRepository {
         'asset_file.key as key',
         'asset_file.size as size',
         'asset_file.checksum as checksum',
+        'asset_file.encryption as encryption',
       ])
       .orderBy('asset_file.isEdited', isEdited ? 'desc' : 'asc')
       .executeTakeFirstOrThrow();
@@ -1384,11 +1391,13 @@ export class AssetRepository {
         'asset_original_file.key as originalKey',
         'asset_original_file.size as originalSize',
         'asset_original_file.checksum as originalChecksum',
+        'asset_original_file.encryption as originalEncryption',
         'asset_file.path as encodedVideoPath',
         'asset_file.backendId as encodedVideoBackendId',
         'asset_file.key as encodedVideoKey',
         'asset_file.size as encodedVideoSize',
         'asset_file.checksum as encodedVideoChecksum',
+        'asset_file.encryption as encodedVideoEncryption',
       ])
       .where('asset.id', '=', id)
       .where('asset.type', '=', AssetType.Video)

@@ -42,7 +42,13 @@ import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
 const fullsizeBuffer = Buffer.from('embedded image data');
 const sha1 = (value: string) => createHash('sha1').update(value).digest();
 // what an output written to its path stores, for a path outside the media location
-const writtenTo = (path: string) => ({ backendId: 'host', key: path.slice(1), size: null, checksum: null });
+const writtenTo = (path: string) => ({
+  backendId: 'host',
+  key: path.slice(1),
+  size: null,
+  checksum: null,
+  encryption: null,
+});
 const rawBuffer = Buffer.from('raw image data');
 const extractedBuffer = Buffer.from('embedded image file');
 
@@ -320,7 +326,13 @@ describe(MediaService.name, () => {
   describe('handleAssetMigration', () => {
     it('should not move files on a storage backend', async () => {
       mocks.storageBackend.configure([
-        { id: 'derived', driver: StorageBackendDriver.Local, role: StorageBackendRole.Derived, root: '/mnt/derived' },
+        {
+          id: 'derived',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Derived,
+          root: '/mnt/derived',
+          encrypted: false,
+        },
       ]);
 
       await expect(sut.handleAssetMigration({ id: 'asset-id' })).resolves.toBe(JobStatus.Skipped);
@@ -386,6 +398,7 @@ describe(MediaService.name, () => {
           driver: StorageBackendDriver.Local,
           role: StorageBackendRole.Derived,
           root: join(root, 'derived'),
+          encrypted: false,
         },
       ]);
       mocks.person.getFaces.mockResolvedValue([]);
@@ -447,6 +460,7 @@ describe(MediaService.name, () => {
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
+            encryption: null,
           },
           {
             id: 'f2',
@@ -458,6 +472,7 @@ describe(MediaService.name, () => {
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
+            encryption: null,
           },
         ],
       });
@@ -604,7 +619,7 @@ describe(MediaService.name, () => {
       const asset = AssetFactory.from().exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
-        originalFile: { backendId: 'media', key: 'library/IMG_1.jpg', size: null },
+        originalFile: { backendId: 'media', key: 'library/IMG_1.jpg', size: null, encryption: null },
       });
       const release = vi.fn().mockResolvedValue(undefined);
       mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/IMG_1.jpg', [Symbol.asyncDispose]: release });
@@ -618,6 +633,7 @@ describe(MediaService.name, () => {
         key: 'library/IMG_1.jpg',
         size: null,
         checksum: null,
+        encryption: null,
       });
       expect(mocks.media.decodeImage).toHaveBeenCalledWith('/staging/IMG_1.jpg', expect.any(Object));
       expect(release).toHaveBeenCalledOnce();
@@ -713,6 +729,7 @@ describe(MediaService.name, () => {
           key: expect.any(String),
           size: null,
           checksum: null,
+          encryption: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -725,6 +742,7 @@ describe(MediaService.name, () => {
           key: expect.any(String),
           size: null,
           checksum: null,
+          encryption: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -771,6 +789,7 @@ describe(MediaService.name, () => {
           key: expect.any(String),
           size: null,
           checksum: null,
+          encryption: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -783,6 +802,7 @@ describe(MediaService.name, () => {
           key: expect.any(String),
           size: null,
           checksum: null,
+          encryption: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -828,6 +848,7 @@ describe(MediaService.name, () => {
           key: expect.any(String),
           size: null,
           checksum: null,
+          encryption: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -840,6 +861,7 @@ describe(MediaService.name, () => {
           key: expect.any(String),
           size: null,
           checksum: null,
+          encryption: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -1838,6 +1860,7 @@ describe(MediaService.name, () => {
           key: expect.stringContaining(`thumbs/${person.ownerId}/`),
           size: null,
           checksum: null,
+          encryption: null,
         },
       });
     });
@@ -1850,6 +1873,7 @@ describe(MediaService.name, () => {
           backendId: 'host',
           key: personThumbnailStub.newThumbnailMiddle.originalPath.slice(1),
           size: null,
+          encryption: null,
         },
       });
       const release = vi.fn().mockResolvedValue(undefined);
@@ -1869,6 +1893,7 @@ describe(MediaService.name, () => {
         key: personThumbnailStub.newThumbnailMiddle.originalPath.slice(1),
         size: null,
         checksum: null,
+        encryption: null,
       });
       expect(mocks.media.decodeImage).toHaveBeenCalledWith('/staging/original.jpg', expect.any(Object));
       expect(release).toHaveBeenCalledOnce();
@@ -1903,6 +1928,7 @@ describe(MediaService.name, () => {
             driver: StorageBackendDriver.Local,
             role: StorageBackendRole.Derived,
             root: join(root, 'derived'),
+            encrypted: false,
           },
         ]);
         const person = PersonFactory.create();
@@ -1926,7 +1952,13 @@ describe(MediaService.name, () => {
           ownerId: person.ownerId,
           personGroupId: person.personGroupId,
           thumbnailPath: expect.stringContaining(`${person.personGroupId}.jpeg`),
-          thumbnailFile: { backendId: 'derived', key: expect.any(String), size: 4, checksum: sha1('face') },
+          thumbnailFile: {
+            backendId: 'derived',
+            key: expect.any(String),
+            size: 4,
+            checksum: sha1('face'),
+            encryption: null,
+          },
         });
         expect(mocks.job.queue).toHaveBeenCalledWith({
           name: JobName.FileDelete,
@@ -2025,6 +2057,7 @@ describe(MediaService.name, () => {
           key: expect.stringContaining(`thumbs/${person.ownerId}/`),
           size: null,
           checksum: null,
+          encryption: null,
         },
       });
     });
@@ -2369,7 +2402,7 @@ describe(MediaService.name, () => {
 
   describe('handleVideoConversion', () => {
     let asset: ReturnType<typeof AssetFactory.create> & {
-      originalFile: { backendId: string; key: string; size: number | null } | null;
+      originalFile: { backendId: string; key: string; size: number | null; encryption: string | null } | null;
       videoStream: VideoStreamInfo & { timeBase: number };
       audioStream: AudioStreamInfo | null;
       format: VideoFormat;
@@ -2377,7 +2410,7 @@ describe(MediaService.name, () => {
     beforeEach(() => {
       asset = {
         ...AssetFactory.create({ id: 'video-id', type: AssetType.Video, originalPath: '/original/path.ext' }),
-        originalFile: { backendId: 'host', key: 'original/path.ext', size: null },
+        originalFile: { backendId: 'host', key: 'original/path.ext', size: null, encryption: null },
         videoStream: probeStub.videoStreamH264.videoStream,
         audioStream: null,
         format: probeStub.videoStreamH264.format,
@@ -2404,6 +2437,7 @@ describe(MediaService.name, () => {
         key: 'original/path.ext',
         size: null,
         checksum: null,
+        encryption: null,
       });
       expect(mocks.media.transcode).toHaveBeenCalledWith('/staging/path.ext', expect.any(String), expect.any(Object));
       expect(release).toHaveBeenCalledOnce();
@@ -2438,6 +2472,7 @@ describe(MediaService.name, () => {
             driver: StorageBackendDriver.Local,
             role: StorageBackendRole.Derived,
             root: join(root, 'derived'),
+            encrypted: false,
           },
         ]);
         mocks.assetJob.getForVideoConversion.mockResolvedValue({
@@ -2452,6 +2487,7 @@ describe(MediaService.name, () => {
               key: 'old',
               size: null,
               isEdited: false,
+              encryption: null,
             },
           ],
         });
@@ -2472,6 +2508,7 @@ describe(MediaService.name, () => {
           key: expect.stringMatching(/^[0-9a-f-]{36}$/),
           size: 5,
           checksum: sha1('video'),
+          encryption: null,
           isEdited: false,
         });
         expect(mocks.job.queue).toHaveBeenCalledWith({
@@ -2507,6 +2544,7 @@ describe(MediaService.name, () => {
             key: null,
             size: null,
             isEdited: false,
+            encryption: null,
           },
         ],
       });
@@ -4503,6 +4541,7 @@ describe(MediaService.name, () => {
           key: 'new/preview.jpg',
           size: null,
           checksum: null,
+          encryption: null,
           type: AssetFileType.Preview,
           isEdited: false,
           isProgressive: false,
@@ -4515,6 +4554,7 @@ describe(MediaService.name, () => {
           key: 'new/thumbnail.jpg',
           size: null,
           checksum: null,
+          encryption: null,
           type: AssetFileType.Thumbnail,
           isEdited: false,
           isProgressive: false,
@@ -4585,6 +4625,7 @@ describe(MediaService.name, () => {
           key: 'new/preview.jpg',
           size: null,
           checksum: null,
+          encryption: null,
           type: AssetFileType.Preview,
           isEdited: false,
           isProgressive: false,
@@ -4597,6 +4638,7 @@ describe(MediaService.name, () => {
           key: 'new/thumbnail.jpg',
           size: null,
           checksum: null,
+          encryption: null,
           type: AssetFileType.Thumbnail,
           isEdited: false,
           isProgressive: false,
@@ -4793,6 +4835,7 @@ describe(MediaService.name, () => {
           key: 'new/preview.jpg',
           size: null,
           checksum: null,
+          encryption: null,
           type: AssetFileType.Preview,
           isEdited: false,
           isProgressive: false,
@@ -4805,6 +4848,7 @@ describe(MediaService.name, () => {
           key: 'new/fullsize.jpg',
           size: null,
           checksum: null,
+          encryption: null,
           type: AssetFileType.FullSize,
           isEdited: false,
           isProgressive: false,
@@ -4946,6 +4990,7 @@ describe(MediaService.name, () => {
           key: 'old/preview.jpg',
           size: null,
           checksum: null,
+          encryption: null,
           type: AssetFileType.Preview,
           isEdited: false,
           isProgressive: true,

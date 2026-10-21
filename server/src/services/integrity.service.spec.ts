@@ -17,7 +17,13 @@ describe(IntegrityService.name, () => {
   describe('with storage backends', () => {
     beforeEach(() => {
       mocks.storageBackend.configure([
-        { id: 'originals', driver: StorageBackendDriver.Local, role: StorageBackendRole.Originals, root: '/mnt/o' },
+        {
+          id: 'originals',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Originals,
+          root: '/mnt/o',
+          encrypted: false,
+        },
       ]);
     });
 

@@ -580,6 +580,7 @@ describe(AssetService.name, () => {
           driver: StorageBackendDriver.Local,
           role: StorageBackendRole.Originals,
           root: join(root, 'originals'),
+          encrypted: false,
         },
       ]);
       mocks.storage.copyFile.mockImplementation((source, target) => fs.copyFile(source, target));
@@ -601,11 +602,11 @@ describe(AssetService.name, () => {
       mocks.asset.getForCopy
         .mockResolvedValueOnce({
           ...source,
-          files: [{ ...sourceSidecar, backendId: 'originals', key: 'source-sidecar', size: null }],
+          files: [{ ...sourceSidecar, backendId: 'originals', key: 'source-sidecar', size: null, encryption: null }],
         })
         .mockResolvedValueOnce({
           ...target,
-          files: [{ ...targetSidecar, backendId: 'originals', key: 'target-sidecar', size: null }],
+          files: [{ ...targetSidecar, backendId: 'originals', key: 'target-sidecar', size: null, encryption: null }],
         });
 
       await sut.copy(authStub.admin, {
@@ -624,6 +625,7 @@ describe(AssetService.name, () => {
         key: expect.stringMatching(/^[0-9a-f-]{36}$/),
         size: 6,
         checksum: expect.any(Buffer),
+        encryption: null,
         type: AssetFileType.Sidecar,
       });
       expect(mocks.job.queue).toHaveBeenCalledWith({
@@ -725,7 +727,7 @@ describe(AssetService.name, () => {
         .build();
       mocks.assetJob.getForAssetDeletion.mockResolvedValue({
         ...getForAssetDeletion(asset),
-        originalFile: { backendId: 'originals', key: 'original-key', size: null },
+        originalFile: { backendId: 'originals', key: 'original-key', size: null, encryption: null },
         files: [
           { ...asset.files[0], backendId: 'derived', key: 'preview-key' },
           { ...asset.files[1], backendId: null, key: null },
@@ -750,7 +752,7 @@ describe(AssetService.name, () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).build();
       mocks.assetJob.getForAssetDeletion.mockResolvedValue({
         ...getForAssetDeletion(asset),
-        originalFile: { backendId: 'originals', key: 'original-key', size: null },
+        originalFile: { backendId: 'originals', key: 'original-key', size: null, encryption: null },
       });
 
       await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: false });

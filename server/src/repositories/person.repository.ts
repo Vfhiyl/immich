@@ -107,7 +107,7 @@ export type PersonId = { ownerId: string; personGroupId: string };
 
 export type PersonThumbnailUpdate = PersonId & {
   thumbnailPath: string;
-  thumbnailFile: StorageLocation & { size?: number | null; checksum?: Buffer | null };
+  thumbnailFile: StorageLocation & { size?: number | null; checksum?: Buffer | null; encryption?: Buffer | null };
 };
 
 export type ReassignCluster = { userId: string; newClusterId: string };
@@ -206,6 +206,8 @@ const thumbnailFile = (eb: ExpressionBuilder<DB, 'person' | 'person_thumbnail_fi
     key: eb.ref('person_thumbnail_file.key'),
     // the checksum stays out of JSON, where it would turn into text; reads are verified by size
     size: eb.ref('person_thumbnail_file.size'),
+    // JSON holds it as hex text, which reads decode
+    encryption: eb.ref('person_thumbnail_file.encryption'),
   })
     // the thumbnail file is left joined
     .$castTo<RecordedFile>()
@@ -939,6 +941,7 @@ export class PersonRepository {
             key: eb.ref('excluded.key'),
             size: eb.ref('excluded.size'),
             checksum: eb.ref('excluded.checksum'),
+            encryption: eb.ref('excluded.encryption'),
           })),
         )
         .execute();

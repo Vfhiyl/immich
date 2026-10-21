@@ -32,6 +32,7 @@ select
           "asset_file"."backendId",
           "asset_file"."key",
           "asset_file"."size",
+          "asset_file"."encryption",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -62,7 +63,8 @@ select
         select
           "asset_original_file"."backendId",
           "asset_original_file"."key",
-          "asset_original_file"."size"
+          "asset_original_file"."size",
+          "asset_original_file"."encryption"
         from
           "asset_original_file"
         where
@@ -80,6 +82,7 @@ select
           "asset_file"."backendId",
           "asset_file"."key",
           "asset_file"."size",
+          "asset_file"."encryption",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -208,6 +211,7 @@ select
           "asset_file"."backendId",
           "asset_file"."key",
           "asset_file"."size",
+          "asset_file"."encryption",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -238,7 +242,8 @@ select
         select
           "asset_original_file"."backendId",
           "asset_original_file"."key",
-          "asset_original_file"."size"
+          "asset_original_file"."size",
+          "asset_original_file"."encryption"
         from
           "asset_original_file"
         where
@@ -256,6 +261,7 @@ select
           "asset_file"."backendId",
           "asset_file"."key",
           "asset_file"."size",
+          "asset_file"."encryption",
           "asset_file"."type",
           "asset_file"."isEdited",
           "asset_file"."isProgressive",
@@ -373,7 +379,8 @@ select
         select
           "asset_original_file"."backendId",
           "asset_original_file"."key",
-          "asset_original_file"."size"
+          "asset_original_file"."size",
+          "asset_original_file"."encryption"
         from
           "asset_original_file"
         where
@@ -406,6 +413,7 @@ select
           "asset_file"."backendId",
           "asset_file"."key",
           "asset_file"."size",
+          "asset_file"."encryption",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -437,6 +445,7 @@ select
   "asset_file"."backendId",
   "asset_file"."key",
   "asset_file"."size",
+  "asset_file"."encryption",
   "asset_file"."type",
   "asset_file"."isEdited"
 from
@@ -497,6 +506,7 @@ select
           "asset_file"."backendId",
           "asset_file"."key",
           "asset_file"."size",
+          "asset_file"."encryption",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -540,6 +550,7 @@ select
           "asset_file"."backendId",
           "asset_file"."key",
           "asset_file"."size",
+          "asset_file"."encryption",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -571,7 +582,8 @@ select
           "asset_file"."path",
           "asset_file"."backendId",
           "asset_file"."key",
-          "asset_file"."size"
+          "asset_file"."size",
+          "asset_file"."encryption"
         from
           "asset_file"
         where
@@ -615,7 +627,8 @@ select
         select
           "asset_original_file"."backendId",
           "asset_original_file"."key",
-          "asset_original_file"."size"
+          "asset_original_file"."size",
+          "asset_original_file"."encryption"
         from
           "asset_original_file"
         where
@@ -634,6 +647,7 @@ select
           "asset_file"."backendId",
           "asset_file"."key",
           "asset_file"."size",
+          "asset_file"."encryption",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -705,7 +719,8 @@ select
         select
           "asset_original_file"."backendId",
           "asset_original_file"."key",
-          "asset_original_file"."size"
+          "asset_original_file"."size",
+          "asset_original_file"."encryption"
         from
           "asset_original_file"
         where
@@ -723,6 +738,7 @@ select
           "asset_file"."backendId",
           "asset_file"."key",
           "asset_file"."size",
+          "asset_file"."encryption",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -857,6 +873,7 @@ select
           "asset_file"."backendId",
           "asset_file"."key",
           "asset_file"."size",
+          "asset_file"."encryption",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -902,6 +919,7 @@ select
           "asset_file"."backendId",
           "asset_file"."key",
           "asset_file"."size",
+          "asset_file"."encryption",
           "asset_file"."type",
           "asset_file"."isEdited"
         from

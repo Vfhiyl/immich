@@ -7,12 +7,28 @@ const photoPath = join(testAssetDir, 'formats/jpg/el_torcal_rocks.jpg');
 const motionPhotoPath = join(testAssetDir, 'formats/motionphoto/pixel-6-pro.jpg');
 const uuid = expect.stringMatching(/^[0-9a-f-]{36}$/);
 
-type OriginalRow = { backendId: string; key: string; size: string; checksum: string; originalPath: string };
-type FileRow = { type: string; backendId: string; key: string; size: string; path: string };
+type OriginalRow = {
+  backendId: string;
+  key: string;
+  size: string;
+  checksum: string;
+  encryption: string | null;
+  originalPath: string;
+};
+type FileRow = {
+  type: string;
+  backendId: string;
+  key: string;
+  size: string;
+  checksum: string | null;
+  encryption: string | null;
+  path: string;
+};
 
 const getOriginal = async (environment: TestEnvironment, assetId: string) => {
   const [row] = await environment.query<OriginalRow>(
-    `select o."backendId", o.key, o.size, encode(o.checksum, 'hex') as checksum, a."originalPath"
+    `select o."backendId", o.key, o.size, encode(o.checksum, 'hex') as checksum,
+       encode(o.encryption, 'hex') as encryption, a."originalPath"
      from asset a join asset_original_file o on o."assetId" = a.id where a.id = $1`,
     [assetId],
   );
@@ -21,7 +37,9 @@ const getOriginal = async (environment: TestEnvironment, assetId: string) => {
 
 const getFiles = (environment: TestEnvironment, assetId: string) =>
   environment.query<FileRow>(
-    `select type, "backendId", key, size, path from asset_file where "assetId" = $1 order by type`,
+    `select type, "backendId", key, size, encode(checksum, 'hex') as checksum, encode(encryption, 'hex') as encryption,
+       path
+     from asset_file where "assetId" = $1 order by type`,
     [assetId],
   );
 
@@ -62,6 +80,8 @@ describe('storage backends for originals and derived files', () => {
       key: uuid,
       size: String(photo.length),
       checksum: sha1(photo),
+      // local backends are not encrypted unless configured to be
+      encryption: null,
       originalPath: expect.stringContaining(join(environment.mediaLocation, 'upload')),
     });
     await expect(readFile(join(environment.backendRoot('originals'), original.key))).resolves.toEqual(photo);
@@ -207,15 +227,26 @@ describe('storage backends on an S3 service', () => {
     await environment?.destroy();
   });
 
-  it('should store an upload as an object and remove the uploaded file', async () => {
+  it('should store an upload as an encrypted object and remove the uploaded file', async () => {
     const original = await getOriginal(environment, assetId);
 
-    expect(original).toEqual(expect.objectContaining({ backendId: 'originals', key: uuid, checksum: sha1(photo) }));
-    await expect(readFile(join(environment.backendRoot('originals'), original.key))).resolves.toEqual(photo);
+    // size and checksum are those of the photo, the object holds it encrypted
+    expect(original).toEqual(
+      expect.objectContaining({
+        backendId: 'originals',
+        key: uuid,
+        size: String(photo.length),
+        checksum: sha1(photo),
+        encryption: expect.stringMatching(/^[0-9a-f]{132}$/),
+      }),
+    );
+    const stored = await readFile(join(environment.backendRoot('originals'), original.key));
+    expect(stored.length).toBeGreaterThan(photo.length);
+    expect(stored.includes(photo.subarray(0, 64))).toBe(false);
     await eventually(() => expect(stat(original.originalPath)).rejects.toThrow('ENOENT'));
   });
 
-  it('should generate thumbnails from the stored original and store them as objects', async () => {
+  it('should generate thumbnails from the stored original and store them as encrypted objects', async () => {
     const files = await eventually(async () => {
       const files = await getFiles(environment, assetId);
       expect(files.map(({ type }) => type)).toEqual(['preview', 'thumbnail']);
@@ -223,9 +254,9 @@ describe('storage backends on an S3 service', () => {
     });
 
     for (const file of files) {
-      expect(file.backendId).toBe('derived');
+      expect(file).toEqual(expect.objectContaining({ backendId: 'derived', encryption: expect.any(String) }));
       const stored = await stat(join(environment.backendRoot('derived'), file.key));
-      expect(String(stored.size)).toBe(file.size);
+      expect(stored.size).toBeGreaterThan(Number(file.size));
     }
     await eventually(() => expect(environment.listStaging()).resolves.toEqual([]));
   });
@@ -255,11 +286,10 @@ describe('storage backends on an S3 service', () => {
     );
 
     const [, thumbnail] = await getFiles(environment, assetId);
-    const storedThumbnail = await readFile(join(environment.backendRoot('derived'), thumbnail.key));
-    await expect(api.download(`/assets/${assetId}/thumbnail?size=thumbnail`)).resolves.toEqual({
-      status: 200,
-      body: storedThumbnail,
-    });
+    const { status, body } = await api.download(`/assets/${assetId}/thumbnail?size=thumbnail`);
+    expect(status).toBe(200);
+    expect(body.length).toBe(Number(thumbnail.size));
+    expect(sha1(body)).toBe(thumbnail.checksum);
   });
 
   it('should answer a conditional request for an unchanged blob without the content', async () => {

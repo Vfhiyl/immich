@@ -191,6 +191,7 @@ const forOriginal = <T extends object>(asset: T) => ({
   originalKey: null,
   originalSize: null,
   originalChecksum: null,
+  originalEncryption: null,
 });
 
 describe(AssetMediaService.name, () => {
@@ -345,6 +346,7 @@ describe(AssetMediaService.name, () => {
           driver: StorageBackendDriver.Local,
           role: StorageBackendRole.Originals,
           root: join(root, 'originals'),
+          encrypted: false,
         },
       ]);
     });
@@ -366,7 +368,13 @@ describe(AssetMediaService.name, () => {
       expect(mocks.asset.create).toHaveBeenCalledWith(
         expect.objectContaining({
           originalPath: file.originalPath,
-          originalFile: { backendId: 'originals', key: expect.any(String), size: 8, checksum: sha1('original') },
+          originalFile: {
+            backendId: 'originals',
+            key: expect.any(String),
+            size: 8,
+            checksum: sha1('original'),
+            encryption: null,
+          },
         }),
       );
       expect(mocks.asset.upsertFile).toHaveBeenCalledWith(
@@ -471,7 +479,13 @@ describe(AssetMediaService.name, () => {
       expect(mocks.asset.create).toHaveBeenCalledWith(
         expect.objectContaining({
           originalPath: '/data/fake_path/asset_1.jpeg',
-          originalFile: { backendId: 'media', key: 'fake_path/asset_1.jpeg', size: null, checksum: null },
+          originalFile: {
+            backendId: 'media',
+            key: 'fake_path/asset_1.jpeg',
+            size: null,
+            checksum: null,
+            encryption: null,
+          },
         }),
       );
       expect(mocks.storage.utimes).toHaveBeenCalledWith(
@@ -613,6 +627,7 @@ describe(AssetMediaService.name, () => {
         originalKey: asset.originalPath.replace('/data/', ''),
         originalSize: null,
         originalChecksum: null,
+        originalEncryption: null,
       });
 
       await expect(sut.downloadOriginal(authStub.admin, asset.id, {})).resolves.toEqual(
@@ -636,6 +651,7 @@ describe(AssetMediaService.name, () => {
       mocks.asset.getForOriginal.mockResolvedValue({
         ...forOriginal(editedAsset),
         editedPath: editedAsset.files[3].path,
+        originalEncryption: null,
       });
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, {})).resolves.toEqual(
@@ -659,6 +675,7 @@ describe(AssetMediaService.name, () => {
       mocks.asset.getForOriginal.mockResolvedValue({
         ...forOriginal(editedAsset),
         editedPath: editedAsset.files[3].path,
+        originalEncryption: null,
       });
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, { edited: true })).resolves.toEqual(
@@ -676,7 +693,11 @@ describe(AssetMediaService.name, () => {
       const editedAsset = AssetFactory.from().edit({ action: AssetEditAction.Crop }).file(fullsizeEdited).build();
 
       mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([editedAsset.id]));
-      mocks.asset.getForOriginal.mockResolvedValue({ ...forOriginal(editedAsset), editedPath: fullsizeEdited.path });
+      mocks.asset.getForOriginal.mockResolvedValue({
+        ...forOriginal(editedAsset),
+        editedPath: fullsizeEdited.path,
+        originalEncryption: null,
+      });
 
       await expect(
         sut.downloadOriginal(AuthFactory.from().sharedLink().build(), editedAsset.id, { edited: false }),
@@ -730,6 +751,7 @@ describe(AssetMediaService.name, () => {
         key: null,
         size: null,
         checksum: null,
+        encryption: null,
       });
 
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
@@ -752,6 +774,7 @@ describe(AssetMediaService.name, () => {
         key: null,
         size: null,
         checksum: null,
+        encryption: null,
       });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW })).resolves.toEqual(
         new ImmichFileResponse({
@@ -775,6 +798,7 @@ describe(AssetMediaService.name, () => {
         key: null,
         size: null,
         checksum: null,
+        encryption: null,
       });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
         new ImmichFileResponse({
@@ -797,6 +821,7 @@ describe(AssetMediaService.name, () => {
         key: null,
         size: null,
         checksum: null,
+        encryption: null,
       });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
         new ImmichFileResponse({
@@ -819,6 +844,7 @@ describe(AssetMediaService.name, () => {
         key: null,
         size: null,
         checksum: null,
+        encryption: null,
       });
       await expect(
         sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL, edited: true }),
@@ -843,6 +869,7 @@ describe(AssetMediaService.name, () => {
         key: null,
         size: null,
         checksum: null,
+        encryption: null,
       });
       await expect(
         sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL, edited: false }),
@@ -867,6 +894,7 @@ describe(AssetMediaService.name, () => {
         key: null,
         size: null,
         checksum: null,
+        encryption: null,
       });
       await expect(
         sut.viewThumbnail(authStub.adminSharedLink, asset.id, {
@@ -895,6 +923,7 @@ describe(AssetMediaService.name, () => {
         key: null,
         size: null,
         checksum: null,
+        encryption: null,
       });
 
       const auth = AuthFactory.from().sharedLink({ showExif: false }).build();
@@ -937,11 +966,13 @@ describe(AssetMediaService.name, () => {
         originalKey: null,
         originalSize: null,
         originalChecksum: null,
+        originalEncryption: null,
         encodedVideoPath: asset.files[0].path,
         encodedVideoBackendId: 'host',
         encodedVideoKey: 'path/to/encoded/video.mp4',
         encodedVideoSize: null,
         encodedVideoChecksum: null,
+        encodedVideoEncryption: null,
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
@@ -962,11 +993,13 @@ describe(AssetMediaService.name, () => {
         originalKey: 'original/path.ext',
         originalSize: null,
         originalChecksum: null,
+        originalEncryption: null,
         encodedVideoPath: null,
         encodedVideoBackendId: null,
         encodedVideoKey: null,
         encodedVideoSize: null,
         encodedVideoChecksum: null,
+        encodedVideoEncryption: null,
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(

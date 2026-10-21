@@ -16,7 +16,9 @@ import {
   StorageBackendsConfigSchema,
 } from 'src/dtos/storage-backend-config.dto.js';
 import { BuiltinStorageBackend, StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
-import { BlobExpectation, BlobNotFoundError, BlobStore } from 'src/repositories/blob-store.js';
+import { BlobExpectation, BlobNotFoundError, BlobRange, BlobStore } from 'src/repositories/blob-store.js';
+import { EncryptedBlobStore } from 'src/repositories/encrypted-blob-store.js';
+import { KeyProvider, MasterKeys } from 'src/repositories/key-provider.js';
 import { LocalBlobStore } from 'src/repositories/local-blob-store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { S3BlobStore, createS3Client } from 'src/repositories/s3-blob-store.js';
@@ -31,7 +33,13 @@ export interface RecordedFile {
   size?: number | string | null;
   /** A buffer, or hex encoded (as `\\x…`) when it comes from a JSON column */
   checksum?: Buffer | string | null;
+  /** For an encrypted file, the header that reading it needs; a buffer, or hex encoded like the checksum */
+  encryption?: Buffer | string | null;
 }
+
+/** A bytea value, which JSON columns hold as hex text (`\\x…`) */
+const toBuffer = (value: Buffer | string | null | undefined) =>
+  typeof value === 'string' ? Buffer.from(value.replace(/^\\x/, ''), 'hex') : (value ?? undefined);
 
 /** What a read of a recorded file is verified against, if anything was recorded */
 export const toBlobExpectation = ({ size, checksum }: RecordedFile): BlobExpectation | undefined => {
@@ -39,9 +47,7 @@ export const toBlobExpectation = ({ size, checksum }: RecordedFile): BlobExpecta
     return undefined;
   }
 
-  const sha1 =
-    typeof checksum === 'string' ? Buffer.from(checksum.replace(/^\\x/, ''), 'hex') : (checksum ?? undefined);
-  return { size: Number(size), sha1 };
+  return { size: Number(size), sha1: toBuffer(checksum) };
 };
 
 /** A local copy of a file for tools that need one (exiftool, ffmpeg, sharp); release it with `await using` */
@@ -59,14 +65,20 @@ export interface OutputFile extends AsyncDisposable {
   commit(): Promise<StoredFile>;
 }
 
-export type StoredFile = StorageLocation & { size: number | null; checksum: Buffer | null };
+export type StoredFile = StorageLocation & { size: number | null; checksum: Buffer | null; encryption: Buffer | null };
 
 /** A blob on a backend that does not keep files on the local filesystem */
 export interface RemoteBlob {
   store: BlobStore;
   key: string;
   expect?: BlobExpectation;
+  /** For an encrypted blob, the header that reading it needs; `store` then decrypts it */
+  encryption?: Buffer;
 }
+
+/** Read a remote blob, or a range of it, verified against what was recorded and decrypted if it is encrypted */
+export const readBlob = ({ store, key, expect, encryption }: RemoteBlob, range?: BlobRange) =>
+  store.get(key, { range, expect, encryption });
 
 /** Pauses between reads of a blob that is not readable yet, about 15 seconds in all */
 const READ_RETRY_DELAYS = [500, 1000, 2000, 4000, 8000];
@@ -105,13 +117,14 @@ export const isSameStoredFile = (existing: RecordedFile, stored: StorageLocation
 
 export const toRecordedFile = (
   path: string,
-  location: (StorageLocation & Pick<RecordedFile, 'size' | 'checksum'>) | null,
+  location: (StorageLocation & Pick<RecordedFile, 'size' | 'checksum' | 'encryption'>) | null,
 ): RecordedFile => ({
   path,
   backendId: location?.backendId ?? null,
   key: location?.key ?? null,
   size: location?.size ?? null,
   checksum: location?.checksum ?? null,
+  encryption: location?.encryption ?? null,
 });
 
 /** Gives access to the blob store of each storage backend */
@@ -123,6 +136,10 @@ export class StorageBackendRepository {
   private media?: { root: string; store: LocalBlobStore };
   private host?: LocalBlobStore;
   private configured = new Map<string, BlobStore>();
+  /** Backends whose new files are encrypted */
+  private encryptedBackends = new Set<string>();
+  private keys?: KeyProvider;
+  private decrypting = new Map<string, EncryptedBlobStore>();
   private roles = new Map<StorageBackendRole, string>();
   protected readRetryDelays = READ_RETRY_DELAYS;
 
@@ -151,10 +168,26 @@ export class StorageBackendRepository {
     return result.data;
   }
 
-  /** Make the configured storage backends available, replacing any configured before */
-  configure(backends: StorageBackendConfig[]) {
+  /** Master keys from a key file, one base64 key per line */
+  readMasterKeys(path: string): KeyProvider {
+    return MasterKeys.fromFile(path);
+  }
+
+  /**
+   * Make the configured storage backends available, replacing any configured before. Master keys are needed to write
+   * to encrypted backends, and to read any encrypted file.
+   */
+  configure(backends: StorageBackendConfig[], keys?: KeyProvider) {
+    const encrypted = backends.filter((backend) => backend.encrypted);
+    if (encrypted.length > 0 && !keys) {
+      throw new Error(`Storage backend ${encrypted[0].id} is encrypted, but no master key is configured`);
+    }
+
     this.configured = new Map(backends.map((backend) => [backend.id, this.createStore(backend)]));
     this.roles = new Map(backends.map(({ id, role }) => [role, id]));
+    this.encryptedBackends = new Set(encrypted.map(({ id }) => id));
+    this.keys = keys;
+    this.decrypting.clear();
   }
 
   hasConfiguredBackends(): boolean {
@@ -173,12 +206,12 @@ export class StorageBackendRepository {
   async storeFile(role: StorageBackendRole, path: string): Promise<StoredFile> {
     const backendId = this.getBackendFor(role);
     if (!backendId) {
-      return { ...StorageCore.getStorageLocation(path), size: null, checksum: null };
+      return { ...StorageCore.getStorageLocation(path), size: null, checksum: null, encryption: null };
     }
 
     const key = randomUUID();
-    const { size, sha1 } = await this.get(backendId).put(key, createReadStream(path));
-    return { backendId, key, size, checksum: sha1 };
+    const { size, sha1, encryption } = await this.getWriteStore(backendId).put(key, createReadStream(path));
+    return { backendId, key, size, checksum: sha1, encryption: encryption ?? null };
   }
 
   /**
@@ -190,7 +223,8 @@ export class StorageBackendRepository {
     if (!backendId) {
       return {
         path,
-        commit: () => Promise.resolve({ ...StorageCore.getStorageLocation(path), size: null, checksum: null }),
+        commit: () =>
+          Promise.resolve({ ...StorageCore.getStorageLocation(path), size: null, checksum: null, encryption: null }),
         [Symbol.asyncDispose]: () => Promise.resolve(),
       };
     }
@@ -198,20 +232,26 @@ export class StorageBackendRepository {
     const stagingFolder = join(StorageCore.getMediaLocation(), STAGING_FOLDER);
     await mkdir(stagingFolder, { recursive: true });
     const stagingPath = join(stagingFolder, `${randomUUID()}${extname(path)}`);
-    const store = this.get(backendId);
+    const store = this.getWriteStore(backendId);
 
     return {
       path: stagingPath,
       commit: async () => {
         const key = randomUUID();
-        const { size, sha1 } = await store.put(key, createReadStream(stagingPath));
+        const { size, sha1, encryption } = await store.put(key, createReadStream(stagingPath));
         await rm(stagingPath, { force: true });
-        return { backendId, key, size, checksum: sha1 };
+        return { backendId, key, size, checksum: sha1, encryption: encryption ?? null };
       },
       [Symbol.asyncDispose]: () => rm(stagingPath, { force: true }),
     };
   }
 
+  /** The store new files of a backend are written to: one that encrypts them if the backend is encrypted */
+  getWriteStore(backendId: string): BlobStore {
+    return this.encryptedBackends.has(backendId) ? this.getDecryptingStore(backendId) : this.get(backendId);
+  }
+
+  /** The store of a backend as it is, without encryption: for deleting and listing, and for files not encrypted */
   get(backendId: string): BlobStore {
     const configured = this.configured.get(backendId);
     if (configured) {
@@ -252,10 +292,7 @@ export class StorageBackendRepository {
     const stagingPath = join(stagingFolder, `${randomUUID()}${extname(file.path)}`);
     try {
       await this.withReadRetries(file, async () => {
-        await pipeline(
-          await source.blob.store.get(source.blob.key, { expect: source.blob.expect }),
-          createWriteStream(stagingPath),
-        );
+        await pipeline(await readBlob(source.blob), createWriteStream(stagingPath));
       });
     } catch (error) {
       await rm(stagingPath, { force: true });
@@ -272,12 +309,22 @@ export class StorageBackendRepository {
   }
 
   /**
-   * Where to read a recorded file from: a local path, or a blob on a backend that does not keep files locally, with
-   * what the read is verified against.
+   * Where to read a recorded file from: a local path, or a blob that has to be read through its store (on a backend
+   * that does not keep files locally, or encrypted), with what the read is verified against.
    */
   resolve(file: RecordedFile): { path: string } | { blob: RemoteBlob } {
     if (file.backendId === null || file.key === null) {
       return { path: file.path };
+    }
+
+    // whether a file is encrypted is recorded with it, so files stay readable when the setting of a backend changes
+    const encryption = toBuffer(file.encryption);
+    if (encryption) {
+      const expect = toBlobExpectation(file);
+      if (!expect) {
+        throw new Error(`The encrypted file ${file.backendId}:${file.key} has no recorded size`);
+      }
+      return { blob: { store: this.getDecryptingStore(file.backendId), key: file.key, expect, encryption } };
     }
 
     const store = this.get(file.backendId);
@@ -286,6 +333,18 @@ export class StorageBackendRepository {
     }
 
     return { blob: { store, key: file.key, expect: toBlobExpectation(file) } };
+  }
+
+  private getDecryptingStore(backendId: string): EncryptedBlobStore {
+    let store = this.decrypting.get(backendId);
+    if (!store) {
+      if (!this.keys) {
+        throw new Error(`Files on storage backend ${backendId} are encrypted, but no master key is configured`);
+      }
+      store = new EncryptedBlobStore(this.get(backendId), this.keys);
+      this.decrypting.set(backendId, store);
+    }
+    return store;
   }
 
   /**

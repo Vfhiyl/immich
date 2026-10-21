@@ -13,8 +13,10 @@ export const newStorageBackendRepositoryMock = (): Mocked<RepositoryInterface<St
   );
   return {
     readConfig: vitest.fn(),
-    configure: vitest.fn((backends) => real.configure(backends)),
+    readMasterKeys: vitest.fn(),
+    configure: vitest.fn((backends, keys) => real.configure(backends, keys)),
     get: vitest.fn((backendId: string) => real.get(backendId)),
+    getWriteStore: vitest.fn((backendId: string) => real.getWriteStore(backendId)),
     getLocalPath: vitest.fn((file) => real.getLocalPath(file)),
     lease: vitest.fn((file) => real.lease(file)),
     resolve: vitest.fn((file) => real.resolve(file)),

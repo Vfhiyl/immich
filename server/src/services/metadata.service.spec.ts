@@ -43,9 +43,9 @@ const forSidecarJob = (
   return {
     id: factory.uuid(),
     originalPath: '/path/to/IMG_123.jpg',
-    originalFile: null,
     ...asset,
-    files: (asset.files ?? []).map((file) => ({ backendId: null, key: null, size: null, ...file })),
+    originalFile: asset.originalFile ? { encryption: null, ...asset.originalFile } : null,
+    files: (asset.files ?? []).map((file) => ({ backendId: null, key: null, size: null, encryption: null, ...file })),
   };
 };
 
@@ -200,7 +200,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create({ originalPath: '/data/library/IMG_1.jpg' });
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue({
         ...getForMetadataExtraction(asset),
-        originalFile: { backendId: 'media', key: 'library/IMG_1.jpg', size: null },
+        originalFile: { backendId: 'media', key: 'library/IMG_1.jpg', size: null, encryption: null },
       });
       const release = vi.fn().mockResolvedValue(undefined);
       mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/IMG_1.jpg', [Symbol.asyncDispose]: release });
@@ -214,6 +214,7 @@ describe(MetadataService.name, () => {
         key: 'library/IMG_1.jpg',
         size: null,
         checksum: null,
+        encryption: null,
       });
       expect(mocks.metadata.readTags).toHaveBeenCalledWith('/staging/IMG_1.jpg');
       expect(mocks.storage.stat).toHaveBeenCalledWith('/staging/IMG_1.jpg');
@@ -880,7 +881,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue({
         ...getForMetadataExtraction(asset),
-        originalFile: { backendId: 'originals', key: 'original-key', size: 1234 },
+        originalFile: { backendId: 'originals', key: 'original-key', size: 1234, encryption: null },
       });
       mocks.storageBackend.lease.mockResolvedValue({
         path: '/staging/a.jpg',
@@ -914,6 +915,7 @@ describe(MetadataService.name, () => {
             driver: StorageBackendDriver.Local,
             role: StorageBackendRole.Originals,
             root: join(root, 'originals'),
+            encrypted: false,
           },
         ]);
         mocks.storage.createFile.mockImplementation((path, buffer) => fs.writeFile(path, buffer));
@@ -945,6 +947,7 @@ describe(MetadataService.name, () => {
               key: expect.stringMatching(/^[0-9a-f-]{36}$/),
               size: 512,
               checksum: createHash('sha1').update(video).digest(),
+              encryption: null,
             },
           }),
         );
@@ -1023,6 +1026,7 @@ describe(MetadataService.name, () => {
           key: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
           size: null,
           checksum: null,
+          encryption: null,
         },
         ownerId: asset.ownerId,
         type: AssetType.Video,
@@ -1081,6 +1085,7 @@ describe(MetadataService.name, () => {
           key: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
           size: null,
           checksum: null,
+          encryption: null,
         },
         ownerId: asset.ownerId,
         type: AssetType.Video,
@@ -1139,6 +1144,7 @@ describe(MetadataService.name, () => {
           key: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
           size: null,
           checksum: null,
+          encryption: null,
         },
         ownerId: asset.ownerId,
         type: AssetType.Video,
@@ -2222,6 +2228,7 @@ describe(MetadataService.name, () => {
           driver: StorageBackendDriver.Local,
           role: StorageBackendRole.Originals,
           root: '/mnt/originals',
+          encrypted: false,
         },
       ]);
       const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).exif().build();

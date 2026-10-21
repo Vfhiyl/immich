@@ -19,6 +19,8 @@ const LocalBackendSchema = z
     role: z.enum(StorageBackendRole),
     /** Directory that holds the files of this backend */
     root: z.string().regex(/^\//, 'Must be an absolute path'),
+    /** Whether new files are encrypted; files keep how they were written, whatever this says later */
+    encrypted: z.boolean().default(false),
   })
   .strict();
 
@@ -58,15 +60,24 @@ const S3BackendSchema = z
       .default(''),
     addressing: z.enum(['virtual-host', 'path']).default('virtual-host'),
     credentials: S3CredentialsSchema,
+    /** Whether new files are encrypted, by default yes, since the files leave the server */
+    encrypted: z.boolean().default(true),
   })
   .strict();
 
 export const StorageBackendConfigSchema = z.discriminatedUnion('driver', [LocalBackendSchema, S3BackendSchema]);
 
+const EncryptionConfigSchema = z
+  .object({
+    /** Base64 encoded 256-bit master keys, one per line; the first one encrypts new files */
+    masterKeyFile: absolutePath,
+  })
+  .strict();
+
 export const StorageBackendsConfigSchema = z
-  .object({ backends: z.array(StorageBackendConfigSchema) })
+  .object({ backends: z.array(StorageBackendConfigSchema), encryption: EncryptionConfigSchema.optional() })
   .strict()
-  .superRefine(({ backends }, context) => {
+  .superRefine(({ backends, encryption }, context) => {
     const ids = new Set<string>();
     const roles = new Set<StorageBackendRole>();
     for (const [index, backend] of backends.entries()) {
@@ -83,6 +94,14 @@ export const StorageBackendsConfigSchema = z
         });
       }
       roles.add(backend.role);
+
+      if (backend.encrypted && !encryption) {
+        context.addIssue({
+          code: 'custom',
+          path: ['backends', index, 'encrypted'],
+          message: 'An encrypted storage backend needs a master key file (encryption.masterKeyFile)',
+        });
+      }
     }
   });
 

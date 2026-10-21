@@ -10,6 +10,7 @@ import {
   DownloadResponseDto,
 } from 'src/dtos/download.dto.js';
 import { Permission } from 'src/enum.js';
+import { readBlob } from 'src/repositories/storage-backend.repository.js';
 import { ImmichReadStream } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
@@ -119,6 +120,7 @@ export class DownloadService extends BaseService {
               key: asset.editedKey ?? null,
               size: asset.editedSize,
               checksum: asset.editedChecksum,
+              encryption: asset.editedEncryption,
             }
           : {
               path: originalPath,
@@ -126,11 +128,12 @@ export class DownloadService extends BaseService {
               key: asset.originalKey,
               size: asset.originalSize,
               checksum: asset.originalChecksum,
+              encryption: asset.originalEncryption,
             };
       const source = this.storageBackendRepository.resolve(file);
       if ('blob' in source) {
-        const { store, key, expect } = source.blob;
-        zip.addStream(() => store.get(key, { expect }), filename);
+        const { blob } = source;
+        zip.addStream(() => readBlob(blob), filename);
         continue;
       }
 

@@ -24,6 +24,7 @@ const forOriginal = <T extends object>(asset: T) => ({
   originalKey: null,
   originalSize: null,
   originalChecksum: null,
+  originalEncryption: null,
 });
 
 describe(DownloadService.name, () => {
@@ -230,6 +231,7 @@ describe(DownloadService.name, () => {
           originalKey: 'library/IMG_1.jpg',
           originalSize: null,
           originalChecksum: null,
+          originalEncryption: null,
         },
         {
           ...forOriginal(edited),
@@ -238,6 +240,7 @@ describe(DownloadService.name, () => {
           editedKey: 'thumbs/IMG_2_edited.jpg',
           editedSize: null,
           editedChecksum: null,
+          editedEncryption: null,
         },
       ]);
       mocks.storage.realpath.mockImplementation((path) => Promise.resolve(path));

@@ -155,7 +155,7 @@ export const getForMetadataExtraction = (
   originalFileName: asset.originalFileName,
   originalPath: asset.originalPath,
   // not recorded yet, so the original is read from its path
-  originalFile: null as { backendId: string; key: string; size: number | null } | null,
+  originalFile: null as { backendId: string; key: string; size: number | null; encryption: string | null } | null,
   ownerId: asset.ownerId,
   type: asset.type,
   isEdited: asset.isEdited,
@@ -171,7 +171,7 @@ export const getForGenerateThumbnail = (asset: ReturnType<AssetFactory['build']>
   originalFileName: asset.originalFileName,
   originalPath: asset.originalPath,
   // not recorded yet, so the original is read from its path
-  originalFile: null as { backendId: string; key: string; size: number | null } | null,
+  originalFile: null as { backendId: string; key: string; size: number | null; encryption: string | null } | null,
   ownerId: asset.ownerId,
   thumbhash: asset.thumbhash,
   type: asset.type,
@@ -214,7 +214,7 @@ export const getForAssetDeletion = (asset: ReturnType<AssetFactory['build']>) =>
   livePhotoVideoId: asset.livePhotoVideoId,
   originalPath: asset.originalPath,
   // not recorded yet, so the original is deleted by its path
-  originalFile: null as { backendId: string; key: string; size: number | null } | null,
+  originalFile: null as { backendId: string; key: string; size: number | null; encryption: string | null } | null,
   isOffline: asset.isOffline,
   exifInfo: asset.exifInfo ? getDehydrated(asset.exifInfo) : null,
   files: asset.files.map((file) => getDehydrated(file)),

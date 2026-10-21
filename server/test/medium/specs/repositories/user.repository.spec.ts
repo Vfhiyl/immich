@@ -107,6 +107,7 @@ describe(UserRepository.name, () => {
         key: `profile/${user.id}/a.webp`,
         size: null,
         checksum: null,
+        encryption: null,
       });
     });
 
@@ -120,6 +121,7 @@ describe(UserRepository.name, () => {
         key: null,
         size: null,
         checksum: null,
+        encryption: null,
       });
     });
 

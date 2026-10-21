@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { CacheControl } from 'src/enum.js';
 import { BlobRange } from 'src/repositories/blob-store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { RemoteBlob } from 'src/repositories/storage-backend.repository.js';
+import { RemoteBlob, readBlob } from 'src/repositories/storage-backend.repository.js';
 import { ImmichReadStream } from 'src/repositories/storage.repository.js';
 import { onRouteError } from 'src/utils/logger.js';
 
@@ -115,7 +115,8 @@ export const parseRange = (header: string | undefined, size: number): Required<B
  * Send a blob like `res.sendFile` sends a file: with ranges, HEAD and conditional requests. Keys never change, so the
  * key is a strong ETag. The read is verified against what was recorded, so a bad blob fails instead of being served.
  */
-const sendBlob = async (res: Response, { store, key, expect }: RemoteBlob) => {
+const sendBlob = async (res: Response, blob: RemoteBlob) => {
+  const { store, key, expect } = blob;
   const req = res.req;
   let size = expect?.size;
   if (size === undefined) {
@@ -149,7 +150,7 @@ const sendBlob = async (res: Response, { store, key, expect }: RemoteBlob) => {
     return;
   }
 
-  const stream = await store.get(key, { range: range ?? undefined, expect });
+  const stream = await readBlob(blob, range ?? undefined);
   await pipeline(stream, res);
 };
 

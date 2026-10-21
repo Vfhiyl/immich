@@ -1,7 +1,10 @@
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { JobName, JobStatus, StorageBackendDriver, StorageBackendRole, SystemMetadataKey } from 'src/enum.js';
+import { EncryptedBlobStore } from 'src/repositories/encrypted-blob-store.js';
+import { MasterKeys } from 'src/repositories/key-provider.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
@@ -216,6 +219,7 @@ describe(StorageService.name, () => {
       driver: StorageBackendDriver.Local as const,
       role,
       root: join(root, id),
+      encrypted: false,
     });
     const configure = (backends: ReturnType<typeof localBackend>[]) => {
       mocks.config.getEnv.mockReturnValue(mockEnvData({ storage: { ignoreMountCheckErrors: false, backendsFile } }));
@@ -236,7 +240,7 @@ describe(StorageService.name, () => {
 
       expect(mocks.storageBackend.readConfig).not.toHaveBeenCalled();
       expect(mocks.storageBackend.register).toHaveBeenCalledWith([]);
-      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([]);
+      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([], undefined);
     });
 
     it('should register, configure and probe the configured backends', async () => {
@@ -247,9 +251,43 @@ describe(StorageService.name, () => {
 
       expect(mocks.storageBackend.readConfig).toHaveBeenCalledWith(backendsFile);
       expect(mocks.storageBackend.register).toHaveBeenCalledWith([{ id: 'originals', driver: 'local' }]);
-      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([originals]);
+      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([originals], undefined);
       // the probe was written, read back and removed
       await expect(fs.readdir(join(root, 'originals', '.immich-probe'))).resolves.toEqual([]);
+    });
+
+    it('should load the master keys and probe an encrypted backend through its encryption', async () => {
+      const originals = { ...localBackend('originals', StorageBackendRole.Originals), encrypted: true };
+      const keys = new MasterKeys([randomBytes(32)]);
+      configure([originals]);
+      mocks.storageBackend.readConfig.mockResolvedValue({
+        backends: [originals],
+        encryption: { masterKeyFile: '/run/secrets/master.key' },
+      });
+      mocks.storageBackend.readMasterKeys.mockReturnValue(keys);
+      const put = vi.spyOn(EncryptedBlobStore.prototype, 'put');
+
+      await sut.onBootstrapStorageBackends();
+
+      expect(mocks.storageBackend.readMasterKeys).toHaveBeenCalledWith('/run/secrets/master.key');
+      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([originals], keys);
+      expect(put).toHaveBeenCalledOnce();
+      await expect(fs.readdir(join(root, 'originals', '.immich-probe'))).resolves.toEqual([]);
+    });
+
+    it('should refuse to start when the master key file cannot be read', async () => {
+      configure([]);
+      mocks.storageBackend.readConfig.mockResolvedValue({
+        backends: [],
+        encryption: { masterKeyFile: '/run/secrets/master.key' },
+      });
+      mocks.storageBackend.readMasterKeys.mockImplementation(() => {
+        throw new Error('ENOENT: no such file');
+      });
+
+      await expect(sut.onBootstrapStorageBackends()).rejects.toThrow(ImmichStartupError);
+      await expect(sut.onBootstrapStorageBackends()).rejects.toThrow('ENOENT');
+      expect(mocks.storageBackend.configure).not.toHaveBeenCalled();
     });
 
     it('should not register a backend again', async () => {
@@ -321,7 +359,7 @@ describe(StorageService.name, () => {
     beforeEach(async () => {
       root = await fs.mkdtemp(join(tmpdir(), 'immich-delete-'));
       mocks.storageBackend.configure([
-        { id: 'derived', driver: StorageBackendDriver.Local, role: StorageBackendRole.Derived, root },
+        { id: 'derived', driver: StorageBackendDriver.Local, role: StorageBackendRole.Derived, root, encrypted: false },
       ]);
     });
 

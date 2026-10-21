@@ -26,7 +26,7 @@ export type FactoryBuilder<T, R extends T = T> = (builder: T) => R;
 export type AssetLike = Partial<Selectable<AssetTable>>;
 export type AssetExifLike = Partial<Selectable<AssetExifTable>>;
 export type AssetEditLike = Partial<Selectable<AssetEditTable>>;
-export type AssetFileLike = Partial<Selectable<AssetFileTable>>;
+export type AssetFileLike = Partial<Omit<Selectable<AssetFileTable>, 'encryption'>>;
 export type AlbumLike = Partial<Selectable<AlbumTable>>;
 export type AlbumUserLike = Partial<Selectable<AlbumUserTable>>;
 export type SharedLinkLike = Partial<Selectable<SharedLinkTable>>;

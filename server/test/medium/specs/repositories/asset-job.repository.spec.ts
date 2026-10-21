@@ -135,9 +135,46 @@ describe(AssetJobRepository.name, () => {
 
       expect(result).toEqual(
         expect.objectContaining({
-          previewFile: { path: 'preview_unedited.jpg', backendId: 'host', key: 'preview_unedited.jpg', size: null },
+          previewFile: {
+            path: 'preview_unedited.jpg',
+            backendId: 'host',
+            key: 'preview_unedited.jpg',
+            size: null,
+            encryption: null,
+          },
         }),
       );
+    });
+  });
+
+  describe('file locations in JSON', () => {
+    // the storage backend repository decodes exactly this form (see its unit tests)
+    it('should return the encryption header of files as hex text', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const header = Buffer.from('0102fe', 'hex');
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        originalFile: { backendId: 'host', key: 'original.jpg', size: 3, encryption: header },
+      });
+      await ctx.newAssetFile({
+        assetId: asset.id,
+        type: AssetFileType.Preview,
+        path: 'preview.jpg',
+        encryption: header,
+      });
+
+      await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+
+      const result = await sut.getForGenerateThumbnailJob(asset.id);
+
+      expect(result?.originalFile).toEqual({
+        backendId: 'host',
+        key: 'original.jpg',
+        size: 3,
+        encryption: String.raw`\x0102fe`,
+      });
+      expect(result?.files).toEqual([expect.objectContaining({ encryption: String.raw`\x0102fe` })]);
     });
   });
 });

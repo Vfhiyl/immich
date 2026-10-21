@@ -70,6 +70,7 @@ export class UserRepository {
         'user_profile_image_file.key as key',
         'user_profile_image_file.size as size',
         'user_profile_image_file.checksum as checksum',
+        'user_profile_image_file.encryption as encryption',
       ])
       .where('user.id', '=', userId)
       .where('user.deletedAt', 'is', null)
@@ -219,7 +220,8 @@ export class UserRepository {
       profileChangedAt,
     }: {
       profileImagePath: string;
-      profileImageFile: (StorageLocation & { size?: number | null; checksum?: Buffer | null }) | null;
+      profileImageFile:
+        (StorageLocation & { size?: number | null; checksum?: Buffer | null; encryption?: Buffer | null }) | null;
       profileChangedAt: Date;
     },
   ) {
@@ -243,6 +245,7 @@ export class UserRepository {
               key: eb.ref('excluded.key'),
               size: eb.ref('excluded.size'),
               checksum: eb.ref('excluded.checksum'),
+              encryption: eb.ref('excluded.encryption'),
             })),
           )
           .execute();

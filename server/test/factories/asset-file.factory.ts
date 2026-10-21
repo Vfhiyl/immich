@@ -6,8 +6,11 @@ import { build } from 'test/factories/builder.factory.js';
 import { AssetFileLike, AssetLike, FactoryBuilder } from 'test/factories/types.js';
 import { newDate, newUuid, newUuidV7 } from 'test/small.factory.js';
 
+/** Files the factory builds are not encrypted, which also fits where files are read as JSON (bytea as text) */
+type AssetFileRow = Omit<Selectable<AssetFileTable>, 'encryption'> & { encryption: null };
+
 export class AssetFileFactory {
-  private constructor(private readonly value: Selectable<AssetFileTable>) {}
+  private constructor(private readonly value: AssetFileRow) {}
 
   static create(dto: AssetFileLike = {}) {
     return AssetFileFactory.from(dto).build();
@@ -32,6 +35,7 @@ export class AssetFileFactory {
       key: null,
       size: null,
       checksum: null,
+      encryption: null,
       ...dto,
     });
   }

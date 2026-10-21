@@ -584,7 +584,13 @@ describe(PersonService.name, () => {
   describe('handlePersonMigration', () => {
     it('should not move person thumbnails on a storage backend', async () => {
       mocks.storageBackend.configure([
-        { id: 'derived', driver: StorageBackendDriver.Local, role: StorageBackendRole.Derived, root: '/mnt/derived' },
+        {
+          id: 'derived',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Derived,
+          root: '/mnt/derived',
+          encrypted: false,
+        },
       ]);
 
       await expect(sut.handlePersonMigration(PersonFactory.create())).resolves.toBe(JobStatus.Skipped);

@@ -1042,7 +1042,13 @@ describe(AuthService.name, () => {
 
       expect(mocks.user.updateProfileImage).toHaveBeenCalledWith(user.id, {
         profileImagePath: expect.stringContaining(`/data/profile/${user.id}/${fileId}.webp`),
-        profileImageFile: { backendId: 'media', key: `profile/${user.id}/${fileId}.webp`, size: null, checksum: null },
+        profileImageFile: {
+          backendId: 'media',
+          key: `profile/${user.id}/${fileId}.webp`,
+          size: null,
+          checksum: null,
+          encryption: null,
+        },
         profileChangedAt: expect.any(Date),
       });
       expect(mocks.oauth.getProfilePicture).toHaveBeenCalledWith(profile.picture);
