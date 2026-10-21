@@ -154,6 +154,8 @@ export const getForMetadataExtraction = (
   localDateTime: asset.localDateTime,
   originalFileName: asset.originalFileName,
   originalPath: asset.originalPath,
+  // not recorded yet, so the original is read from its path
+  originalFile: null as { backendId: string; key: string } | null,
   ownerId: asset.ownerId,
   type: asset.type,
   isEdited: asset.isEdited,

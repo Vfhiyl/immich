@@ -9,6 +9,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
@@ -38,6 +39,7 @@ const setup = (db?: Kysely<DB>) => {
       AssetJobRepository,
       ConfigRepository,
       MetadataRepository,
+      StorageBackendRepository,
       SystemMetadataRepository,
       TagRepository,
     ],

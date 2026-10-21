@@ -26,6 +26,7 @@ import {
 } from 'src/enum.js';
 import { ReverseGeocodeResult } from 'src/repositories/map.repository.js';
 import { ImmichTags } from 'src/repositories/metadata.repository.js';
+import { toRecordedFile } from 'src/repositories/storage-backend.repository.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -236,9 +237,15 @@ export class MetadataService extends BaseService {
       return;
     }
 
+    // read the original from a local file, wherever it is stored
+    await using original = await this.storageBackendRepository.lease(
+      toRecordedFile(asset.originalPath, asset.originalFile),
+    );
+    const source = { ...asset, originalPath: original.path };
+
     const [exifResult, stats] = await Promise.all([
-      this.getExifTags(asset),
-      this.storageRepository.stat(asset.originalPath),
+      this.getExifTags(source),
+      this.storageRepository.stat(original.path),
     ]);
     const { tags: exifTags, audio, video, packets, format } = exifResult;
     this.logger.verbose('Exif Tags', exifTags);
@@ -395,7 +402,7 @@ export class MetadataService extends BaseService {
     );
 
     if (this.isMotionPhoto(asset, exifTags)) {
-      tasks.push(() => this.applyMotionPhotos(asset, exifTags, dates, stats));
+      tasks.push(() => this.applyMotionPhotos(source, exifTags, dates, stats));
     }
 
     if (isFaceImportEnabled(metadata) && this.hasTaggedFaces(exifTags)) {

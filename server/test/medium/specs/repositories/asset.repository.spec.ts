@@ -730,12 +730,12 @@ describe('asset original files', () => {
   it('should not create the asset when its original file cannot be recorded', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();
-    const { asset: existing } = await ctx.newAsset({ ownerId: user.id });
-    const taken = await getOriginalFile(ctx, existing.id);
+    const taken = { backendId: 'media', key: `upload/${newUuid()}.jpg` };
+    await ctx.newAsset({ ownerId: user.id, originalFile: taken });
     const id = newUuid();
 
     await expect(
-      sut.create({ ...mediumFactory.assetInsert({ id, ownerId: user.id }), originalFile: taken! }),
+      sut.create({ ...mediumFactory.assetInsert({ id, ownerId: user.id }), originalFile: taken }),
     ).rejects.toThrow('asset_original_file_backendId_key_idx');
 
     await expect(ctx.database.selectFrom('asset').select('id').where('id', '=', id).execute()).resolves.toEqual([]);
@@ -837,13 +837,13 @@ describe('asset original files', () => {
     const first = await newAssetWithoutOriginalFile(ctx, '/data/upload/first.jpg');
     const second = await newAssetWithoutOriginalFile(ctx, '/data/upload/second.jpg');
     const { user } = await ctx.newUser();
-    const { asset: located } = await ctx.newAsset({ ownerId: user.id });
-    const locatedFile = await getOriginalFile(ctx, located.id);
+    const locatedFile = { backendId: 'media', key: `upload/${newUuid()}.jpg` };
+    const { asset: located } = await ctx.newAsset({ ownerId: user.id, originalFile: locatedFile });
 
     await expect(
       sut.setOriginalFiles([
         { id: first.id, backendId: 'media', key: `upload/${first.id}.jpg` },
-        { id: second.id, ...locatedFile! },
+        { id: second.id, ...locatedFile },
         { id: located.id, backendId: 'media', key: `upload/${located.id}.jpg` },
         { id: newUuid(), backendId: 'media', key: `upload/${newUuid()}.jpg` },
       ]),

@@ -187,6 +187,41 @@ describe(MetadataService.name, () => {
       expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
+    it('should read the original from a leased local file and release it afterwards', async () => {
+      const asset = AssetFactory.create({ originalPath: '/data/library/IMG_1.jpg' });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue({
+        ...getForMetadataExtraction(asset),
+        originalFile: { backendId: 'media', key: 'library/IMG_1.jpg' },
+      });
+      const release = vi.fn().mockResolvedValue(undefined);
+      mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/IMG_1.jpg', [Symbol.asyncDispose]: release });
+      mockReadTags();
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.storageBackend.lease).toHaveBeenCalledWith({
+        path: '/data/library/IMG_1.jpg',
+        backendId: 'media',
+        key: 'library/IMG_1.jpg',
+      });
+      expect(mocks.metadata.readTags).toHaveBeenCalledWith('/staging/IMG_1.jpg');
+      expect(mocks.storage.stat).toHaveBeenCalledWith('/staging/IMG_1.jpg');
+      expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('should release the leased original when extraction fails', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      const release = vi.fn().mockResolvedValue(undefined);
+      mocks.storageBackend.lease.mockResolvedValue({ path: asset.originalPath, [Symbol.asyncDispose]: release });
+      mockReadTags();
+      mocks.storage.stat.mockRejectedValue(new Error('stat failed'));
+
+      await expect(sut.handleMetadataExtraction({ id: asset.id })).rejects.toThrow('stat failed');
+
+      expect(release).toHaveBeenCalledOnce();
+    });
+
     it('should handle a date in a sidecar file', async () => {
       const originalDate = new Date('2023-11-21T16:13:17.517Z');
       const sidecarDate = new Date('2022-01-01T00:00:00.000Z');
@@ -792,6 +827,25 @@ describe(MetadataService.name, () => {
           keyframes: expect.anything(),
         }),
       );
+    });
+
+    it('should extract a motion photo video from the leased original', async () => {
+      const asset = AssetFactory.create();
+      const motionAsset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Hidden });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.storageBackend.lease.mockResolvedValue({
+        path: '/staging/IMG_1.heic',
+        [Symbol.asyncDispose]: () => Promise.resolve(),
+      });
+      mockReadTags({ Directory: 'foo/bar/', MotionPhoto: 1, MotionPhotoVideo: new BinaryField(0, '') });
+      mocks.crypto.hashSha1.mockReturnValue(randomBytes(512));
+      mocks.asset.create.mockResolvedValue(motionAsset);
+      mocks.crypto.randomUUID.mockReturnValue(motionAsset.id);
+      mocks.metadata.extractBinaryTag.mockResolvedValue(randomBytes(512));
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.metadata.extractBinaryTag).toHaveBeenCalledWith('/staging/IMG_1.heic', 'MotionPhotoVideo');
     });
 
     it('should extract the MotionPhotoVideo tag from Samsung HEIC motion photos', async () => {

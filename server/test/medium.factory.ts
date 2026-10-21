@@ -113,6 +113,12 @@ export const newMediumService = <S extends ClassConstructor<typeof BaseService>>
   return { sut: ctx.sut, ctx };
 };
 
+/**
+ * The location of a file at the given path on the host backend. It names the same file as the path without depending on
+ * the media location, and tests can reuse a path for several files since host files may be shared.
+ */
+const hostLocation = (path: string) => ({ backendId: BuiltinStorageBackend.Host, key: path.replace(/^\/+/, '') });
+
 export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = ClassConstructor<typeof BaseService>> {
   private repoCache: Record<string, any> = {};
   private sutDeps: ClassConstructorsToInstances<BaseServiceDeps>;
@@ -202,8 +208,7 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     const asset = mediumFactory.assetInsert(dto);
     const result = await this.get(AssetRepository).create({
       ...asset,
-      // tests often reuse a path for several assets, and a location can only belong to one file
-      originalFile: originalFile ?? { backendId: BuiltinStorageBackend.Media, key: newUuid() },
+      originalFile: originalFile ?? hostLocation(asset.originalPath),
     });
     return { asset, result };
   }
@@ -217,9 +222,8 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
   async newAssetFile(dto: Insertable<AssetFileTable>) {
     const result = await this.get(AssetRepository).upsertFile({
       ...dto,
-      backendId: dto.backendId ?? BuiltinStorageBackend.Media,
-      // tests often reuse a path for several files, and a location can only belong to one file
-      key: dto.key ?? newUuid(),
+      ...hostLocation(dto.path),
+      ...(dto.backendId && dto.key && { backendId: dto.backendId, key: dto.key }),
     });
     return { result };
   }
@@ -444,6 +448,7 @@ export class ExifTestContext extends MediumTestContext<typeof MetadataService> {
         AssetJobRepository,
         MediaRepository,
         MetadataRepository,
+        StorageBackendRepository,
         SystemMetadataRepository,
         TagRepository,
       ],

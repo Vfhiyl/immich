@@ -339,6 +339,20 @@ select
   "asset"."isEdited",
   (
     select
+      to_json(obj)
+    from
+      (
+        select
+          "asset_original_file"."backendId",
+          "asset_original_file"."key"
+        from
+          "asset_original_file"
+        where
+          "asset_original_file"."assetId" = "asset"."id"
+      ) as obj
+  ) as "originalFile",
+  (
+    select
       coalesce(json_agg(agg), '[]')
     from
       (

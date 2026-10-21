@@ -151,6 +151,7 @@ export class AssetJobRepository {
     return this.db
       .selectFrom('asset')
       .select(columns.asset)
+      .select(withOriginalFile)
       .select(withFaces)
       .select((eb) => withFiles(eb, AssetFileType.Sidecar))
       .innerJoin('user', 'user.id', 'asset.ownerId')
