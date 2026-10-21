@@ -11,6 +11,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { StorageDeletionService } from 'src/services/storage-deletion.service.js';
+import { factory } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const due = (id: string, key: string, backendId = 'originals') => ({
@@ -30,6 +31,8 @@ const due = (id: string, key: string, backendId = 'originals') => ({
   checksum: null,
   encryption: null,
 });
+
+const original = () => ({ ...due('id', 'key'), originalFileName: 'IMG_1.jpg' });
 
 describe(StorageDeletionService.name, () => {
   let sut: StorageDeletionService;
@@ -205,6 +208,192 @@ describe(StorageDeletionService.name, () => {
         originalsDelayDays: 720,
       });
       expect(mocks.storageDeletion.getDue).toHaveBeenCalledWith(expect.objectContaining({ originalsDelayDays: 720 }));
+    });
+  });
+
+  describe('approval after a pause', () => {
+    it('should delete what an administrator approved, and need a new approval once amounts are usual again', async () => {
+      mocks.storageDeletion.countStoredOriginals.mockResolvedValue(10_000);
+      mocks.systemMetadata.get.mockResolvedValue({ approvedDueOriginals: 500 });
+      mocks.storageDeletion.countDueOriginals.mockResolvedValueOnce(500).mockResolvedValueOnce(50);
+
+      await expect(sut.handleStorageDeletionRun()).resolves.toBe(JobStatus.Success);
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+
+      await expect(sut.handleStorageDeletionRun()).resolves.toBe(JobStatus.Success);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.StorageDeletionState, {});
+    });
+
+    it('should pause again for more than was approved', async () => {
+      mocks.storageDeletion.countStoredOriginals.mockResolvedValue(10_000);
+      mocks.systemMetadata.get.mockResolvedValue({ approvedDueOriginals: 500 });
+      mocks.storageDeletion.countDueOriginals.mockResolvedValue(800);
+
+      await expect(sut.handleStorageDeletionRun()).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
+        SystemMetadataKey.StorageDeletionState,
+        expect.objectContaining({ pausedAt: expect.any(String), dueOriginals: 800 }),
+      );
+    });
+  });
+
+  describe('getStatus', () => {
+    it('should report a pause and what is pending', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        pausedAt: '2026-10-21T00:00:00.000Z',
+        dueOriginals: 500,
+        limit: 210,
+      });
+      mocks.storageDeletion.countPending.mockResolvedValue({ originals: 600, files: 2000 });
+
+      await expect(sut.getStatus()).resolves.toEqual({
+        isPaused: true,
+        pausedAt: '2026-10-21T00:00:00.000Z',
+        dueOriginals: 500,
+        limit: 210,
+        pendingOriginals: 600,
+        pendingFiles: 2000,
+        delayDays: 360,
+      });
+    });
+
+    it('should report no pause', async () => {
+      await expect(sut.getStatus()).resolves.toEqual(
+        expect.objectContaining({ isPaused: false, pausedAt: undefined, pendingOriginals: 0 }),
+      );
+    });
+  });
+
+  describe('resume', () => {
+    it('should approve what was due and delete it right away', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        pausedAt: '2026-10-21T00:00:00.000Z',
+        dueOriginals: 500,
+        limit: 210,
+      });
+
+      await sut.resume(factory.auth({ user: { isAdmin: true } }));
+
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.StorageDeletionState, {
+        approvedDueOriginals: 500,
+      });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.StorageDeletionRun });
+    });
+
+    it('should refuse when deleting is not paused', async () => {
+      await expect(sut.resume(factory.auth())).rejects.toThrow('not paused');
+    });
+  });
+
+  describe('listOriginals', () => {
+    it('should list deleted originals with when they will be deleted, a page at a time', async () => {
+      const deletedAt = new Date('2026-01-01T00:00:00.000Z');
+      const rows = ['a', 'b', 'c'].map((key, index) => ({
+        ...due(`id-${index}`, key),
+        createdAt: deletedAt,
+        // registered with a 30 day delay, before the configured 360 days
+        notBefore: new Date('2026-01-31T00:00:00.000Z'),
+        ownerId: 'owner-id',
+        originalFileName: `${key}.jpg`,
+        size: 10,
+      }));
+      mocks.storageDeletion.listOriginals.mockResolvedValue(rows);
+
+      const page = await sut.listOriginals({ limit: 2 });
+
+      expect(mocks.storageDeletion.listOriginals).toHaveBeenCalledWith({
+        ownerId: undefined,
+        after: undefined,
+        limit: 3,
+      });
+      expect(page.items).toEqual([
+        expect.objectContaining({
+          id: 'id-0',
+          originalFileName: 'a.jpg',
+          size: 10,
+          deletedAt: deletedAt.toISOString(),
+          deleteAfter: expect.stringMatching(/^2026-12-27T/),
+        }),
+        expect.objectContaining({ id: 'id-1' }),
+      ]);
+      expect(page.nextCursor).toBeDefined();
+
+      await sut.listOriginals({ limit: 2, cursor: page.nextCursor });
+      expect(mocks.storageDeletion.listOriginals).toHaveBeenLastCalledWith({
+        ownerId: undefined,
+        after: { createdAt: deletedAt, id: 'id-1' },
+        limit: 3,
+      });
+    });
+
+    it('should reject an invalid cursor', async () => {
+      await expect(sut.listOriginals({ cursor: 'nonsense' })).rejects.toThrow('Invalid cursor');
+    });
+  });
+
+  describe('getOriginalFile', () => {
+    it('should send the deleted original under its original name', async () => {
+      mocks.storageDeletion.get.mockResolvedValue({
+        ...due('id', 'key'),
+        originalFileName: 'IMG_1.jpg',
+        originalPath: '/data/upload/IMG_1.jpg',
+      });
+
+      await expect(sut.getOriginalFile('id')).resolves.toEqual(
+        expect.objectContaining({ fileName: 'IMG_1.jpg', contentType: 'image/jpeg', path: join(root, 'key') }),
+      );
+    });
+
+    it('should not find a derived file or an unknown deletion', async () => {
+      mocks.storageDeletion.get.mockResolvedValue({ ...due('id', 'key'), isOriginal: false });
+      await expect(sut.getOriginalFile('id')).rejects.toThrow('Deleted original not found');
+      mocks.storageDeletion.get.mockResolvedValue(undefined);
+      await expect(sut.getOriginalFile('id')).rejects.toThrow('Deleted original not found');
+    });
+  });
+
+  describe('purgeOriginal', () => {
+    const auth = factory.auth({ user: { isAdmin: true } });
+
+    beforeEach(() => {
+      mocks.user.getForChangePassword.mockResolvedValue({ id: auth.user.id, password: 'hash' });
+    });
+
+    it('should delete the original now, after the administrator confirmed their password', async () => {
+      await fs.writeFile(join(root, 'key'), 'original');
+      mocks.storageDeletion.get.mockResolvedValue(original());
+      mocks.crypto.compareBcrypt.mockReturnValue(true);
+
+      await sut.purgeOriginal(auth, 'id', { password: 'secret' });
+
+      expect(mocks.crypto.compareBcrypt).toHaveBeenCalledWith('secret', 'hash');
+      await expect(fs.readdir(root)).resolves.toEqual([]);
+      expect(mocks.storageDeletion.remove).toHaveBeenCalledWith(['id']);
+    });
+
+    it('should refuse a wrong password', async () => {
+      await fs.writeFile(join(root, 'key'), 'original');
+      mocks.storageDeletion.get.mockResolvedValue(original());
+      mocks.crypto.compareBcrypt.mockReturnValue(false);
+
+      await expect(sut.purgeOriginal(auth, 'id', { password: 'wrong' })).rejects.toThrow('Wrong password');
+      await expect(fs.readdir(root)).resolves.toEqual(['key']);
+    });
+
+    it('should refuse for an administrator without a password', async () => {
+      mocks.user.getForChangePassword.mockResolvedValue({ id: auth.user.id, password: '' });
+
+      await expect(sut.purgeOriginal(auth, 'id', { password: 'anything' })).rejects.toThrow('Wrong password');
+    });
+
+    it('should not delete an original that is in use again', async () => {
+      await fs.writeFile(join(root, 'key'), 'original');
+      mocks.storageDeletion.get.mockResolvedValue(original());
+      mocks.crypto.compareBcrypt.mockReturnValue(true);
+      mocks.storageDeletion.getRecorded.mockResolvedValue([{ backendId: 'originals', key: 'key' }]);
+
+      await expect(sut.purgeOriginal(auth, 'id', { password: 'secret' })).rejects.toThrow('in use again');
+      await expect(fs.readdir(root)).resolves.toEqual(['key']);
     });
   });
 });

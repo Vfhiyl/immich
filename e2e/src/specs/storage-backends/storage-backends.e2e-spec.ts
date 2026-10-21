@@ -15,6 +15,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 const photoPath = join(testAssetDir, 'formats/jpg/el_torcal_rocks.jpg');
 const motionPhotoPath = join(testAssetDir, 'formats/motionphoto/pixel-6-pro.jpg');
 const otherPhotoPath = join(testAssetDir, 'formats/webp/denali.webp');
+const pngPath = join(testAssetDir, 'formats/png/density_plot.png');
 const uuid = expect.stringMatching(/^[0-9a-f-]{36}$/);
 
 type OriginalRow = {
@@ -408,6 +409,62 @@ describe('storage backends on an S3 service', () => {
     await expect(readFile(target)).resolves.toEqual(photo);
     expect(output).toContain(`stored as ${original.key}`);
     expect(output).toContain('originalFileName: el_torcal_rocks.jpg');
+  });
+
+  it('should recover a deleted original as a new photo, or delete it early with the administrator password', async () => {
+    type Deleted = { items: Array<{ id: string; originalFileName: string; size: number }> };
+    const content = await readFile(pngPath);
+    const { id } = await api.upload(pngPath, content);
+    const { id: other } = await api.upload(otherPhotoPath, await readFile(otherPhotoPath));
+    await eventually(() => expect(getFiles(environment, id)).resolves.toHaveLength(2), { timeout: 60_000 });
+    await api.deleteAssets([id, other]);
+
+    const deleted = await eventually(async () => {
+      const { body } = await api.json<Deleted>('/admin/storage/deletions/originals');
+      const names = body.items.map(({ originalFileName }) => originalFileName);
+      expect(names).toEqual(expect.arrayContaining(['density_plot.png', 'denali.webp']));
+      return body.items;
+    });
+    const png = deleted.find(({ originalFileName }) => originalFileName === 'density_plot.png')!;
+    const webp = deleted.find(({ originalFileName }) => originalFileName === 'denali.webp')!;
+    expect(png.size).toBe(content.length);
+
+    // a look at it first, decrypted
+    await expect(api.download(`/admin/storage/deletions/originals/${png.id}/file`)).resolves.toEqual({
+      status: 200,
+      body: content,
+    });
+
+    const imported = await api.json<{ id: string; status: string }>(
+      `/admin/storage/deletions/originals/${png.id}/import`,
+      { method: 'POST', body: {} },
+    );
+    expect(imported).toEqual({ status: 201, body: { id: expect.not.stringMatching(id), status: 'created' } });
+    await expect(api.download(`/assets/${imported.body.id}/original`)).resolves.toEqual({ status: 200, body: content });
+    await eventually(() => expect(getFiles(environment, imported.body.id)).resolves.toHaveLength(2), {
+      timeout: 60_000,
+    });
+
+    const [{ key }] = await environment.query<{ key: string }>(`select key from storage_deletion where id = $1`, [
+      webp.id,
+    ]);
+    const purge = (password: string) =>
+      api.json(`/admin/storage/deletions/originals/${webp.id}/purge`, { method: 'POST', body: { password } });
+    await expect(purge('wrong')).resolves.toMatchObject({ status: 401 });
+    await expect(environment.listBackend('originals')).resolves.toContain(key);
+    await expect(purge('admin')).resolves.toMatchObject({ status: 204 });
+    await expect(environment.listBackend('originals')).resolves.not.toContain(key);
+    await expect(api.json(`/admin/storage/deletions/originals/${webp.id}/file`)).resolves.toMatchObject({
+      status: 404,
+    });
+  });
+
+  it('should report the status of deleting files from storage', async () => {
+    const { status, body } = await api.json('/admin/storage/deletions');
+    expect(status).toBe(200);
+    expect(body).toEqual(
+      expect.objectContaining({ isPaused: false, delayDays: 360, pendingOriginals: expect.any(Number) }),
+    );
   });
 
   it('should keep reading files after the master key was rotated, and encrypt new files with the new key', async () => {

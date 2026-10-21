@@ -86,6 +86,38 @@ where
 on conflict ("backendId", "key") do nothing
 commit
 
+-- StorageDeletionRepository.get
+select
+  *
+from
+  "storage_deletion"
+where
+  "id" = $1
+
+-- StorageDeletionRepository.countPending
+select
+  count(*) filter (
+    where
+      "isOriginal" = $1
+  ) as "originals",
+  count(*) as "files"
+from
+  "storage_deletion"
+
+-- StorageDeletionRepository.listOriginals
+select
+  *
+from
+  "storage_deletion"
+where
+  "isOriginal" = $1
+  and "originalFileName" is not null
+order by
+  "createdAt" desc,
+  "id" desc
+limit
+  $2
+
 -- StorageDeletionRepository.getDue
 select
   *

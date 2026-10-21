@@ -1369,6 +1369,362 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/storage/deletions": {
+      "get": {
+        "description": "Whether deleting is paused, and how many deleted files wait for their deletion delay",
+        "operationId": "getStorageDeletionStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageDeletionStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the status of deleting files from storage",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage/deletions/originals": {
+      "get": {
+        "description": "Deleted originals that wait for their deletion delay and can still be recovered",
+        "operationId": "getDeletedOriginals",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "Cursor for pagination",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Number of items per page",
+            "schema": {
+              "maximum": 1000,
+              "exclusiveMinimum": true,
+              "default": 100,
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "ownerId",
+            "required": false,
+            "in": "query",
+            "description": "Only originals of this user",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageDeletionOriginalsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List deleted originals",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage/deletions/originals/{id}/file": {
+      "get": {
+        "description": "The deleted original, decrypted, to look at before recovering or deleting it",
+        "operationId": "getDeletedOriginalFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download a deleted original",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage/deletions/originals/{id}/import": {
+      "post": {
+        "description": "Upload the deleted original again for its owner or another user; albums, descriptions, tags and people are not recovered",
+        "operationId": "importDeletedOriginal",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageDeletionImportDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetMediaResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Recover a deleted original as a new photo",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage/deletions/originals/{id}/purge": {
+      "post": {
+        "description": "Delete the original from storage before its deletion delay has passed, which cannot be undone",
+        "operationId": "purgeDeletedOriginal",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageDeletionPurgeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a deleted original now",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage/deletions/resume": {
+      "post": {
+        "description": "Approve the unusual amount of deleted originals that paused deleting, and delete what is due",
+        "operationId": "resumeStorageDeletion",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Resume deleting files from storage",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/users": {
       "get": {
         "description": "Search for users.",
@@ -29952,6 +30308,145 @@
             "x-immich-state": "Deprecated"
           }
         },
+        "type": "object"
+      },
+      "StorageDeletionImportDto": {
+        "properties": {
+          "userId": {
+            "description": "Who gets the photo; by default its owner",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StorageDeletionOriginalsResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "deleteAfter": {
+                  "description": "When the original will be deleted from storage at the earliest",
+                  "type": "string"
+                },
+                "deletedAt": {
+                  "description": "When the photo was deleted",
+                  "type": "string"
+                },
+                "fileCreatedAt": {
+                  "description": "When the photo was taken",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "id": {
+                  "description": "Id of the pending deletion",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "originalFileName": {
+                  "description": "Original file name",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "ownerId": {
+                  "description": "Who owned the photo",
+                  "format": "uuid",
+                  "nullable": true,
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "size": {
+                  "description": "Size in bytes",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "nullable": true,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "ownerId",
+                "originalFileName",
+                "fileCreatedAt",
+                "size",
+                "deletedAt",
+                "deleteAfter"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "StorageDeletionPurgeDto": {
+        "properties": {
+          "password": {
+            "description": "Password of the administrator, to confirm",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "type": "object"
+      },
+      "StorageDeletionStatusResponseDto": {
+        "properties": {
+          "delayDays": {
+            "description": "How long deleted originals are kept (from the configuration file)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "dueOriginals": {
+            "description": "Deleted originals that were due when deleting was paused",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "isPaused": {
+            "description": "Whether deleting files from storage is paused because of an unusual amount",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "How many due originals are deleted without asking",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pausedAt": {
+            "description": "When deleting was paused",
+            "type": "string"
+          },
+          "pendingFiles": {
+            "description": "All files waiting for their deletion delay, originals included",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pendingOriginals": {
+            "description": "Deleted originals waiting for their deletion delay",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "delayDays",
+          "isPaused",
+          "pendingFiles",
+          "pendingOriginals"
+        ],
         "type": "object"
       },
       "StorageFolder": {

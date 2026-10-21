@@ -418,6 +418,16 @@ export class Api {
     return { status: response.status, body: Buffer.from(await response.arrayBuffer()) };
   }
 
+  /** A JSON request, resolving with the status and the parsed body, if any */
+  async json<T = unknown>(path: string, { method = 'GET', body }: { method?: string; body?: unknown } = {}) {
+    const response = await this.request(path, {
+      method,
+      ...(body !== undefined && { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    return { status: response.status, body: (text ? JSON.parse(text) : undefined) as T };
+  }
+
   async deleteAssets(ids: string[]) {
     await this.request('/assets', {
       method: 'DELETE',

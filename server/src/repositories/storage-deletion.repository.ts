@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { RecordedFile } from 'src/repositories/storage-backend.repository.js';
 import { StorageLocation } from 'src/cores/storage.core.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { BuiltinStorageBackend } from 'src/enum.js';
@@ -31,6 +32,24 @@ export interface DueDeletionOptions {
   originalsDelayDays: number;
   limit: number;
 }
+
+/** A deleted original as a recorded file, which reads it like any other */
+export const toDeletedOriginalFile = (row: {
+  backendId: string;
+  key: string;
+  originalPath: string | null;
+  originalFileName: string | null;
+  size: number | string | null;
+  checksum: Buffer | null;
+  encryption: Buffer | null;
+}): RecordedFile => ({
+  path: row.originalPath ?? row.originalFileName ?? row.key,
+  backendId: row.backendId,
+  key: row.key,
+  size: row.size,
+  checksum: row.checksum,
+  encryption: row.encryption,
+});
 
 const builtinBackends = Object.values(BuiltinStorageBackend);
 
@@ -135,6 +154,49 @@ export class StorageDeletionRepository {
           .execute();
       }
     });
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID] })
+  get(id: string) {
+    return this.db.selectFrom('storage_deletion').selectAll().where('id', '=', id).executeTakeFirst();
+  }
+
+  @GenerateSql()
+  async countPending(): Promise<{ originals: number; files: number }> {
+    const { originals, files } = await this.db
+      .selectFrom('storage_deletion')
+      .select((eb) => [
+        eb.fn.countAll<number>().filterWhere('isOriginal', '=', true).as('originals'),
+        eb.fn.countAll<number>().as('files'),
+      ])
+      .executeTakeFirstOrThrow();
+    return { originals: Number(originals), files: Number(files) };
+  }
+
+  /** Deleted originals that can be recovered, the most recently deleted first, a page after `after` */
+  @GenerateSql({ params: [{ limit: 100 }] })
+  listOriginals({
+    ownerId,
+    after,
+    limit,
+  }: {
+    ownerId?: string;
+    after?: { createdAt: Date; id: string };
+    limit: number;
+  }) {
+    return this.db
+      .selectFrom('storage_deletion')
+      .selectAll()
+      .where('isOriginal', '=', true)
+      .where('originalFileName', 'is not', null)
+      .$if(!!ownerId, (qb) => qb.where('ownerId', '=', ownerId!))
+      .$if(!!after, (qb) =>
+        qb.where((eb) => eb(eb.refTuple('createdAt', 'id'), '<', eb.tuple(after!.createdAt, after!.id))),
+      )
+      .orderBy('createdAt', 'desc')
+      .orderBy('id', 'desc')
+      .limit(limit)
+      .execute();
   }
 
   /** Registered files whose time has come, the longest waiting first */

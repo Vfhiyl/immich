@@ -5,10 +5,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { Stats } from 'node:fs';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { UploadBody } from 'src/types.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { AssetMediaStatus, AssetRejectReason, AssetUploadAction } from 'src/dtos/asset-media-response.dto.js';
 import { AssetMediaCreateDto, AssetMediaSize, UploadFieldName } from 'src/dtos/asset-media.dto.js';
@@ -30,6 +32,7 @@ import { ImmichFileResponse } from 'src/utils/file.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
+import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { fileStub } from 'test/fixtures/file.stub.js';
 import { userStub } from 'test/fixtures/user.stub.js';
@@ -192,6 +195,26 @@ const forOriginal = <T extends object>(asset: T) => ({
   originalSize: null,
   originalChecksum: null,
   originalEncryption: null,
+});
+
+/** A deleted original waiting for its deletion, on the originals backend */
+const deleted = (overrides = {}) => ({
+  id: 'deletion-id',
+  backendId: 'originals',
+  key: 'old-key',
+  notBefore: new Date(),
+  isOriginal: true,
+  createdAt: new Date('2026-01-01T00:00:00.000Z'),
+  attempts: 0,
+  lastError: null,
+  ownerId: authStub.user1.user.id,
+  originalFileName: 'IMG_1.jpg',
+  originalPath: '/data/upload/old/IMG_1.jpg',
+  fileCreatedAt: new Date('2020-05-05T00:00:00.000Z'),
+  size: 8,
+  checksum: sha1('original'),
+  encryption: null,
+  ...overrides,
 });
 
 describe(AssetMediaService.name, () => {
@@ -386,6 +409,90 @@ describe(AssetMediaService.name, () => {
         data: { files: [file.originalPath, sidecar.originalPath] },
       });
       await expect(listOriginals()).resolves.toHaveLength(2);
+    });
+
+    describe('importDeletedOriginal', () => {
+      beforeEach(async () => {
+        StorageCore.setMediaLocation(join(root, 'media'));
+        await fs.mkdir(join(root, 'originals'), { recursive: true });
+        await fs.writeFile(join(root, 'originals', 'old-key'), 'original');
+        mocks.storage.copyFile.mockImplementation(async (source, target) => {
+          await fs.mkdir(dirname(target), { recursive: true });
+          await fs.copyFile(source, target);
+        });
+        mocks.storage.stat.mockResolvedValue({ size: 8 } as Stats);
+        mocks.asset.create.mockResolvedValue(assetEntity);
+      });
+
+      afterEach(() => {
+        StorageCore.setMediaLocation('/data');
+      });
+
+      it('should upload the deleted original again as a new photo of its owner', async () => {
+        mocks.storageDeletion.get.mockResolvedValue(deleted());
+        mocks.user.get.mockResolvedValue(UserFactory.create({ id: authStub.user1.user.id }));
+
+        await expect(sut.importDeletedOriginal(authStub.admin, 'deletion-id', {})).resolves.toEqual({
+          id: 'id_1',
+          status: AssetMediaStatus.CREATED,
+        });
+
+        expect(mocks.asset.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            ownerId: authStub.user1.user.id,
+            originalFileName: 'IMG_1.jpg',
+            checksum: sha1('original'),
+            fileCreatedAt: new Date('2020-05-05T00:00:00.000Z'),
+            originalFile: expect.objectContaining({
+              backendId: 'originals',
+              key: expect.not.stringMatching('old-key'),
+            }),
+          }),
+        );
+        // stored again under a new key; the deleted original stays until its deletion
+        await expect(listOriginals()).resolves.toHaveLength(2);
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.AssetExtractMetadata,
+          data: { id: assetEntity.id, source: 'upload' },
+        });
+      });
+
+      it('should upload it for another user when asked to', async () => {
+        const other = UserFactory.create();
+        mocks.storageDeletion.get.mockResolvedValue(deleted({ ownerId: null }));
+        mocks.user.get.mockResolvedValue(other);
+
+        await sut.importDeletedOriginal(authStub.admin, 'deletion-id', { userId: other.id });
+
+        expect(mocks.user.get).toHaveBeenCalledWith(other.id, { withDeleted: false });
+        expect(mocks.asset.create).toHaveBeenCalledWith(expect.objectContaining({ ownerId: other.id }));
+      });
+
+      it('should need a user when the owner is gone', async () => {
+        mocks.storageDeletion.get.mockResolvedValue(deleted());
+        mocks.user.get.mockResolvedValue(undefined);
+
+        await expect(sut.importDeletedOriginal(authStub.admin, 'deletion-id', {})).rejects.toThrow(
+          'The owner of the photo no longer exists',
+        );
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+      });
+
+      it('should not import a derived file', async () => {
+        mocks.storageDeletion.get.mockResolvedValue(deleted({ isOriginal: false }));
+
+        await expect(sut.importDeletedOriginal(authStub.admin, 'deletion-id', {})).rejects.toThrow(
+          'Deleted original not found',
+        );
+      });
+
+      it('should not import an original whose content changed', async () => {
+        mocks.storageDeletion.get.mockResolvedValue(deleted({ checksum: sha1('something else') }));
+        mocks.user.get.mockResolvedValue(UserFactory.create({ id: authStub.user1.user.id }));
+
+        await expect(sut.importDeletedOriginal(authStub.admin, 'deletion-id', {})).rejects.toThrow();
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+      });
     });
 
     it('should keep the upload as a local copy for processing when the backend cannot be read in place', async () => {

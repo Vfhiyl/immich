@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { extname, join } from 'node:path';
 import sanitize from 'sanitize-filename';
 import type { UploadFile, UploadRequest } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -19,6 +20,7 @@ import {
 } from 'src/dtos/asset-media.dto.js';
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
+import { StorageDeletionImportDto } from 'src/dtos/storage-deletion.dto.js';
 import {
   AssetFileType,
   AssetVisibility,
@@ -31,6 +33,7 @@ import {
 } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { StoredFile, isBuiltinStorageBackend } from 'src/repositories/storage-backend.repository.js';
+import { toDeletedOriginalFile } from 'src/repositories/storage-deletion.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireUploadAccess } from 'src/utils/access.js';
 import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
@@ -122,6 +125,57 @@ export class AssetMediaService extends BaseService {
     const uploadPath = `${uploadFolder}/${uploadFilename}`;
 
     await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [uploadPath] } });
+  }
+
+  /**
+   * Recover a deleted original as a new photo of a user: it is decrypted and goes through the usual upload, so it gets a
+   * new id and is processed again; what the deleted photo had (albums, description, tags, people) is not recovered
+   */
+  async importDeletedOriginal(
+    auth: AuthDto,
+    id: string,
+    { userId }: StorageDeletionImportDto,
+  ): Promise<AssetMediaResponseDto> {
+    const row = await this.storageDeletionRepository.get(id);
+    if (!row?.isOriginal || row.originalFileName === null || row.checksum === null) {
+      throw new NotFoundException('Deleted original not found');
+    }
+
+    const ownerId = userId ?? row.ownerId;
+    const owner = ownerId ? await this.userRepository.get(ownerId, { withDeleted: false }) : undefined;
+    if (!owner) {
+      throw new BadRequestException('The owner of the photo no longer exists; choose who gets it');
+    }
+
+    const uuid = this.cryptoRepository.randomUUID();
+    const originalPath = join(
+      StorageCore.getNestedFolder(StorageFolder.Upload, owner.id, uuid),
+      `${uuid}${extname(row.originalPath ?? row.originalFileName)}`,
+    );
+    this.storageCore.ensureFolders(originalPath);
+    {
+      // verified against the recorded size and checksum while it is read
+      await using original = await this.storageBackendRepository.lease(toDeletedOriginalFile(row));
+      await this.storageRepository.copyFile(original.path, originalPath);
+    }
+    const { size } = await this.storageRepository.stat(originalPath);
+
+    this.logger.log(`Recovering deleted original ${row.originalFileName} for ${owner.email}, by ${auth.user.email}`);
+    const takenAt = row.fileCreatedAt ?? row.createdAt;
+    return this.uploadAsset(
+      {
+        user: {
+          id: owner.id,
+          isAdmin: owner.isAdmin,
+          name: owner.name,
+          email: owner.email,
+          quotaUsageInBytes: owner.quotaUsageInBytes,
+          quotaSizeInBytes: owner.quotaSizeInBytes,
+        },
+      },
+      { fileCreatedAt: takenAt, fileModifiedAt: takenAt, filename: row.originalFileName },
+      { uuid, checksum: row.checksum, originalPath, originalName: row.originalFileName, size },
+    );
   }
 
   async uploadAsset(

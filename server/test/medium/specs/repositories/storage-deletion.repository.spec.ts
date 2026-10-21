@@ -226,4 +226,44 @@ describe(StorageDeletionRepository.name, () => {
       await expect(sut.countStoredOriginals()).resolves.toBe(2);
     });
   });
+
+  describe('listOriginals and countPending', () => {
+    it('should list recoverable originals, the most recently deleted first, a page at a time', async () => {
+      const { sut } = await setup();
+      const owner = '00000000-0000-4000-8000-000000000001';
+      const other = '00000000-0000-4000-8000-000000000002';
+      await sut.register([
+        ...[1, 2, 3].map((day) => ({
+          backendId: 'originals',
+          key: `day-${day}`,
+          notBefore: daysFromNow(300),
+          isOriginal: true,
+          createdAt: daysFromNow(-day),
+          ownerId: owner,
+          originalFileName: `IMG_${day}.jpg`,
+        })),
+        {
+          backendId: 'originals',
+          key: 'other',
+          notBefore: daysFromNow(300),
+          isOriginal: true,
+          ownerId: other,
+          originalFileName: 'IMG_other.jpg',
+        },
+        // a sidecar is not recoverable as a photo
+        { backendId: 'originals', key: 'sidecar', notBefore: daysFromNow(300), isOriginal: true },
+        { backendId: 'derived', key: 'preview', notBefore: daysFromNow(30), isOriginal: false },
+      ]);
+
+      const first = await sut.listOriginals({ ownerId: owner, limit: 2 });
+      expect(first.map(({ key }) => key)).toEqual(['day-1', 'day-2']);
+      const second = await sut.listOriginals({ ownerId: owner, after: first[1], limit: 2 });
+      expect(second.map(({ key }) => key)).toEqual(['day-3']);
+      await expect(sut.listOriginals({ limit: 10 })).resolves.toHaveLength(4);
+
+      await expect(sut.countPending()).resolves.toEqual({ originals: 5, files: 6 });
+      const [row] = first;
+      await expect(sut.get(row.id)).resolves.toMatchObject({ key: 'day-1', originalFileName: 'IMG_1.jpg' });
+    });
+  });
 });

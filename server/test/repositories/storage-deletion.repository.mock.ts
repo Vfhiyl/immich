@@ -5,6 +5,9 @@ import { StorageDeletionRepository } from 'src/repositories/storage-deletion.rep
 /** Nothing registered and nothing due, so that services that delete files work without setup */
 export const newStorageDeletionRepositoryMock = (): Mocked<RepositoryInterface<StorageDeletionRepository>> => ({
   register: vitest.fn().mockResolvedValue(undefined),
+  get: vitest.fn().mockResolvedValue(undefined),
+  countPending: vitest.fn().mockResolvedValue({ originals: 0, files: 0 }),
+  listOriginals: vitest.fn().mockResolvedValue([]),
   registerUserFiles: vitest.fn().mockResolvedValue(undefined),
   getDue: vitest.fn().mockResolvedValue([]),
   countDueOriginals: vitest.fn().mockResolvedValue(0),

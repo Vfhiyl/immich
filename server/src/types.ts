@@ -566,6 +566,8 @@ export type StorageDeletionState = {
   pausedAt?: string;
   dueOriginals?: number;
   limit?: number;
+  /** Due originals an administrator approved deleting when they resumed it */
+  approvedDueOriginals?: number;
 };
 
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {

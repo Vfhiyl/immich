@@ -545,6 +545,54 @@ export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
 };
+export type StorageDeletionStatusResponseDto = {
+    /** How long deleted originals are kept (from the configuration file) */
+    delayDays: number;
+    /** Deleted originals that were due when deleting was paused */
+    dueOriginals?: number;
+    /** Whether deleting files from storage is paused because of an unusual amount */
+    isPaused: boolean;
+    /** How many due originals are deleted without asking */
+    limit?: number;
+    /** When deleting was paused */
+    pausedAt?: string;
+    /** All files waiting for their deletion delay, originals included */
+    pendingFiles: number;
+    /** Deleted originals waiting for their deletion delay */
+    pendingOriginals: number;
+};
+export type StorageDeletionOriginalsResponseDto = {
+    items: {
+        /** When the original will be deleted from storage at the earliest */
+        deleteAfter: string;
+        /** When the photo was deleted */
+        deletedAt: string;
+        /** When the photo was taken */
+        fileCreatedAt: string | null;
+        /** Id of the pending deletion */
+        id: string;
+        /** Original file name */
+        originalFileName: string | null;
+        /** Who owned the photo */
+        ownerId: string | null;
+        /** Size in bytes */
+        size: number | null;
+    }[];
+    nextCursor?: string;
+};
+export type StorageDeletionImportDto = {
+    /** Who gets the photo; by default its owner */
+    userId?: string;
+};
+export type AssetMediaResponseDto = {
+    /** Asset media ID */
+    id: string;
+    status: AssetMediaStatus;
+};
+export type StorageDeletionPurgeDto = {
+    /** Password of the administrator, to confirm */
+    password: string;
+};
 export type UserLicense = {
     /** Activation date */
     activatedAt: string;
@@ -1062,11 +1110,6 @@ export type AssetMediaCreateDto = {
     /** Sidecar file data */
     sidecarData?: Blob;
     visibility?: AssetVisibility;
-};
-export type AssetMediaResponseDto = {
-    /** Asset media ID */
-    id: string;
-    status: AssetMediaStatus;
 };
 export type AssetBulkUpdateDto = {
     /** Original date and time */
@@ -4191,6 +4234,87 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
         method: "POST",
         body: adminConfigSmtpDto
     })));
+}
+/**
+ * Get the status of deleting files from storage
+ */
+export function getStorageDeletionStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageDeletionStatusResponseDto;
+    }>("/admin/storage/deletions", {
+        ...opts
+    }));
+}
+/**
+ * List deleted originals
+ */
+export function getDeletedOriginals({ cursor, limit, ownerId }: {
+    cursor?: string;
+    limit?: number;
+    ownerId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageDeletionOriginalsResponseDto;
+    }>(`/admin/storage/deletions/originals${QS.query(QS.explode({
+        cursor,
+        limit,
+        ownerId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Download a deleted original
+ */
+export function getDeletedOriginalFile({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/admin/storage/deletions/originals/${encodeURIComponent(id)}/file`, {
+        ...opts
+    }));
+}
+/**
+ * Recover a deleted original as a new photo
+ */
+export function importDeletedOriginal({ id, storageDeletionImportDto }: {
+    id: string;
+    storageDeletionImportDto: StorageDeletionImportDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetMediaResponseDto;
+    }>(`/admin/storage/deletions/originals/${encodeURIComponent(id)}/import`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: storageDeletionImportDto
+    })));
+}
+/**
+ * Delete a deleted original now
+ */
+export function purgeDeletedOriginal({ id, storageDeletionPurgeDto }: {
+    id: string;
+    storageDeletionPurgeDto: StorageDeletionPurgeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/storage/deletions/originals/${encodeURIComponent(id)}/purge`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: storageDeletionPurgeDto
+    })));
+}
+/**
+ * Resume deleting files from storage
+ */
+export function resumeStorageDeletion(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/storage/deletions/resume", {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Search users
@@ -8080,6 +8204,10 @@ export enum NotificationType {
     ClusterGroupRequest = "ClusterGroupRequest",
     Custom = "Custom"
 }
+export enum AssetMediaStatus {
+    Created = "created",
+    Duplicate = "duplicate"
+}
 export enum UserStatus {
     Active = "active",
     Removing = "removing",
@@ -8291,10 +8419,6 @@ export enum AssetFileType {
     Thumbnail = "thumbnail",
     Sidecar = "sidecar",
     EncodedVideo = "encoded_video"
-}
-export enum AssetMediaStatus {
-    Created = "created",
-    Duplicate = "duplicate"
 }
 export enum AssetUploadAction {
     Accept = "accept",
