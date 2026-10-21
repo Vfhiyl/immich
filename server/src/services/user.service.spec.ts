@@ -187,39 +187,41 @@ describe(UserService.name, () => {
 
   describe('getUserProfileImage', () => {
     it('should throw an error if the user does not exist', async () => {
-      mocks.user.get.mockResolvedValue(void 0);
+      mocks.user.getProfileImageFile.mockResolvedValue(void 0);
 
       await expect(sut.getProfileImage(userStub.admin.id)).rejects.toBeInstanceOf(NotFoundException);
 
-      expect(mocks.user.get).toHaveBeenCalledWith(userStub.admin.id, {});
+      expect(mocks.user.getProfileImageFile).toHaveBeenCalledWith(userStub.admin.id);
     });
 
     it('should throw an error if the user does not have a picture', async () => {
-      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.user.getProfileImageFile.mockResolvedValue({ path: '', backendId: null, key: null });
 
       await expect(sut.getProfileImage(userStub.admin.id)).rejects.toBeInstanceOf(NotFoundException);
-
-      expect(mocks.user.get).toHaveBeenCalledWith(userStub.admin.id, {});
     });
 
     it('should return the profile picture', async () => {
-      const user = UserFactory.create({ profileImagePath: '/path/to/profile.jpg' });
-      mocks.user.get.mockResolvedValue(user);
+      const user = UserFactory.create();
+      mocks.user.getProfileImageFile.mockResolvedValue({
+        path: '/data/profile/user/profile.jpg',
+        backendId: 'media',
+        key: 'profile/user/profile.jpg',
+      });
 
       await expect(sut.getProfileImage(user.id)).resolves.toEqual(
         new ImmichFileResponse({
-          path: '/path/to/profile.jpg',
+          path: '/data/profile/user/profile.jpg',
           contentType: 'image/jpeg',
           cacheControl: CacheControl.None,
         }),
       );
 
-      expect(mocks.user.get).toHaveBeenCalledWith(user.id, {});
+      expect(mocks.user.getProfileImageFile).toHaveBeenCalledWith(user.id);
     });
 
-    it('should return the profile picture with the content-type matching the stored file', async () => {
-      const user = UserFactory.create({ profileImagePath: '/path/to/profile.webp' });
-      mocks.user.get.mockResolvedValue(user);
+    it('should return a profile picture that has no recorded location yet by its path', async () => {
+      const user = UserFactory.create();
+      mocks.user.getProfileImageFile.mockResolvedValue({ path: '/path/to/profile.webp', backendId: null, key: null });
 
       await expect(sut.getProfileImage(user.id)).resolves.toEqual(
         new ImmichFileResponse({

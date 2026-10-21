@@ -11,6 +11,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
+import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -26,7 +27,14 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   return newMediumService(AssetMediaService, {
     database: db || defaultDatabase,
-    real: [AccessRepository, AlbumRepository, AssetRepository, SharedLinkRepository, UserRepository],
+    real: [
+      AccessRepository,
+      AlbumRepository,
+      AssetRepository,
+      SharedLinkRepository,
+      StorageBackendRepository,
+      UserRepository,
+    ],
     mock: [EventRepository, LoggingRepository, JobRepository, StorageRepository],
   });
 };
@@ -392,6 +400,46 @@ describe(AssetService.name, () => {
 
       expect(result).toBeInstanceOf(ImmichFileResponse);
       expect((result as ImmichFileResponse).path).toBe('/original/preview.jpg');
+    });
+
+    it('should serve a thumbnail from its recorded location', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const key = `thumbs/${user.id}/${asset.id}_thumbnail.webp`;
+      await ctx.newAssetFile({
+        assetId: asset.id,
+        type: AssetFileType.Thumbnail,
+        path: `/data/${key}`,
+        backendId: 'media',
+        key,
+      });
+      const getLocalPath = vi.spyOn(ctx.get(StorageBackendRepository), 'getLocalPath');
+
+      const result = await sut.viewThumbnail(factory.auth({ user: { id: user.id } }), asset.id, {
+        size: AssetMediaSize.THUMBNAIL,
+      });
+
+      expect((result as ImmichFileResponse).path).toBe(`/data/${key}`);
+      expect(getLocalPath).toHaveBeenCalledWith({ path: `/data/${key}`, backendId: 'media', key });
+    });
+
+    it('should download an original from its recorded location', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const key = `upload/${user.id}/IMG_1.jpg`;
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: `/data/${key}`,
+        originalFileName: 'IMG_1.jpg',
+        originalFile: { backendId: 'media', key },
+      });
+      const getLocalPath = vi.spyOn(ctx.get(StorageBackendRepository), 'getLocalPath');
+
+      const result = await sut.downloadOriginal(factory.auth({ user: { id: user.id } }), asset.id, {});
+
+      expect(result).toEqual(expect.objectContaining({ path: `/data/${key}`, fileName: 'IMG_1.jpg' }));
+      expect(getLocalPath).toHaveBeenCalledWith({ path: `/data/${key}`, backendId: 'media', key });
     });
 
     it('should work with thumbnail size', async () => {

@@ -211,14 +211,14 @@ export class PersonService extends BaseService {
       ids: [{ personGroupId, ownerId: auth.user.id }],
     });
     const personGroup = await this.personRepository.getForThumbnail({ ownerId: auth.user.id, personGroupId });
-    const thumbnailPath = personGroup?.thumbnailPath || personGroup?.sharedThumbnailPath;
-    if (!thumbnailPath) {
+    const file = personGroup?.thumbnail?.path ? personGroup.thumbnail : personGroup?.sharedThumbnail;
+    if (!file?.path) {
       throw new NotFoundException();
     }
 
     return new ImmichFileResponse({
-      path: thumbnailPath,
-      contentType: mimeTypes.lookup(thumbnailPath),
+      path: this.storageBackendRepository.getLocalPath(file),
+      contentType: mimeTypes.lookup(file.path),
       cacheControl: CacheControl.PrivateWithoutCache,
     });
   }

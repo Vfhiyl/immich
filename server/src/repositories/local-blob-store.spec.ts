@@ -207,6 +207,16 @@ describe(LocalBlobStore.name, () => {
     });
   });
 
+  describe('getLocalPath', () => {
+    it('should return the path of a blob below the root', () => {
+      expect(sut.getLocalPath('a/b/blob')).toBe(join(root, 'a', 'b', 'blob'));
+    });
+
+    it('should reject an invalid key', () => {
+      expect(() => sut.getLocalPath('../outside')).toThrow('Invalid blob key');
+    });
+  });
+
   describe('list', () => {
     beforeEach(async () => {
       await sut.put('upload/u1/aa/one', toStream('1'));

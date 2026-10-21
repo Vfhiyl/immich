@@ -40,6 +40,18 @@ where
   "user"."id" = $1
   and "user"."deletedAt" is null
 
+-- UserRepository.getProfileImageFile
+select
+  "user"."profileImagePath" as "path",
+  "user_profile_image_file"."backendId" as "backendId",
+  "user_profile_image_file"."key" as "key"
+from
+  "user"
+  left join "user_profile_image_file" on "user_profile_image_file"."userId" = "user"."id"
+where
+  "user"."id" = $1
+  and "user"."deletedAt" is null
+
 -- UserRepository.getAdmin
 select
   "id",

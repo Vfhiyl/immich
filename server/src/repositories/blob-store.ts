@@ -28,6 +28,9 @@ export interface BlobStore {
 
   /** List blobs below a prefix, in no particular order. Not for hot paths. */
   list(prefix?: string): AsyncIterable<BlobListEntry>;
+
+  /** Where a blob lives on the local filesystem, for stores that keep blobs there. Does not check that it exists. */
+  getLocalPath?(key: string): string;
 }
 
 export interface BlobStoreLimits {

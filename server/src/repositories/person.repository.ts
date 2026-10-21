@@ -8,9 +8,10 @@ import {
   expressionBuilder,
   sql,
 } from 'kysely';
-import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
+import { jsonArrayFrom, jsonBuildObject, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { StorageLocation } from 'src/cores/storage.core.js';
+import type { RecordedFile } from 'src/repositories/storage-backend.repository.js';
 import { AssetFace, PersonUser, columns } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import { PersonUserRole } from 'src/dtos/person.dto.js';
@@ -186,6 +187,17 @@ const withFaceSearch = (eb: ExpressionBuilder<DB, 'asset_face'>) => {
     eb.selectFrom('face_search').selectAll('face_search').whereRef('face_search.faceId', '=', 'asset_face.id'),
   ).as('faceSearch');
 };
+
+/** The thumbnail path of a person and where the thumbnail is stored, as one value */
+const thumbnailFile = (eb: ExpressionBuilder<DB, 'person' | 'person_thumbnail_file'>) =>
+  jsonBuildObject({
+    path: eb.ref('person.thumbnailPath'),
+    backendId: eb.ref('person_thumbnail_file.backendId'),
+    key: eb.ref('person_thumbnail_file.key'),
+  })
+    // the thumbnail file is left joined
+    .$castTo<RecordedFile>()
+    .as('file');
 
 @Injectable()
 export class PersonRepository {
@@ -612,10 +624,15 @@ export class PersonRepository {
         // TODO-DANIEL I would've done a left join of person_user and sorted by person.ownerId = ownerId desc.
         // should probably discuss with Mert which approach is more efficient.
         selectFrom('person')
-          .select('person.thumbnailPath')
+          .leftJoin('person_thumbnail_file', (join) =>
+            join
+              .onRef('person_thumbnail_file.ownerId', '=', 'person.ownerId')
+              .onRef('person_thumbnail_file.personGroupId', '=', 'person.personGroupId'),
+          )
+          .select(thumbnailFile)
           .whereRef('person.personGroupId', '=', 'person_group.id')
           .where('person.ownerId', '=', ownerId)
-          .as('thumbnailPath'),
+          .as('thumbnail'),
         selectFrom('person')
           .innerJoin('person_user', (join) =>
             join
@@ -623,11 +640,16 @@ export class PersonRepository {
               .onRef('person_user.sharedById', '=', 'person.ownerId')
               .on('person_user.sharedWithId', '=', ownerId),
           )
-          .select('person.thumbnailPath')
+          .leftJoin('person_thumbnail_file', (join) =>
+            join
+              .onRef('person_thumbnail_file.ownerId', '=', 'person.ownerId')
+              .onRef('person_thumbnail_file.personGroupId', '=', 'person.personGroupId'),
+          )
+          .select(thumbnailFile)
           .whereRef('person.personGroupId', '=', 'person_group.id')
           .where('person.thumbnailPath', '!=', '')
           .limit(1)
-          .as('sharedThumbnailPath'),
+          .as('sharedThumbnail'),
       ])
       .where('person_group.id', '=', personGroupId)
       .executeTakeFirst();

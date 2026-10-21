@@ -148,15 +148,15 @@ export class UserService extends BaseService {
   }
 
   async getProfileImage(id: string): Promise<ImmichFileResponse> {
-    const user = await this.userRepository.get(id, {});
-    if (!user || !user.profileImagePath) {
+    const file = await this.userRepository.getProfileImageFile(id);
+    if (!file || !file.path) {
       this.logger.debug('User or profile image not found');
       throw new NotFoundException();
     }
 
     return new ImmichFileResponse({
-      path: user.profileImagePath,
-      contentType: mimeTypes.lookup(user.profileImagePath),
+      path: this.storageBackendRepository.getLocalPath(file),
+      contentType: mimeTypes.lookup(file.path),
       cacheControl: CacheControl.None,
     });
   }

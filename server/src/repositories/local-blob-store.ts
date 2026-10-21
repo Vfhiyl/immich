@@ -115,6 +115,10 @@ export class LocalBlobStore implements BlobStore {
     return { failed };
   }
 
+  getLocalPath(key: string): string {
+    return this.toPath(key);
+  }
+
   async *list(prefix = ''): AsyncIterable<BlobListEntry> {
     assertValidBlobPrefix(prefix);
     // Start from the deepest directory that the prefix fully names, then filter on the whole prefix

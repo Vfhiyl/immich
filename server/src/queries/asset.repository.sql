@@ -678,12 +678,17 @@ select
   "asset"."id",
   "originalFileName",
   "asset_file"."path" as "editedPath",
-  "originalPath"
+  "asset_file"."backendId" as "editedBackendId",
+  "asset_file"."key" as "editedKey",
+  "originalPath",
+  "asset_original_file"."backendId" as "originalBackendId",
+  "asset_original_file"."key" as "originalKey"
 from
   "asset"
   left join "asset_file" on "asset"."id" = "asset_file"."assetId"
   and "asset_file"."isEdited" = $1
   and "asset_file"."type" = $2
+  left join "asset_original_file" on "asset_original_file"."assetId" = "asset"."id"
 where
   "asset"."id" in ($3)
 
@@ -692,12 +697,17 @@ select
   "asset"."id",
   "originalFileName",
   "asset_file"."path" as "editedPath",
-  "originalPath"
+  "asset_file"."backendId" as "editedBackendId",
+  "asset_file"."key" as "editedKey",
+  "originalPath",
+  "asset_original_file"."backendId" as "originalBackendId",
+  "asset_original_file"."key" as "originalKey"
 from
   "asset"
   left join "asset_file" on "asset"."id" = "asset_file"."assetId"
   and "asset_file"."isEdited" = $1
   and "asset_file"."type" = $2
+  left join "asset_original_file" on "asset_original_file"."assetId" = "asset"."id"
 where
   "asset"."id" in ($3)
 
@@ -705,7 +715,9 @@ where
 select
   "asset"."originalPath",
   "asset"."originalFileName",
-  "asset_file"."path" as "path"
+  "asset_file"."path" as "path",
+  "asset_file"."backendId" as "backendId",
+  "asset_file"."key" as "key"
 from
   "asset"
   left join "asset_file" on "asset"."id" = "asset_file"."assetId"
@@ -718,18 +730,17 @@ order by
 -- AssetRepository.getForVideo
 select
   "asset"."originalPath",
-  (
-    select
-      "asset_file"."path"
-    from
-      "asset_file"
-    where
-      "asset_file"."assetId" = "asset"."id"
-      and "asset_file"."type" = 'encoded_video'
-      and "asset_file"."isEdited" = false
-  ) as "encodedVideoPath"
+  "asset_original_file"."backendId" as "originalBackendId",
+  "asset_original_file"."key" as "originalKey",
+  "asset_file"."path" as "encodedVideoPath",
+  "asset_file"."backendId" as "encodedVideoBackendId",
+  "asset_file"."key" as "encodedVideoKey"
 from
   "asset"
+  left join "asset_original_file" on "asset_original_file"."assetId" = "asset"."id"
+  left join "asset_file" on "asset_file"."assetId" = "asset"."id"
+  and "asset_file"."type" = 'encoded_video'
+  and "asset_file"."isEdited" = false
 where
   "asset"."id" = $1
   and "asset"."type" = $2

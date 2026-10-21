@@ -49,7 +49,6 @@ import {
   withExif,
   withFaces,
   withFacesAndPeople,
-  withFilePath,
   withFiles,
   withLibrary,
   withOwner,
@@ -1315,9 +1314,18 @@ export class AssetRepository {
               .on('asset_file.isEdited', '=', true)
               .on('asset_file.type', '=', AssetFileType.FullSize),
           )
-          .select('asset_file.path as editedPath'),
+          .select([
+            'asset_file.path as editedPath',
+            'asset_file.backendId as editedBackendId',
+            'asset_file.key as editedKey',
+          ]),
       )
-      .select('originalPath');
+      .leftJoin('asset_original_file', 'asset_original_file.assetId', 'asset.id')
+      .select([
+        'originalPath',
+        'asset_original_file.backendId as originalBackendId',
+        'asset_original_file.key as originalKey',
+      ]);
   }
 
   @GenerateSql({ params: [DummyValue.UUID, true] })
@@ -1338,7 +1346,13 @@ export class AssetRepository {
       .leftJoin('asset_file', (join) =>
         join.onRef('asset.id', '=', 'asset_file.assetId').on('asset_file.type', '=', type),
       )
-      .select(['asset.originalPath', 'asset.originalFileName', 'asset_file.path as path'])
+      .select([
+        'asset.originalPath',
+        'asset.originalFileName',
+        'asset_file.path as path',
+        'asset_file.backendId as backendId',
+        'asset_file.key as key',
+      ])
       .orderBy('asset_file.isEdited', isEdited ? 'desc' : 'asc')
       .executeTakeFirstOrThrow();
   }
@@ -1347,8 +1361,21 @@ export class AssetRepository {
   async getForVideo(id: string) {
     return this.db
       .selectFrom('asset')
-      .select(['asset.originalPath'])
-      .select((eb) => withFilePath(eb, AssetFileType.EncodedVideo).as('encodedVideoPath'))
+      .leftJoin('asset_original_file', 'asset_original_file.assetId', 'asset.id')
+      .leftJoin('asset_file', (join) =>
+        join
+          .onRef('asset_file.assetId', '=', 'asset.id')
+          .on('asset_file.type', '=', sql.lit(AssetFileType.EncodedVideo))
+          .on('asset_file.isEdited', '=', sql.lit(false)),
+      )
+      .select([
+        'asset.originalPath',
+        'asset_original_file.backendId as originalBackendId',
+        'asset_original_file.key as originalKey',
+        'asset_file.path as encodedVideoPath',
+        'asset_file.backendId as encodedVideoBackendId',
+        'asset_file.key as encodedVideoKey',
+      ])
       .where('asset.id', '=', id)
       .where('asset.type', '=', AssetType.Video)
       .executeTakeFirst();

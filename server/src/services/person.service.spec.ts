@@ -166,8 +166,8 @@ describe(PersonService.name, () => {
       const person = PersonFactory.create();
 
       mocks.person.getForThumbnail.mockResolvedValue({
-        thumbnailPath: person.thumbnailPath,
-        sharedThumbnailPath: null,
+        thumbnail: { path: person.thumbnailPath, backendId: null, key: null },
+        sharedThumbnail: null,
       });
       await expect(sut.getThumbnail(auth, person.personGroupId)).rejects.toBeInstanceOf(BadRequestException);
       expect(mocks.storage.createReadStream).not.toHaveBeenCalled();
@@ -194,7 +194,10 @@ describe(PersonService.name, () => {
       const person = PersonFactory.create({ thumbnailPath: '' });
       const ids = [{ personGroupId: person.personGroupId, ownerId: auth.user.id }];
 
-      mocks.person.getForThumbnail.mockResolvedValue({ thumbnailPath: '', sharedThumbnailPath: null });
+      mocks.person.getForThumbnail.mockResolvedValue({
+        thumbnail: { path: '', backendId: null, key: null },
+        sharedThumbnail: null,
+      });
       mocks.access.person.checkAccess.mockResolvedValue(new Set(ids));
       await expect(sut.getThumbnail(auth, person.personGroupId)).rejects.toBeInstanceOf(NotFoundException);
       expect(mocks.storage.createReadStream).not.toHaveBeenCalled();
@@ -207,8 +210,8 @@ describe(PersonService.name, () => {
       const ids = [{ personGroupId: person.personGroupId, ownerId: auth.user.id }];
 
       mocks.person.getForThumbnail.mockResolvedValue({
-        thumbnailPath: person.thumbnailPath,
-        sharedThumbnailPath: null,
+        thumbnail: { path: person.thumbnailPath, backendId: 'media', key: 'thumbs/person-thumbnail.jpg' },
+        sharedThumbnail: null,
       });
       mocks.access.person.checkAccess.mockResolvedValue(new Set(ids));
       await expect(sut.getThumbnail(auth, person.personGroupId)).resolves.toEqual(
@@ -227,8 +230,8 @@ describe(PersonService.name, () => {
       const ids = [{ personGroupId: person.personGroupId, ownerId: auth.user.id }];
 
       mocks.person.getForThumbnail.mockResolvedValue({
-        thumbnailPath: '',
-        sharedThumbnailPath: person.thumbnailPath,
+        thumbnail: null,
+        sharedThumbnail: { path: person.thumbnailPath, backendId: null, key: null },
       });
       mocks.access.person.checkAccess.mockResolvedValue(new Set(ids));
       await expect(sut.getThumbnail(auth, person.personGroupId)).resolves.toEqual(

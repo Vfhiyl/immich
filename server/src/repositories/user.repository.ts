@@ -58,6 +58,22 @@ export class UserRepository {
       .executeTakeFirst();
   }
 
+  /** The profile image of a user and where it is stored */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getProfileImageFile(userId: string) {
+    return this.db
+      .selectFrom('user')
+      .leftJoin('user_profile_image_file', 'user_profile_image_file.userId', 'user.id')
+      .select([
+        'user.profileImagePath as path',
+        'user_profile_image_file.backendId as backendId',
+        'user_profile_image_file.key as key',
+      ])
+      .where('user.id', '=', userId)
+      .where('user.deletedAt', 'is', null)
+      .executeTakeFirst();
+  }
+
   getMetadata(userId: string) {
     return this.db
       .selectFrom('user_metadata')

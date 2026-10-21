@@ -922,27 +922,45 @@ where
 select
   (
     select
-      "person"."thumbnailPath"
+      json_build_object(
+        'path',
+        "person"."thumbnailPath",
+        'backendId',
+        "person_thumbnail_file"."backendId",
+        'key',
+        "person_thumbnail_file"."key"
+      ) as "file"
     from
       "person"
+      left join "person_thumbnail_file" on "person_thumbnail_file"."ownerId" = "person"."ownerId"
+      and "person_thumbnail_file"."personGroupId" = "person"."personGroupId"
     where
       "person"."personGroupId" = "person_group"."id"
       and "person"."ownerId" = $1
-  ) as "thumbnailPath",
+  ) as "thumbnail",
   (
     select
-      "person"."thumbnailPath"
+      json_build_object(
+        'path',
+        "person"."thumbnailPath",
+        'backendId',
+        "person_thumbnail_file"."backendId",
+        'key',
+        "person_thumbnail_file"."key"
+      ) as "file"
     from
       "person"
       inner join "person_user" on "person_user"."personGroupId" = "person"."personGroupId"
       and "person_user"."sharedById" = "person"."ownerId"
       and "person_user"."sharedWithId" = $2
+      left join "person_thumbnail_file" on "person_thumbnail_file"."ownerId" = "person"."ownerId"
+      and "person_thumbnail_file"."personGroupId" = "person"."personGroupId"
     where
       "person"."personGroupId" = "person_group"."id"
       and "person"."thumbnailPath" != $3
     limit
       $4
-  ) as "sharedThumbnailPath"
+  ) as "sharedThumbnail"
 from
   "person_group"
 where

@@ -170,6 +170,9 @@ const assetEntity = Object.freeze({
   livePhotoVideoId: null,
 } as MapAsset);
 
+// assets whose original file has no recorded location yet
+const forOriginal = <T extends object>(asset: T) => ({ ...asset, originalBackendId: null, originalKey: null });
+
 describe(AssetMediaService.name, () => {
   let sut: AssetMediaService;
   let mocks: ServiceMocks;
@@ -488,7 +491,11 @@ describe(AssetMediaService.name, () => {
     it('should download a file', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForOriginal.mockResolvedValue(asset);
+      mocks.asset.getForOriginal.mockResolvedValue({
+        ...asset,
+        originalBackendId: 'media',
+        originalKey: asset.originalPath.replace('/data/', ''),
+      });
 
       await expect(sut.downloadOriginal(authStub.admin, asset.id, {})).resolves.toEqual(
         new ImmichFileResponse({
@@ -508,7 +515,10 @@ describe(AssetMediaService.name, () => {
         .build();
 
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([editedAsset.id]));
-      mocks.asset.getForOriginal.mockResolvedValue({ ...editedAsset, editedPath: editedAsset.files[3].path });
+      mocks.asset.getForOriginal.mockResolvedValue({
+        ...forOriginal(editedAsset),
+        editedPath: editedAsset.files[3].path,
+      });
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, {})).resolves.toEqual(
         new ImmichFileResponse({
@@ -528,7 +538,10 @@ describe(AssetMediaService.name, () => {
         .build();
 
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([editedAsset.id]));
-      mocks.asset.getForOriginal.mockResolvedValue({ ...editedAsset, editedPath: editedAsset.files[3].path });
+      mocks.asset.getForOriginal.mockResolvedValue({
+        ...forOriginal(editedAsset),
+        editedPath: editedAsset.files[3].path,
+      });
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, { edited: true })).resolves.toEqual(
         new ImmichFileResponse({
@@ -545,7 +558,7 @@ describe(AssetMediaService.name, () => {
       const editedAsset = AssetFactory.from().edit({ action: AssetEditAction.Crop }).file(fullsizeEdited).build();
 
       mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([editedAsset.id]));
-      mocks.asset.getForOriginal.mockResolvedValue({ ...editedAsset, editedPath: fullsizeEdited.path });
+      mocks.asset.getForOriginal.mockResolvedValue({ ...forOriginal(editedAsset), editedPath: fullsizeEdited.path });
 
       await expect(
         sut.downloadOriginal(AuthFactory.from().sharedLink().build(), editedAsset.id, { edited: false }),
@@ -567,7 +580,7 @@ describe(AssetMediaService.name, () => {
         .build();
 
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([editedAsset.id]));
-      mocks.asset.getForOriginal.mockResolvedValue(editedAsset);
+      mocks.asset.getForOriginal.mockResolvedValue(forOriginal(editedAsset));
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, { edited: false })).resolves.toEqual(
         new ImmichFileResponse({
@@ -592,7 +605,12 @@ describe(AssetMediaService.name, () => {
     it('should fall back to preview if the requested thumbnail file does not exist', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ...asset,
+        path: asset.files[0].path,
+        backendId: null,
+        key: null,
+      });
 
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
         new ImmichFileResponse({
@@ -607,7 +625,12 @@ describe(AssetMediaService.name, () => {
     it('should get preview file', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ...asset,
+        path: asset.files[0].path,
+        backendId: null,
+        key: null,
+      });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW })).resolves.toEqual(
         new ImmichFileResponse({
           path: asset.files[0].path,
@@ -623,7 +646,12 @@ describe(AssetMediaService.name, () => {
         .file({ type: AssetFileType.Thumbnail, path: '/uploads/user-id/webp/path.ext' })
         .build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ...asset,
+        path: asset.files[0].path,
+        backendId: null,
+        key: null,
+      });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
         new ImmichFileResponse({
           path: asset.files[0].path,
@@ -638,7 +666,12 @@ describe(AssetMediaService.name, () => {
     it('should get original thumbnail by default', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ...asset,
+        path: asset.files[0].path,
+        backendId: null,
+        key: null,
+      });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
         new ImmichFileResponse({
           path: asset.files[0].path,
@@ -653,7 +686,12 @@ describe(AssetMediaService.name, () => {
     it('should get edited thumbnail when edited=true', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail, isEdited: true }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ...asset,
+        path: asset.files[0].path,
+        backendId: null,
+        key: null,
+      });
       await expect(
         sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL, edited: true }),
       ).resolves.toEqual(
@@ -670,7 +708,12 @@ describe(AssetMediaService.name, () => {
     it('should get original thumbnail when edited=false', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ...asset,
+        path: asset.files[0].path,
+        backendId: null,
+        key: null,
+      });
       await expect(
         sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL, edited: false }),
       ).resolves.toEqual(
@@ -687,7 +730,12 @@ describe(AssetMediaService.name, () => {
     it('should not return the unedited version if requested using a shared link', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail }).build();
       mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ...asset,
+        path: asset.files[0].path,
+        backendId: null,
+        key: null,
+      });
       await expect(
         sut.viewThumbnail(authStub.adminSharedLink, asset.id, {
           size: AssetMediaSize.THUMBNAIL,
@@ -708,7 +756,12 @@ describe(AssetMediaService.name, () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
 
       mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      mocks.asset.getForThumbnail.mockResolvedValue({
+        ...asset,
+        path: asset.files[0].path,
+        backendId: null,
+        key: null,
+      });
 
       const auth = AuthFactory.from().sharedLink({ showExif: false }).build();
 
@@ -746,7 +799,11 @@ describe(AssetMediaService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getForVideo.mockResolvedValue({
         originalPath: asset.originalPath,
+        originalBackendId: null,
+        originalKey: null,
         encodedVideoPath: asset.files[0].path,
+        encodedVideoBackendId: 'host',
+        encodedVideoKey: 'path/to/encoded/video.mp4',
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
@@ -763,7 +820,11 @@ describe(AssetMediaService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getForVideo.mockResolvedValue({
         originalPath: asset.originalPath,
+        originalBackendId: 'host',
+        originalKey: 'original/path.ext',
         encodedVideoPath: null,
+        encodedVideoBackendId: null,
+        encodedVideoKey: null,
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(

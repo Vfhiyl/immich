@@ -235,16 +235,15 @@ export class AssetMediaService extends BaseService {
       dto.edited = true;
     }
 
-    const { originalPath, originalFileName, editedPath } = await this.assetRepository.getForOriginal(
-      id,
-      dto.edited ?? false,
-    );
-
-    const path = editedPath ?? originalPath!;
+    const asset = await this.assetRepository.getForOriginal(id, dto.edited ?? false);
+    const file = asset.editedPath
+      ? { path: asset.editedPath, backendId: asset.editedBackendId ?? null, key: asset.editedKey ?? null }
+      : { path: asset.originalPath, backendId: asset.originalBackendId, key: asset.originalKey };
+    const path = file.path;
 
     return new ImmichFileResponse({
-      path,
-      fileName: getFileNameWithoutExtension(originalFileName) + getFilenameExtension(path),
+      path: this.storageBackendRepository.getLocalPath(file),
+      fileName: getFileNameWithoutExtension(asset.originalFileName) + getFilenameExtension(path),
       contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithCache,
     });
@@ -266,7 +265,7 @@ export class AssetMediaService extends BaseService {
     }
 
     const size = (dto.size ?? AssetMediaSize.THUMBNAIL) as unknown as AssetFileType;
-    const { originalPath, originalFileName, path } = await this.assetRepository.getForThumbnail(
+    const { originalPath, originalFileName, path, backendId, key } = await this.assetRepository.getForThumbnail(
       id,
       size,
       dto.edited ?? false,
@@ -293,7 +292,7 @@ export class AssetMediaService extends BaseService {
 
     return new ImmichFileResponse({
       fileName,
-      path,
+      path: this.storageBackendRepository.getLocalPath({ path, backendId, key }),
       contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithCache,
     });
@@ -308,11 +307,13 @@ export class AssetMediaService extends BaseService {
       throw new NotFoundException('Asset not found or asset is not a video');
     }
 
-    const filepath = asset.encodedVideoPath || asset.originalPath;
+    const file = asset.encodedVideoPath
+      ? { path: asset.encodedVideoPath, backendId: asset.encodedVideoBackendId, key: asset.encodedVideoKey }
+      : { path: asset.originalPath, backendId: asset.originalBackendId, key: asset.originalKey };
 
     return new ImmichFileResponse({
-      path: filepath,
-      contentType: mimeTypes.lookup(filepath),
+      path: this.storageBackendRepository.getLocalPath(file),
+      contentType: mimeTypes.lookup(file.path),
       cacheControl: CacheControl.PrivateWithCache,
     });
   }

@@ -59,6 +59,7 @@ import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
+import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
@@ -543,6 +544,7 @@ const newRealRepository = <T extends BaseServiceDeps[number]>(key: T, db: Kysely
       return new key(db, LoggingRepository.create()) as InstanceType<T>;
     }
 
+    case StorageBackendRepository:
     case StorageRepository: {
       return new key(LoggingRepository.create()) as InstanceType<T>;
     }
@@ -637,6 +639,10 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
 
     case StorageRepository: {
       return automock(StorageRepository, { args: [{ setContext: () => {} }] });
+    }
+
+    case StorageBackendRepository: {
+      return automock(StorageBackendRepository, { args: [{ setContext: () => {} }] });
     }
 
     case WebsocketRepository: {

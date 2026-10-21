@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { AssetFaceCreateDto, PersonSearchDto, PersonUserRole } from 'src/dtos/person.dto.js';
 import { AssetFileType, JobName } from 'src/enum.js';
@@ -17,6 +18,7 @@ import { MachineLearningRepository } from 'src/repositories/machine-learning.rep
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonUserRepository } from 'src/repositories/person-user.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -44,12 +46,14 @@ const setup = (db?: Kysely<DB>) => {
       UserRepository,
       ClusterGroupRepository,
       PartnerRepository,
+      StorageBackendRepository,
     ],
     mock: [JobRepository, LoggingRepository, StorageRepository, MachineLearningRepository],
   });
 };
 
 beforeAll(async () => {
+  StorageCore.setMediaLocation('/data');
   defaultDatabase = await getKyselyDB();
 });
 
@@ -279,6 +283,28 @@ describe(PersonService.name, () => {
       await expect(sut.getThumbnail(factory.auth({ user }), person.personGroupId)).resolves.toEqual(
         expect.objectContaining({ path: person.thumbnailPath }),
       );
+    });
+
+    it('should serve a shared thumbnail from its recorded location', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: user2 } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user2.id });
+      await ctx.newPersonUser({ personGroupId: person.personGroupId, sharedById: user2.id, sharedWithId: user.id });
+      const key = `thumbs/${user2.id}/${person.personGroupId}.jpeg`;
+      await ctx.get(PersonRepository).updateThumbnail({
+        ownerId: user2.id,
+        personGroupId: person.personGroupId,
+        thumbnailPath: `/data/${key}`,
+        thumbnailFile: { backendId: 'media', key },
+      });
+
+      const getLocalPath = vi.spyOn(ctx.get(StorageBackendRepository), 'getLocalPath');
+
+      await expect(sut.getThumbnail(factory.auth({ user }), person.personGroupId)).resolves.toEqual(
+        expect.objectContaining({ path: `/data/${key}` }),
+      );
+      expect(getLocalPath).toHaveBeenCalledWith({ path: `/data/${key}`, backendId: 'media', key });
     });
 
     it('should fall back to shared thumbnail path', async () => {

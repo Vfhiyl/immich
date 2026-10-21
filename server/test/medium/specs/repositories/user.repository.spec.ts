@@ -91,6 +91,42 @@ describe(UserRepository.name, () => {
     });
   });
 
+  describe('getProfileImageFile', () => {
+    it('should return the profile image with its recorded location', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      await sut.updateProfileImage(user.id, {
+        profileImagePath: `/data/profile/${user.id}/a.webp`,
+        profileImageFile: { backendId: 'media', key: `profile/${user.id}/a.webp` },
+        profileChangedAt: new Date(),
+      });
+
+      await expect(sut.getProfileImageFile(user.id)).resolves.toEqual({
+        path: `/data/profile/${user.id}/a.webp`,
+        backendId: 'media',
+        key: `profile/${user.id}/a.webp`,
+      });
+    });
+
+    it('should return a profile image without a recorded location', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser({ profileImagePath: '/data/profile/old.webp' });
+
+      await expect(sut.getProfileImageFile(user.id)).resolves.toEqual({
+        path: '/data/profile/old.webp',
+        backendId: null,
+        key: null,
+      });
+    });
+
+    it('should not return anything for a deleted user', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser({ profileImagePath: '/data/profile/old.webp', deletedAt: new Date() });
+
+      await expect(sut.getProfileImageFile(user.id)).resolves.toBeUndefined();
+    });
+  });
+
   describe('profile image file backfill', () => {
     it('should page through users that have a profile image but no profile image file', async () => {
       const db = await getKyselyDB();
