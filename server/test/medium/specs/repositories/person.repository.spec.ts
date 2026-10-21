@@ -790,3 +790,140 @@ describe(PersonRepository.name, () => {
     });
   });
 });
+
+const getThumbnailFile = (
+  ctx: MediumTestContext,
+  { ownerId, personGroupId }: { ownerId: string; personGroupId: string },
+) =>
+  ctx.database
+    .selectFrom('person_thumbnail_file')
+    .select(['backendId', 'key'])
+    .where('ownerId', '=', ownerId)
+    .where('personGroupId', '=', personGroupId)
+    .executeTakeFirst();
+
+describe('person thumbnail files', () => {
+  it('should record the thumbnail file together with the thumbnail path and update it on change', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { person } = await ctx.newPerson({ ownerId: user.id });
+    const id = { ownerId: user.id, personGroupId: person.personGroupId };
+
+    await sut.updateThumbnail({
+      ...id,
+      thumbnailPath: `/data/thumbs/${user.id}/a.jpeg`,
+      thumbnailFile: { backendId: 'media', key: `thumbs/${user.id}/a.jpeg` },
+    });
+    await sut.updateThumbnail({
+      ...id,
+      thumbnailPath: `/data/thumbs/${user.id}/b.jpeg`,
+      thumbnailFile: { backendId: 'media', key: `thumbs/${user.id}/b.jpeg` },
+    });
+
+    await expect(getThumbnailFile(ctx, id)).resolves.toEqual({ backendId: 'media', key: `thumbs/${user.id}/b.jpeg` });
+    await expect(
+      ctx.database
+        .selectFrom('person')
+        .select('thumbnailPath')
+        .where('personGroupId', '=', id.personGroupId)
+        .executeTakeFirst(),
+    ).resolves.toEqual({ thumbnailPath: `/data/thumbs/${user.id}/b.jpeg` });
+  });
+
+  it('should keep the thumbnail file when the person moves to another group', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { person } = await ctx.newPerson({ ownerId: user.id });
+    const group = await sut.createGroup(user.id);
+    const thumbnailFile = { backendId: 'media', key: `thumbs/${user.id}/${person.personGroupId}.jpeg` };
+    await sut.updateThumbnail({
+      ownerId: user.id,
+      personGroupId: person.personGroupId,
+      thumbnailPath: '/data/x.jpeg',
+      thumbnailFile,
+    });
+
+    await sut.updateGroupId({ ownerId: user.id, oldPersonGroupId: person.personGroupId, newPersonGroupId: group.id });
+
+    await expect(getThumbnailFile(ctx, { ownerId: user.id, personGroupId: group.id })).resolves.toEqual(thumbnailFile);
+  });
+
+  it('should page through people that have a thumbnail but no thumbnail file', async () => {
+    const db = await getKyselyDB();
+    const { ctx, sut } = setup(db);
+    const { user } = await ctx.newUser();
+    const people = [];
+    for (const name of ['a', 'b', 'c']) {
+      const { person } = await ctx.newPerson({ ownerId: user.id, thumbnailPath: `/data/thumbs/${name}.jpeg` });
+      people.push(person);
+    }
+    const { person: withoutThumbnail } = await ctx.newPerson({ ownerId: user.id });
+    await ctx.database
+      .updateTable('person')
+      .set({ thumbnailPath: '' })
+      .where('personGroupId', '=', withoutThumbnail.personGroupId)
+      .execute();
+    const { person: located } = await ctx.newPerson({ ownerId: user.id });
+    await sut.updateThumbnail({
+      ownerId: user.id,
+      personGroupId: located.personGroupId,
+      thumbnailPath: '/data/thumbs/located.jpeg',
+      thumbnailFile: { backendId: 'media', key: 'thumbs/located.jpeg' },
+    });
+    const expected = people
+      .map(({ personGroupId, thumbnailPath }) => ({ ownerId: user.id, personGroupId, path: thumbnailPath }))
+      .toSorted((a, b) => a.personGroupId.localeCompare(b.personGroupId));
+
+    await expect(sut.hasPeopleWithoutThumbnailFile()).resolves.toBe(true);
+    await expect(sut.getPeopleWithoutThumbnailFile({ limit: 2 })).resolves.toEqual(expected.slice(0, 2));
+    await expect(sut.getPeopleWithoutThumbnailFile({ after: expected[1], limit: 2 })).resolves.toEqual(
+      expected.slice(2),
+    );
+  });
+
+  it('should set thumbnail files, skipping people that have one, taken locations and deleted people', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { person: first } = await ctx.newPerson({ ownerId: user.id, thumbnailPath: '/data/thumbs/first.jpeg' });
+    const { person: second } = await ctx.newPerson({ ownerId: user.id, thumbnailPath: '/data/thumbs/second.jpeg' });
+    const { person: located } = await ctx.newPerson({ ownerId: user.id });
+    const takenFile = { backendId: 'media', key: `thumbs/${located.personGroupId}.jpeg` };
+    await sut.updateThumbnail({
+      ownerId: user.id,
+      personGroupId: located.personGroupId,
+      thumbnailPath: '/data/located.jpeg',
+      thumbnailFile: takenFile,
+    });
+    const group = await sut.createGroup(user.id);
+
+    await expect(
+      sut.setThumbnailFiles([
+        {
+          ownerId: user.id,
+          personGroupId: first.personGroupId,
+          backendId: 'media',
+          key: `thumbs/${first.personGroupId}`,
+        },
+        { ownerId: user.id, personGroupId: second.personGroupId, ...takenFile },
+        { ownerId: user.id, personGroupId: located.personGroupId, backendId: 'media', key: 'thumbs/other.jpeg' },
+        { ownerId: user.id, personGroupId: group.id, backendId: 'media', key: `thumbs/${group.id}` },
+      ]),
+    ).resolves.toBe(1);
+
+    await expect(getThumbnailFile(ctx, { ownerId: user.id, personGroupId: first.personGroupId })).resolves.toEqual({
+      backendId: 'media',
+      key: `thumbs/${first.personGroupId}`,
+    });
+    await expect(
+      getThumbnailFile(ctx, { ownerId: user.id, personGroupId: second.personGroupId }),
+    ).resolves.toBeUndefined();
+    await expect(getThumbnailFile(ctx, { ownerId: user.id, personGroupId: located.personGroupId })).resolves.toEqual(
+      takenFile,
+    );
+  });
+
+  it('should do nothing when no thumbnail files are given', async () => {
+    const { sut } = setup();
+    await expect(sut.setThumbnailFiles([])).resolves.toBe(0);
+  });
+});

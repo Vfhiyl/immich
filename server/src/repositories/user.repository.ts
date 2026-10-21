@@ -3,10 +3,11 @@ import { type ExpressionBuilder, type Insertable, type Kysely, type Updateable, 
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
+import type { StorageLocation } from 'src/cores/storage.core.js';
 import type { UserMetadata, UserMetadataItem } from 'src/types.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetType, AssetVisibility, UserStatus } from 'src/enum.js';
+import { AssetType, AssetVisibility, BuiltinStorageBackend, UserStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { asUuid } from 'src/utils/database.js';
@@ -189,6 +190,98 @@ export class UserRepository {
       .returning(columns.userAdmin)
       .returning(withMetadata)
       .executeTakeFirstOrThrow();
+  }
+
+  /** Set or clear the profile image of a user, recording where it is stored */
+  updateProfileImage(
+    id: string,
+    {
+      profileImagePath,
+      profileImageFile,
+      profileChangedAt,
+    }: { profileImagePath: string; profileImageFile: StorageLocation | null; profileChangedAt: Date },
+  ) {
+    return this.db.transaction().execute(async (tx) => {
+      const user = await tx
+        .updateTable('user')
+        .set({ profileImagePath, profileChangedAt })
+        .where('user.id', '=', asUuid(id))
+        .where('user.deletedAt', 'is', null)
+        .returning(columns.userAdmin)
+        .returning(withMetadata)
+        .executeTakeFirstOrThrow();
+
+      if (profileImageFile) {
+        await tx
+          .insertInto('user_profile_image_file')
+          .values({ userId: id, ...profileImageFile })
+          .onConflict((oc) =>
+            oc.column('userId').doUpdateSet((eb) => ({
+              backendId: eb.ref('excluded.backendId'),
+              key: eb.ref('excluded.key'),
+            })),
+          )
+          .execute();
+      } else {
+        await tx.deleteFrom('user_profile_image_file').where('userId', '=', id).execute();
+      }
+
+      return user;
+    });
+  }
+
+  @GenerateSql({ params: [{ afterId: DummyValue.UUID, limit: 1000 }] })
+  getUsersWithoutProfileImageFile({ afterId, limit }: { afterId?: string; limit: number }) {
+    return this.db
+      .selectFrom('user')
+      .select(['user.id', 'user.profileImagePath as path'])
+      .where('user.profileImagePath', '!=', '')
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb.selectFrom('user_profile_image_file').whereRef('user_profile_image_file.userId', '=', 'user.id'),
+          ),
+        ),
+      )
+      .$if(afterId !== undefined, (qb) => qb.where('user.id', '>', asUuid(afterId!)))
+      .orderBy('user.id')
+      .limit(limit)
+      .execute();
+  }
+
+  @GenerateSql()
+  async hasUsersWithoutProfileImageFile(): Promise<boolean> {
+    const [user] = await this.getUsersWithoutProfileImageFile({ limit: 1 });
+    return user !== undefined;
+  }
+
+  /**
+   * Record the profile image file of users that do not have one yet, with the same rules as for asset files. Users
+   * deleted in the meantime are skipped. Returns the number of users updated.
+   */
+  @GenerateSql({ params: [[{ id: DummyValue.UUID, backendId: DummyValue.STRING, key: DummyValue.STRING }]] })
+  async setProfileImageFiles(files: Array<{ id: string } & StorageLocation>): Promise<number> {
+    if (files.length === 0) {
+      return 0;
+    }
+
+    const rows = sql.join(files.map(({ id, backendId, key }) => sql`(${id}::uuid, ${backendId}, ${key})`));
+    const result = await sql`
+      insert into "user_profile_image_file" ("userId", "backendId", "key")
+      select "location"."id", "location"."backendId", "location"."key"
+      from (values ${rows}) as "location" ("id", "backendId", "key")
+      where exists (select from "user" where "user"."id" = "location"."id")
+        and (
+          "location"."backendId" = ${BuiltinStorageBackend.Host}
+          or not exists (
+            select from "user_profile_image_file" as "other"
+            where "other"."backendId" = "location"."backendId" and "other"."key" = "location"."key"
+          )
+        )
+      on conflict ("userId") do nothing
+    `.execute(this.db);
+
+    return Number(result.numAffectedRows ?? 0);
   }
 
   async updateAll(dto: Updateable<UserTable>) {

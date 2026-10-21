@@ -70,6 +70,7 @@ import { PartnerTable } from 'src/schema/tables/partner.table.js';
 import { PersonAuditTable } from 'src/schema/tables/person-audit.table.js';
 import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.table.js';
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
+import { PersonThumbnailFileTable } from 'src/schema/tables/person-thumbnail-file.table.js';
 import { PersonUserTable } from 'src/schema/tables/person-user.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
@@ -89,6 +90,7 @@ import { TagTable } from 'src/schema/tables/tag.table.js';
 import { UserAuditTable } from 'src/schema/tables/user-audit.table.js';
 import { UserMetadataAuditTable } from 'src/schema/tables/user-metadata-audit.table.js';
 import { UserMetadataTable } from 'src/schema/tables/user-metadata.table.js';
+import { UserProfileImageFileTable } from 'src/schema/tables/user-profile-image-file.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { VersionHistoryTable } from 'src/schema/tables/version-history.table.js';
 import {
@@ -125,6 +127,8 @@ export class ImmichDatabase {
     AssetTable,
     AssetFileTable,
     AssetOriginalFileTable,
+    PersonThumbnailFileTable,
+    UserProfileImageFileTable,
     AssetExifTable,
     ClusterGroupTable,
     ClusterGroupRequestTable,
@@ -234,6 +238,8 @@ export interface DB {
   asset_face_audit: AssetFaceAuditTable;
   asset_file: AssetFileTable;
   asset_original_file: AssetOriginalFileTable;
+  person_thumbnail_file: PersonThumbnailFileTable;
+  user_profile_image_file: UserProfileImageFileTable;
   asset_metadata: AssetMetadataTable;
   asset_metadata_audit: AssetMetadataAuditTable;
   asset_job_status: AssetJobStatusTable;

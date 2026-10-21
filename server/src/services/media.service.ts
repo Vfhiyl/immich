@@ -447,7 +447,12 @@ export class MediaService extends BaseService {
     };
 
     await this.mediaRepository.generateThumbnail(decoded, thumbnailOptions, thumbnailPath);
-    await this.personRepository.update({ ownerId, personGroupId, thumbnailPath });
+    await this.personRepository.updateThumbnail({
+      ownerId,
+      personGroupId,
+      thumbnailPath,
+      thumbnailFile: StorageCore.getStorageLocation(thumbnailPath),
+    });
 
     return JobStatus.Success;
   }

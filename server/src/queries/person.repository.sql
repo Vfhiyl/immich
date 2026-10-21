@@ -1277,6 +1277,88 @@ where
       and "person_user"."role" in ($5, $6)
   )
 
+-- PersonRepository.getPeopleWithoutThumbnailFile
+select
+  "person"."ownerId",
+  "person"."personGroupId",
+  "person"."thumbnailPath" as "path"
+from
+  "person"
+where
+  "person"."thumbnailPath" != $1
+  and not exists (
+    select
+    from
+      "person_thumbnail_file"
+    where
+      "person_thumbnail_file"."ownerId" = "person"."ownerId"
+      and "person_thumbnail_file"."personGroupId" = "person"."personGroupId"
+  )
+  and ("person"."ownerId", "person"."personGroupId") > ($2, $3)
+order by
+  "person"."ownerId",
+  "person"."personGroupId"
+limit
+  $4
+
+-- PersonRepository.hasPeopleWithoutThumbnailFile
+select
+  "person"."ownerId",
+  "person"."personGroupId",
+  "person"."thumbnailPath" as "path"
+from
+  "person"
+where
+  "person"."thumbnailPath" != $1
+  and not exists (
+    select
+    from
+      "person_thumbnail_file"
+    where
+      "person_thumbnail_file"."ownerId" = "person"."ownerId"
+      and "person_thumbnail_file"."personGroupId" = "person"."personGroupId"
+  )
+order by
+  "person"."ownerId",
+  "person"."personGroupId"
+limit
+  $2
+
+-- PersonRepository.setThumbnailFiles
+insert into
+  "person_thumbnail_file" ("ownerId", "personGroupId", "backendId", "key")
+select
+  "location"."ownerId",
+  "location"."personGroupId",
+  "location"."backendId",
+  "location"."key"
+from
+  (
+    values
+      ($1::uuid, $2::uuid, $3, $4)
+  ) as "location" ("ownerId", "personGroupId", "backendId", "key")
+where
+  exists (
+    select
+    from
+      "person"
+    where
+      "person"."ownerId" = "location"."ownerId"
+      and "person"."personGroupId" = "location"."personGroupId"
+  )
+  and (
+    "location"."backendId" = $5
+    or not exists (
+      select
+      from
+        "person_thumbnail_file" as "other"
+      where
+        "other"."backendId" = "location"."backendId"
+        and "other"."key" = "location"."key"
+    )
+  )
+on conflict ("ownerId", "personGroupId") do nothing
+
 -- PersonRepository.getFacesByIds
 select
   "asset_face".*,

@@ -314,6 +314,80 @@ where
 order by
   "createdAt" desc
 
+-- UserRepository.getUsersWithoutProfileImageFile
+select
+  "user"."id",
+  "user"."profileImagePath" as "path"
+from
+  "user"
+where
+  "user"."profileImagePath" != $1
+  and not exists (
+    select
+    from
+      "user_profile_image_file"
+    where
+      "user_profile_image_file"."userId" = "user"."id"
+  )
+  and "user"."id" > $2::uuid
+order by
+  "user"."id"
+limit
+  $3
+
+-- UserRepository.hasUsersWithoutProfileImageFile
+select
+  "user"."id",
+  "user"."profileImagePath" as "path"
+from
+  "user"
+where
+  "user"."profileImagePath" != $1
+  and not exists (
+    select
+    from
+      "user_profile_image_file"
+    where
+      "user_profile_image_file"."userId" = "user"."id"
+  )
+order by
+  "user"."id"
+limit
+  $2
+
+-- UserRepository.setProfileImageFiles
+insert into
+  "user_profile_image_file" ("userId", "backendId", "key")
+select
+  "location"."id",
+  "location"."backendId",
+  "location"."key"
+from
+  (
+    values
+      ($1::uuid, $2, $3)
+  ) as "location" ("id", "backendId", "key")
+where
+  exists (
+    select
+    from
+      "user"
+    where
+      "user"."id" = "location"."id"
+  )
+  and (
+    "location"."backendId" = $4
+    or not exists (
+      select
+      from
+        "user_profile_image_file" as "other"
+      where
+        "other"."backendId" = "location"."backendId"
+        and "other"."key" = "location"."key"
+    )
+  )
+on conflict ("userId") do nothing
+
 -- UserRepository.getUserStats
 select
   "user"."id" as "userId",

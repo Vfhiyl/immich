@@ -6,6 +6,8 @@ import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const file = (id: string, path: string) => ({ id, path });
 
+const person = (personGroupId: string, path: string) => ({ ownerId: 'user-id', personGroupId, path });
+
 describe(StorageService.name, () => {
   let sut: StorageService;
   let mocks: ServiceMocks;
@@ -220,9 +222,27 @@ describe(StorageService.name, () => {
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileLocationBackfill });
     });
 
+    it('should queue the backfill when some people have no thumbnail file location', async () => {
+      mocks.person.hasPeopleWithoutThumbnailFile.mockResolvedValue(true);
+
+      await sut.onBootstrapFileLocations();
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileLocationBackfill });
+    });
+
+    it('should queue the backfill when some users have no profile image file location', async () => {
+      mocks.user.hasUsersWithoutProfileImageFile.mockResolvedValue(true);
+
+      await sut.onBootstrapFileLocations();
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileLocationBackfill });
+    });
+
     it('should not queue the backfill when every file has a storage location', async () => {
       mocks.asset.hasFilesWithoutLocation.mockResolvedValue(false);
       mocks.asset.hasAssetsWithoutOriginalFile.mockResolvedValue(false);
+      mocks.person.hasPeopleWithoutThumbnailFile.mockResolvedValue(false);
+      mocks.user.hasUsersWithoutProfileImageFile.mockResolvedValue(false);
 
       await sut.onBootstrapFileLocations();
 
@@ -231,6 +251,11 @@ describe(StorageService.name, () => {
   });
 
   describe('handleFileLocationBackfill', () => {
+    beforeEach(() => {
+      mocks.person.getPeopleWithoutThumbnailFile.mockResolvedValue([]);
+      mocks.user.getUsersWithoutProfileImageFile.mockResolvedValue([]);
+    });
+
     // the storage repository mock sets the media location to /data
     it('should use the media backend for files under the media location and the host backend otherwise', async () => {
       mocks.asset.getFilesWithoutLocation.mockResolvedValueOnce([
@@ -376,6 +401,51 @@ describe(StorageService.name, () => {
 
       expect(mocks.asset.getAssetsWithoutOriginalFile).toHaveBeenCalledTimes(2);
       expect(mocks.asset.getAssetsWithoutOriginalFile).toHaveBeenLastCalledWith({ afterId: 'asset-4999', limit: 5000 });
+    });
+
+    it('should record person thumbnails, paging by owner and person group', async () => {
+      const page = Array.from({ length: 5000 }, (_, index) =>
+        person(`group-${index}`, `/data/thumbs/user-id/${index}.jpeg`),
+      );
+      mocks.person.getPeopleWithoutThumbnailFile.mockResolvedValueOnce(page).mockResolvedValueOnce([]);
+      mocks.person.setThumbnailFiles.mockResolvedValue(5000);
+
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.person.getPeopleWithoutThumbnailFile).toHaveBeenNthCalledWith(1, { after: undefined, limit: 5000 });
+      expect(mocks.person.getPeopleWithoutThumbnailFile).toHaveBeenNthCalledWith(2, { after: page[4999], limit: 5000 });
+      expect(mocks.person.setThumbnailFiles).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          { ownerId: 'user-id', personGroupId: 'group-0', backendId: 'media', key: 'thumbs/user-id/0.jpeg' },
+        ]),
+      );
+    });
+
+    it('should name the person when a thumbnail path cannot be used', async () => {
+      mocks.person.getPeopleWithoutThumbnailFile.mockResolvedValueOnce([
+        { ownerId: 'user-id', personGroupId: 'group-id', path: 'relative.jpeg' },
+      ]);
+
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.person.setThumbnailFiles).toHaveBeenCalledWith([]);
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('person thumbnail group-id of user user-id (relative.jpeg)'),
+      );
+    });
+
+    it('should record user profile images', async () => {
+      mocks.user.getUsersWithoutProfileImageFile.mockResolvedValueOnce([
+        file('user-id', '/data/profile/user-id/image.webp'),
+      ]);
+      mocks.user.setProfileImageFiles.mockResolvedValue(1);
+
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.user.getUsersWithoutProfileImageFile).toHaveBeenCalledWith({ afterId: undefined, limit: 5000 });
+      expect(mocks.user.setProfileImageFiles).toHaveBeenCalledWith([
+        { id: 'user-id', backendId: 'media', key: 'profile/user-id/image.webp' },
+      ]);
     });
   });
 });

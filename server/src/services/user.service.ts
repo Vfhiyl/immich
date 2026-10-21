@@ -118,8 +118,9 @@ export class UserService extends BaseService {
       throw new BadRequestException('Unable to process profile image', { cause: error });
     }
 
-    const user = await this.userRepository.update(auth.user.id, {
+    const user = await this.userRepository.updateProfileImage(auth.user.id, {
       profileImagePath,
+      profileImageFile: StorageCore.getStorageLocation(profileImagePath),
       profileChangedAt: new Date(),
     });
 
@@ -138,7 +139,11 @@ export class UserService extends BaseService {
     if (user.profileImagePath === '') {
       throw new BadRequestException("Can't delete a missing profile Image");
     }
-    await this.userRepository.update(auth.user.id, { profileImagePath: '', profileChangedAt: new Date() });
+    await this.userRepository.updateProfileImage(auth.user.id, {
+      profileImagePath: '',
+      profileImageFile: null,
+      profileChangedAt: new Date(),
+    });
     await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [user.profileImagePath] } });
   }
 

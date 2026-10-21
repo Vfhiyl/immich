@@ -5,8 +5,10 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -18,7 +20,7 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   return newMediumService(StorageService, {
     database: db || defaultDatabase,
-    real: [AssetRepository, DatabaseRepository, SystemMetadataRepository],
+    real: [AssetRepository, DatabaseRepository, PersonRepository, SystemMetadataRepository, UserRepository],
     mock: [StorageRepository, ConfigRepository, LoggingRepository],
   });
 };
@@ -152,6 +154,26 @@ describe(StorageService.name, () => {
         ]),
       );
       await expect(ctx.get(AssetRepository).hasAssetsWithoutOriginalFile()).resolves.toBe(false);
+    });
+
+    it('should record person thumbnails and profile images that have no file location', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user } = await ctx.newUser({ profileImagePath: '/data/profile/user/image.webp' });
+      const { person } = await ctx.newPerson({ ownerId: user.id, thumbnailPath: '/data/thumbs/user/face.jpeg' });
+
+      await expect(sut.handleFileLocationBackfill()).resolves.toBe(JobStatus.Success);
+
+      await expect(
+        ctx.database
+          .selectFrom('person_thumbnail_file')
+          .select(['ownerId', 'personGroupId', 'backendId', 'key'])
+          .execute(),
+      ).resolves.toEqual([
+        { ownerId: user.id, personGroupId: person.personGroupId, backendId: 'media', key: 'thumbs/user/face.jpeg' },
+      ]);
+      await expect(
+        ctx.database.selectFrom('user_profile_image_file').select(['userId', 'backendId', 'key']).execute(),
+      ).resolves.toEqual([{ userId: user.id, backendId: 'media', key: 'profile/user/image.webp' }]);
     });
   });
 });

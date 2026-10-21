@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { join } from 'node:path';
 import type { JobOf, SystemFlags } from 'src/types.js';
 import { ErrorMessages } from 'src/constants.js';
-import { StorageCore } from 'src/cores/storage.core.js';
+import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   BootstrapEventPriority,
@@ -15,11 +15,14 @@ import {
   StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { PersonId } from 'src/repositories/person.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 
 /** Number of asset files given a storage location per database round trip */
 const FILE_LOCATION_BATCH_SIZE = 5000;
+
+type FileWithPath = { id: string; path: string };
 
 const docsMessage = `Please see https://docs.immich.app/administration/system-integrity#folder-checks for more information.`;
 
@@ -141,11 +144,13 @@ export class StorageService extends BaseService {
 
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
   async onBootstrapFileLocations() {
-    const [files, originals] = await Promise.all([
+    const pending = await Promise.all([
       this.assetRepository.hasFilesWithoutLocation(),
       this.assetRepository.hasAssetsWithoutOriginalFile(),
+      this.personRepository.hasPeopleWithoutThumbnailFile(),
+      this.userRepository.hasUsersWithoutProfileImageFile(),
     ]);
-    if (files || originals) {
+    if (pending.some(Boolean)) {
       await this.jobRepository.queue({ name: JobName.FileLocationBackfill });
     }
   }
@@ -153,46 +158,62 @@ export class StorageService extends BaseService {
   /** Give files recorded before storage backends existed a backend and key, derived from their path */
   @OnJob({ name: JobName.FileLocationBackfill, queue: QueueName.BackgroundTask })
   async handleFileLocationBackfill(): Promise<JobStatus> {
-    await this.backfillLocations('asset file', {
-      getPage: (options) => this.assetRepository.getFilesWithoutLocation(options),
+    await this.backfillLocations<FileWithPath>('asset file', {
+      getPage: (after, limit) => this.assetRepository.getFilesWithoutLocation({ afterId: after?.id, limit }),
+      getName: ({ id }) => id,
       setLocations: (locations) => this.assetRepository.setFileLocations(locations),
     });
-    await this.backfillLocations('original file', {
-      getPage: (options) => this.assetRepository.getAssetsWithoutOriginalFile(options),
+    await this.backfillLocations<FileWithPath>('original file', {
+      getPage: (after, limit) => this.assetRepository.getAssetsWithoutOriginalFile({ afterId: after?.id, limit }),
+      getName: ({ id }) => id,
       setLocations: (locations) => this.assetRepository.setOriginalFiles(locations),
+    });
+    await this.backfillLocations<PersonId & { path: string }>('person thumbnail', {
+      getPage: (after, limit) => this.personRepository.getPeopleWithoutThumbnailFile({ after, limit }),
+      getName: ({ ownerId, personGroupId }) => `${personGroupId} of user ${ownerId}`,
+      setLocations: (locations) => this.personRepository.setThumbnailFiles(locations),
+    });
+    await this.backfillLocations<FileWithPath>('profile image', {
+      getPage: (after, limit) => this.userRepository.getUsersWithoutProfileImageFile({ afterId: after?.id, limit }),
+      getName: ({ id }) => id,
+      setLocations: (locations) => this.userRepository.setProfileImageFiles(locations),
     });
 
     return JobStatus.Success;
   }
 
-  private async backfillLocations(
+  private async backfillLocations<T extends { path: string }>(
     label: string,
     source: {
-      getPage: (options: { afterId?: string; limit: number }) => Promise<{ id: string; path: string }[]>;
-      setLocations: (locations: { id: string; backendId: string; key: string }[]) => Promise<number>;
+      /** The next page in a stable order, after the last item of the previous page */
+      getPage: (after: T | undefined, limit: number) => Promise<T[]>;
+      getName: (item: T) => string;
+      setLocations: (locations: Array<Omit<T, 'path'> & StorageLocation>) => Promise<number>;
     },
   ) {
-    let afterId: string | undefined;
+    let after: T | undefined;
     let updated = 0;
     let invalid = 0;
     let shared = 0;
 
     while (true) {
-      const files = await source.getPage({ afterId, limit: FILE_LOCATION_BATCH_SIZE });
-      if (files.length === 0) {
+      const items = await source.getPage(after, FILE_LOCATION_BATCH_SIZE);
+      if (items.length === 0) {
         break;
       }
-      afterId = files.at(-1)!.id;
+      after = items.at(-1);
 
       const seen = new Set<string>();
-      const locations: { id: string; backendId: string; key: string }[] = [];
-      for (const file of files) {
+      const locations: Array<Omit<T, 'path'> & StorageLocation> = [];
+      for (const item of items) {
         let location;
         try {
-          location = StorageCore.getStorageLocation(file.path);
+          location = StorageCore.getStorageLocation(item.path);
         } catch (error) {
           invalid++;
-          this.logger.warn(`Unable to determine the storage location of ${label} ${file.id} (${file.path}): ${error}`);
+          this.logger.warn(
+            `Unable to determine the storage location of ${label} ${source.getName(item)} (${item.path}): ${error}`,
+          );
           continue;
         }
 
@@ -206,14 +227,15 @@ export class StorageService extends BaseService {
           seen.add(locationId);
         }
 
-        locations.push({ id: file.id, ...location });
+        const { path: _path, ...identity } = item;
+        locations.push({ ...identity, ...location });
       }
 
       const count = await source.setLocations(locations);
       updated += count;
       shared += locations.length - count;
 
-      if (files.length < FILE_LOCATION_BATCH_SIZE) {
+      if (items.length < FILE_LOCATION_BATCH_SIZE) {
         break;
       }
     }

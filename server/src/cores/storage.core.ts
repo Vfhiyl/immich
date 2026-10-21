@@ -383,7 +383,12 @@ export class StorageCore {
           return;
         }
 
-        return this.personRepository.update({ ownerId, personGroupId: id, thumbnailPath: newPath });
+        return this.personRepository.updateThumbnail({
+          ownerId,
+          personGroupId: id,
+          thumbnailPath: newPath,
+          thumbnailFile: StorageCore.getStorageLocation(newPath),
+        });
       }
 
       case UserPathType.Profile: {

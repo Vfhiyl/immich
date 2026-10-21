@@ -4,6 +4,7 @@ import { DateTime } from 'luxon';
 import { IncomingHttpHeaders } from 'node:http';
 import sanitize from 'sanitize-filename';
 import { LOGIN_DUMMY_HASH, LOGIN_URL, MOBILE_REDIRECT, SALT_ROUNDS } from 'src/constants.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
 import {
   AuthDto,
@@ -394,7 +395,11 @@ export class AuthService extends BaseService {
         Buffer.from(data),
       );
 
-      await this.userRepository.update(user.id, { profileImagePath, profileChangedAt: new Date() });
+      await this.userRepository.updateProfileImage(user.id, {
+        profileImagePath,
+        profileImageFile: StorageCore.getStorageLocation(profileImagePath),
+        profileChangedAt: new Date(),
+      });
 
       if (oldPath) {
         await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [oldPath] } });

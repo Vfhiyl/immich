@@ -99,7 +99,7 @@ describe(UserService.name, () => {
       const file = { path: '/profile/path' } as Express.Multer.File;
 
       mocks.user.get.mockResolvedValue(void 0);
-      mocks.user.update.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
+      mocks.user.updateProfileImage.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
 
       await expect(sut.createProfileImage(authStub.admin, file)).rejects.toThrowError(BadRequestException);
     });
@@ -108,7 +108,7 @@ describe(UserService.name, () => {
       const file = { path: '/profile/path' } as Express.Multer.File;
       const user = UserFactory.create({ profileImagePath: '/path/to/profile.jpg' });
       mocks.user.get.mockResolvedValue(user);
-      mocks.user.update.mockRejectedValue(new InternalServerErrorException('mocked error'));
+      mocks.user.updateProfileImage.mockRejectedValue(new InternalServerErrorException('mocked error'));
 
       await expect(sut.createProfileImage(authStub.admin, file)).rejects.toThrowError(InternalServerErrorException);
     });
@@ -122,7 +122,7 @@ describe(UserService.name, () => {
 
       await expect(sut.createProfileImage(authStub.admin, file)).rejects.toThrowError(BadRequestException);
 
-      expect(mocks.user.update).not.toHaveBeenCalled();
+      expect(mocks.user.updateProfileImage).not.toHaveBeenCalled();
       expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
     });
 
@@ -131,10 +131,15 @@ describe(UserService.name, () => {
       const file = { path: '/profile/path' } as Express.Multer.File;
 
       mocks.user.get.mockResolvedValue(user);
-      mocks.user.update.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
+      mocks.user.updateProfileImage.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
 
       await sut.createProfileImage(authStub.admin, file);
 
+      expect(mocks.user.updateProfileImage).toHaveBeenCalledWith(authStub.admin.user.id, {
+        profileImagePath: expect.stringContaining(`/data/profile/${authStub.admin.user.id}/`),
+        profileImageFile: { backendId: 'media', key: expect.stringContaining(`profile/${authStub.admin.user.id}/`) },
+        profileChangedAt: expect.any(Date),
+      });
       expect(mocks.job.queue.mock.calls).toEqual([
         [{ name: JobName.FileDelete, data: { files: [file.path, user.profileImagePath] } }],
       ]);
@@ -144,7 +149,7 @@ describe(UserService.name, () => {
       const file = { path: '/profile/path' } as Express.Multer.File;
 
       mocks.user.get.mockResolvedValue(userStub.admin);
-      mocks.user.update.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
+      mocks.user.updateProfileImage.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
 
       await sut.createProfileImage(authStub.admin, file);
 
@@ -171,6 +176,11 @@ describe(UserService.name, () => {
 
       await sut.deleteProfileImage(authStub.admin);
 
+      expect(mocks.user.updateProfileImage).toHaveBeenCalledWith(authStub.admin.user.id, {
+        profileImagePath: '',
+        profileImageFile: null,
+        profileChangedAt: expect.any(Date),
+      });
       expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files } }]]);
     });
   });

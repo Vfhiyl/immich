@@ -1592,10 +1592,11 @@ describe(MediaService.name, () => {
         },
         expect.any(String),
       );
-      expect(mocks.person.update).toHaveBeenCalledWith({
+      expect(mocks.person.updateThumbnail).toHaveBeenCalledWith({
         ownerId: person.ownerId,
         personGroupId: person.personGroupId,
-        thumbnailPath: expect.any(String),
+        thumbnailPath: expect.stringContaining(`/data/thumbs/${person.ownerId}/`),
+        thumbnailFile: { backendId: 'media', key: expect.stringContaining(`thumbs/${person.ownerId}/`) },
       });
     });
 
@@ -1645,10 +1646,11 @@ describe(MediaService.name, () => {
         },
         expect.any(String),
       );
-      expect(mocks.person.update).toHaveBeenCalledWith({
+      expect(mocks.person.updateThumbnail).toHaveBeenCalledWith({
         ownerId: person.ownerId,
         personGroupId: person.personGroupId,
-        thumbnailPath: expect.any(String),
+        thumbnailPath: expect.stringContaining(`/data/thumbs/${person.ownerId}/`),
+        thumbnailFile: { backendId: 'media', key: expect.stringContaining(`thumbs/${person.ownerId}/`) },
       });
     });
 

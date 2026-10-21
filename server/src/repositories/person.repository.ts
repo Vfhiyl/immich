@@ -10,10 +10,11 @@ import {
 } from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
+import type { StorageLocation } from 'src/cores/storage.core.js';
 import { AssetFace, PersonUser, columns } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import { PersonUserRole } from 'src/dtos/person.dto.js';
-import { AssetFileType, AssetVisibility, SourceType, UserMetadataKey } from 'src/enum.js';
+import { AssetFileType, AssetVisibility, BuiltinStorageBackend, SourceType, UserMetadataKey } from 'src/enum.js';
 import { type YearMonthDay } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
@@ -95,6 +96,8 @@ export type GetFacesOptions = WithPersonOptions & { isVisible?: boolean };
 
 /** a person is identified by its owner and the group it belongs to */
 export type PersonId = { ownerId: string; personGroupId: string };
+
+export type PersonThumbnailUpdate = PersonId & { thumbnailPath: string; thumbnailFile: StorageLocation };
 
 export type ReassignCluster = { userId: string; newClusterId: string };
 
@@ -863,6 +866,113 @@ export class PersonRepository {
           .where('person_user.role', 'in', [PersonUserRole.Write, PersonUserRole.Admin]),
       )
       .execute();
+  }
+
+  /** Point a person at a new thumbnail, recording where it is stored */
+  async updateThumbnail({ ownerId, personGroupId, thumbnailPath, thumbnailFile }: PersonThumbnailUpdate) {
+    await this.db.transaction().execute(async (tx) => {
+      await tx
+        .updateTable('person')
+        .set({ thumbnailPath })
+        .where('ownerId', '=', ownerId)
+        .where('personGroupId', '=', personGroupId)
+        .execute();
+      await tx
+        .insertInto('person_thumbnail_file')
+        .values({ ownerId, personGroupId, ...thumbnailFile })
+        .onConflict((oc) =>
+          oc.columns(['ownerId', 'personGroupId']).doUpdateSet((eb) => ({
+            backendId: eb.ref('excluded.backendId'),
+            key: eb.ref('excluded.key'),
+          })),
+        )
+        .execute();
+    });
+  }
+
+  @GenerateSql({ params: [{ after: { ownerId: DummyValue.UUID, personGroupId: DummyValue.UUID }, limit: 1000 }] })
+  getPeopleWithoutThumbnailFile({ after, limit }: { after?: PersonId; limit: number }) {
+    return this.db
+      .selectFrom('person')
+      .select(['person.ownerId', 'person.personGroupId', 'person.thumbnailPath as path'])
+      .where('person.thumbnailPath', '!=', '')
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom('person_thumbnail_file')
+              .whereRef('person_thumbnail_file.ownerId', '=', 'person.ownerId')
+              .whereRef('person_thumbnail_file.personGroupId', '=', 'person.personGroupId'),
+          ),
+        ),
+      )
+      .$if(after !== undefined, (qb) =>
+        qb.where((eb) =>
+          eb(
+            eb.refTuple('person.ownerId', 'person.personGroupId'),
+            '>',
+            eb.tuple(after!.ownerId, after!.personGroupId),
+          ),
+        ),
+      )
+      .orderBy('person.ownerId')
+      .orderBy('person.personGroupId')
+      .limit(limit)
+      .execute();
+  }
+
+  @GenerateSql()
+  async hasPeopleWithoutThumbnailFile(): Promise<boolean> {
+    const [person] = await this.getPeopleWithoutThumbnailFile({ limit: 1 });
+    return person !== undefined;
+  }
+
+  /**
+   * Record the thumbnail file of people that do not have one yet, with the same rules as for asset files. People
+   * deleted in the meantime are skipped. Returns the number of people updated.
+   */
+  @GenerateSql({
+    params: [
+      [
+        {
+          ownerId: DummyValue.UUID,
+          personGroupId: DummyValue.UUID,
+          backendId: DummyValue.STRING,
+          key: DummyValue.STRING,
+        },
+      ],
+    ],
+  })
+  async setThumbnailFiles(files: Array<PersonId & StorageLocation>): Promise<number> {
+    if (files.length === 0) {
+      return 0;
+    }
+
+    const rows = sql.join(
+      files.map(
+        ({ ownerId, personGroupId, backendId, key }) =>
+          sql`(${ownerId}::uuid, ${personGroupId}::uuid, ${backendId}, ${key})`,
+      ),
+    );
+    const result = await sql`
+      insert into "person_thumbnail_file" ("ownerId", "personGroupId", "backendId", "key")
+      select "location"."ownerId", "location"."personGroupId", "location"."backendId", "location"."key"
+      from (values ${rows}) as "location" ("ownerId", "personGroupId", "backendId", "key")
+      where exists (
+          select from "person"
+          where "person"."ownerId" = "location"."ownerId" and "person"."personGroupId" = "location"."personGroupId"
+        )
+        and (
+          "location"."backendId" = ${BuiltinStorageBackend.Host}
+          or not exists (
+            select from "person_thumbnail_file" as "other"
+            where "other"."backendId" = "location"."backendId" and "other"."key" = "location"."key"
+          )
+        )
+      on conflict ("ownerId", "personGroupId") do nothing
+    `.execute(this.db);
+
+    return Number(result.numAffectedRows ?? 0);
   }
 
   async updateAll(people: Insertable<PersonTable>[]): Promise<void> {
