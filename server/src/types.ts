@@ -259,7 +259,10 @@ export interface ILibraryBulkIdsJob {
 }
 
 export interface IDeleteFilesJob extends IBaseJob {
+  /** Local paths, for temporary files and files recorded before storage backends existed */
   files: Array<string | null | undefined>;
+  /** Files on a storage backend */
+  locations?: Array<{ backendId: string; key: string }>;
 }
 
 export interface IDeferrableJob extends IEntityJob {

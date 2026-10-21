@@ -2,8 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { load as loadYaml } from 'js-yaml';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { mkdir, readFile, rm } from 'node:fs/promises';
+import { extname, join, resolve } from 'node:path';
 import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import {
@@ -11,7 +13,7 @@ import {
   StorageBackendsConfig,
   StorageBackendsConfigSchema,
 } from 'src/dtos/storage-backend-config.dto.js';
-import { BuiltinStorageBackend, StorageBackendDriver } from 'src/enum.js';
+import { BuiltinStorageBackend, StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
 import { BlobStore } from 'src/repositories/blob-store.js';
 import { LocalBlobStore } from 'src/repositories/local-blob-store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -30,6 +32,37 @@ export interface LocalFileLease extends AsyncDisposable {
   path: string;
 }
 
+/**
+ * A new file being written: tools write to `path`, then `commit` stores it and returns where. Dispose it with
+ * `await using` so that a file that was not committed is removed.
+ */
+export interface OutputFile extends AsyncDisposable {
+  path: string;
+  commit(): Promise<StoredFile>;
+}
+
+export type StoredFile = StorageLocation & { size: number | null; checksum: Buffer | null };
+
+/** Temporary files for tools that write to a path, kept below the media location */
+export const STAGING_FOLDER = '.immich-staging';
+
+/** Delete recorded files by location, and those recorded before storage backends existed by path */
+export const toFileDeletion = (files: Array<RecordedFile | null | undefined>) => {
+  const deletion = { files: [] as string[], locations: [] as StorageLocation[] };
+  for (const file of files) {
+    if (!file?.path) {
+      continue;
+    }
+
+    if (file.backendId === null || file.key === null) {
+      deletion.files.push(file.path);
+    } else {
+      deletion.locations.push({ backendId: file.backendId, key: file.key });
+    }
+  }
+  return deletion;
+};
+
 export const toRecordedFile = (path: string, location: StorageLocation | null): RecordedFile => ({
   path,
   backendId: location?.backendId ?? null,
@@ -45,6 +78,7 @@ export class StorageBackendRepository {
   private media?: { root: string; store: LocalBlobStore };
   private host?: LocalBlobStore;
   private configured = new Map<string, BlobStore>();
+  private roles = new Map<StorageBackendRole, string>();
 
   constructor(
     @InjectKysely() private db: Kysely<DB>,
@@ -74,6 +108,43 @@ export class StorageBackendRepository {
   /** Make the configured storage backends available, replacing any configured before */
   configure(backends: StorageBackendConfig[]) {
     this.configured = new Map(backends.map((backend) => [backend.id, this.createStore(backend)]));
+    this.roles = new Map(backends.map(({ id, role }) => [role, id]));
+  }
+
+  /** The backend that new files of a kind are written to, or undefined to write them to their path as before */
+  getBackendFor(role: StorageBackendRole): string | undefined {
+    return this.roles.get(role);
+  }
+
+  /**
+   * Prepare a new file that will be stored at `path`, or in the backend configured for its role. On a backend the file
+   * gets a new random key, and `path` only serves as its logical name (its extension is kept for tools and type checks).
+   */
+  async createOutput(role: StorageBackendRole, path: string): Promise<OutputFile> {
+    const backendId = this.getBackendFor(role);
+    if (!backendId) {
+      return {
+        path,
+        commit: () => Promise.resolve({ ...StorageCore.getStorageLocation(path), size: null, checksum: null }),
+        [Symbol.asyncDispose]: () => Promise.resolve(),
+      };
+    }
+
+    const stagingFolder = join(StorageCore.getMediaLocation(), STAGING_FOLDER);
+    await mkdir(stagingFolder, { recursive: true });
+    const stagingPath = join(stagingFolder, `${randomUUID()}${extname(path)}`);
+    const store = this.get(backendId);
+
+    return {
+      path: stagingPath,
+      commit: async () => {
+        const key = randomUUID();
+        const { size, sha1 } = await store.put(key, createReadStream(stagingPath));
+        await rm(stagingPath, { force: true });
+        return { backendId, key, size, checksum: sha1 };
+      },
+      [Symbol.asyncDispose]: () => rm(stagingPath, { force: true }),
+    };
   }
 
   get(backendId: string): BlobStore {

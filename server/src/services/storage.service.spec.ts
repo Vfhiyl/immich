@@ -315,6 +315,71 @@ describe(StorageService.name, () => {
     });
   });
 
+  describe('handleDeleteFiles with locations', () => {
+    let root: string;
+
+    beforeEach(async () => {
+      root = await fs.mkdtemp(join(tmpdir(), 'immich-delete-'));
+      mocks.storageBackend.configure([
+        { id: 'derived', driver: StorageBackendDriver.Local, role: StorageBackendRole.Derived, root },
+      ]);
+    });
+
+    afterEach(async () => {
+      await fs.rm(root, { recursive: true, force: true });
+    });
+
+    it('should delete files from their storage backend', async () => {
+      await fs.writeFile(join(root, 'a'), 'a');
+      await fs.writeFile(join(root, 'b'), 'b');
+
+      await expect(
+        sut.handleDeleteFiles({
+          files: [],
+          locations: [
+            { backendId: 'derived', key: 'a' },
+            { backendId: 'derived', key: 'b' },
+          ],
+        }),
+      ).resolves.toBe(JobStatus.Success);
+
+      await expect(fs.readdir(root)).resolves.toEqual([]);
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('should delete by path and by location in one job', async () => {
+      await fs.writeFile(join(root, 'a'), 'a');
+
+      await sut.handleDeleteFiles({ files: ['/data/old.jpg'], locations: [{ backendId: 'derived', key: 'a' }] });
+
+      expect(mocks.storage.unlink).toHaveBeenCalledWith('/data/old.jpg');
+      await expect(fs.readdir(root)).resolves.toEqual([]);
+    });
+
+    it('should log files that could not be deleted and continue', async () => {
+      await fs.mkdir(join(root, 'directory'));
+      await fs.writeFile(join(root, 'a'), 'a');
+
+      await expect(
+        sut.handleDeleteFiles({
+          files: [],
+          locations: [
+            { backendId: 'unknown', key: 'x' },
+            { backendId: 'derived', key: 'directory' },
+            { backendId: 'derived', key: 'a' },
+          ],
+        }),
+      ).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        'Unable to remove files from storage backend unknown',
+        expect.any(Error),
+      );
+      expect(mocks.logger.warn).toHaveBeenCalledWith('Unable to remove directory from storage backend derived');
+      await expect(fs.readdir(root)).resolves.toEqual(['directory']);
+    });
+  });
+
   describe('onBootstrapFileLocations', () => {
     it('should queue the backfill when some files have no storage location', async () => {
       mocks.asset.hasFilesWithoutLocation.mockResolvedValue(true);

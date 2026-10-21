@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { chunk } from 'lodash-es';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { buffer } from 'node:stream/consumers';
@@ -332,7 +333,7 @@ export class StorageService extends BaseService {
 
   @OnJob({ name: JobName.FileDelete, queue: QueueName.BackgroundTask })
   async handleDeleteFiles(job: JobOf<JobName.FileDelete>): Promise<JobStatus> {
-    const { files } = job;
+    const { files, locations = [] } = job;
 
     // TODO: one job per file
     for (const file of files) {
@@ -347,7 +348,28 @@ export class StorageService extends BaseService {
       }
     }
 
+    for (const [backendId, keys] of Map.groupBy(locations, ({ backendId }) => backendId)) {
+      await this.deleteFromBackend(
+        backendId,
+        keys.map(({ key }) => key),
+      );
+    }
+
     return JobStatus.Success;
+  }
+
+  private async deleteFromBackend(backendId: string, keys: string[]) {
+    try {
+      const store = this.storageBackendRepository.get(backendId);
+      for (const batch of chunk(keys, store.limits.maxDeleteBatch)) {
+        const { failed } = await store.deleteMany(batch);
+        for (const key of failed) {
+          this.logger.warn(`Unable to remove ${key} from storage backend ${backendId}`);
+        }
+      }
+    } catch (error: any) {
+      this.logger.warn(`Unable to remove files from storage backend ${backendId}`, error);
+    }
   }
 
   private async verifyReadAccess(folder: StorageFolder) {

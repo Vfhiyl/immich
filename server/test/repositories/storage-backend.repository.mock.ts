@@ -17,6 +17,8 @@ export const newStorageBackendRepositoryMock = (): Mocked<RepositoryInterface<St
     get: vitest.fn((backendId: string) => real.get(backendId)),
     getLocalPath: vitest.fn((file) => real.getLocalPath(file)),
     lease: vitest.fn((file) => real.lease(file)),
+    getBackendFor: vitest.fn((role) => real.getBackendFor(role)),
+    createOutput: vitest.fn((role, path) => real.createOutput(role, path)),
     getRegistered: vitest.fn().mockResolvedValue([
       { id: 'host', driver: 'local' },
       { id: 'media', driver: 'local' },

@@ -1,4 +1,5 @@
 import { Kysely } from 'kysely';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,7 +8,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
 import { BlobStore } from 'src/repositories/blob-store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
+import { StorageBackendRepository, toFileDeletion } from 'src/repositories/storage-backend.repository.js';
 import { DB } from 'src/schema/index.js';
 
 describe(StorageBackendRepository.name, () => {
@@ -217,6 +218,102 @@ describe(StorageBackendRepository.name, () => {
         '/mnt/o/f1/a1',
       );
       expect(logger.warn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createOutput', () => {
+    let directory: string;
+
+    beforeEach(async () => {
+      directory = await fs.mkdtemp(join(tmpdir(), 'immich-output-'));
+      StorageCore.setMediaLocation(join(directory, 'media'));
+    });
+
+    afterEach(async () => {
+      await fs.rm(directory, { recursive: true, force: true });
+    });
+
+    const configureDerived = () =>
+      sut.configure([
+        {
+          id: 'derived',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Derived,
+          root: join(directory, 'derived'),
+        },
+      ]);
+
+    it('should write to the path itself when no backend is configured for the role', async () => {
+      const path = join(directory, 'media', 'thumbs', 'a_preview.jpeg');
+      await using output = await sut.createOutput(StorageBackendRole.Derived, path);
+
+      expect(output.path).toBe(path);
+      await expect(output.commit()).resolves.toEqual({
+        backendId: 'media',
+        key: 'thumbs/a_preview.jpeg',
+        size: null,
+        checksum: null,
+      });
+      expect(sut.getBackendFor(StorageBackendRole.Derived)).toBeUndefined();
+    });
+
+    it('should stage the file and store it under a new key on the configured backend', async () => {
+      configureDerived();
+      const output = await sut.createOutput(StorageBackendRole.Derived, '/data/thumbs/user/a_preview.webp');
+
+      expect(output.path).toMatch(
+        new RegExp(String.raw`^${join(directory, 'media', '.immich-staging')}/[0-9a-f-]{36}\.webp$`),
+      );
+      await fs.writeFile(output.path, 'preview');
+      const stored = await output.commit();
+      await output[Symbol.asyncDispose]();
+
+      expect(stored).toEqual({
+        backendId: 'derived',
+        key: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        size: 7,
+        checksum: createHash('sha1').update('preview').digest(),
+      });
+      await expect(fs.readFile(join(directory, 'derived', stored.key), 'utf8')).resolves.toBe('preview');
+      await expect(fs.readdir(join(directory, 'media', '.immich-staging'))).resolves.toEqual([]);
+    });
+
+    it('should give every output a new key', async () => {
+      configureDerived();
+      const keys = [];
+      for (let index = 0; index < 2; index++) {
+        await using output = await sut.createOutput(StorageBackendRole.Derived, '/data/thumbs/a_preview.webp');
+        await fs.writeFile(output.path, 'preview');
+        const { key } = await output.commit();
+        keys.push(key);
+      }
+
+      expect(keys[0]).not.toBe(keys[1]);
+    });
+
+    it('should remove a staged file that was not committed', async () => {
+      configureDerived();
+      {
+        await using output = await sut.createOutput(StorageBackendRole.Derived, '/data/thumbs/a_preview.webp');
+        await fs.writeFile(output.path, 'partial');
+      }
+
+      await expect(fs.readdir(join(directory, 'media', '.immich-staging'))).resolves.toEqual([]);
+      await expect(fs.readdir(join(directory, 'derived')).catch(() => [])).resolves.toEqual([]);
+    });
+  });
+
+  describe(toFileDeletion.name, () => {
+    it('should delete recorded files by location and others by path', () => {
+      expect(
+        toFileDeletion([
+          { path: '/data/a.jpg', backendId: 'media', key: 'a.jpg' },
+          { path: '/data/b.jpg', backendId: null, key: null },
+          { path: '', backendId: null, key: null },
+          null,
+          undefined,
+        ]),
+      ).toEqual({ files: ['/data/b.jpg'], locations: [{ backendId: 'media', key: 'a.jpg' }] });
     });
   });
 });
