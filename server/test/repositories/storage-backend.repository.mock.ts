@@ -14,9 +14,12 @@ export const newStorageBackendRepositoryMock = (): Mocked<RepositoryInterface<St
   return {
     readConfig: vitest.fn(),
     readMasterKeys: vitest.fn(),
-    configure: vitest.fn((backends, keys) => real.configure(backends, keys)),
+    configure: vitest.fn((backends, keys, deletion) => real.configure(backends, keys, deletion)),
     get: vitest.fn((backendId: string) => real.get(backendId)),
     getWriteStore: vitest.fn((backendId: string) => real.getWriteStore(backendId)),
+    getDeletionStore: vitest.fn((backendId: string) => real.getDeletionStore(backendId)),
+    getDeletionDelay: vitest.fn((backendId: string) => real.getDeletionDelay(backendId)),
+    getOriginalsDeletionDelayDays: vitest.fn(() => real.getOriginalsDeletionDelayDays()),
     getLocalPath: vitest.fn((file) => real.getLocalPath(file)),
     lease: vitest.fn((file) => real.lease(file)),
     resolve: vitest.fn((file) => real.resolve(file)),

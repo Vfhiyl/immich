@@ -162,6 +162,7 @@ describe(StorageBackendRepository.name, () => {
 
       await expect(sut.readConfig(path)).resolves.toEqual({
         backends: [{ id: 'originals', driver: 'local', role: 'originals', root: '/mnt/originals', encrypted: false }],
+        deletion: { delayDays: 360 },
       });
     });
 
@@ -172,11 +173,33 @@ describe(StorageBackendRepository.name, () => {
 
       await expect(sut.readConfig(path)).resolves.toEqual({
         backends: [{ id: 'derived-1', driver: 'local', role: 'derived', root: '/mnt/derived', encrypted: false }],
+        deletion: { delayDays: 360 },
       });
     });
 
     it('should read a configuration without backends', async () => {
-      await expect(sut.readConfig(await write('backends: []'))).resolves.toEqual({ backends: [] });
+      await expect(sut.readConfig(await write('backends: []'))).resolves.toEqual({
+        backends: [],
+        deletion: { delayDays: 360 },
+      });
+    });
+
+    it('should read the deletion delay, which must outlast the database backups', async () => {
+      await expect(sut.readConfig(await write('backends: []\ndeletion:\n  delayDays: 720'))).resolves.toMatchObject({
+        deletion: { delayDays: 720 },
+      });
+      await expect(sut.readConfig(await write('backends: []\ndeletion:\n  delayDays: 7'))).rejects.toThrow(
+        'deletion.delayDays',
+      );
+      await expect(sut.readConfig(await write('backends: []\ndeletion:\n  delayDays: 1.5'))).rejects.toThrow(
+        'deletion.delayDays',
+      );
+    });
+
+    it('should read separate credentials for deleting from an S3 backend', async () => {
+      const deletionCredentials = { type: 'static', accessKeyId: 'DELETER', secretAccessKeyFile: '/run/secrets/del' };
+      const { backends } = await sut.readConfig(await write(s3({ deletionCredentials })));
+      expect(backends[0]).toMatchObject({ deletionCredentials });
     });
 
     it.each([
@@ -249,6 +272,7 @@ describe(StorageBackendRepository.name, () => {
           },
         ],
         encryption: { masterKeyFile: '/run/secrets/master.key' },
+        deletion: { delayDays: 360 },
       });
     });
 
@@ -333,6 +357,63 @@ describe(StorageBackendRepository.name, () => {
       expect(() => sut.getLocalPath({ path: '/data/a.jpg', backendId: 'remote', key: 'k' })).toThrow(
         'Storage backend remote does not keep files on the local filesystem',
       );
+    });
+
+    it('should delete from an S3 backend with its own deletion credentials, if it has them', () => {
+      const remote = {
+        driver: StorageBackendDriver.S3 as const,
+        endpoint: 'https://storage.example.com',
+        region: 'region-1',
+        bucket: 'photos',
+        prefix: '',
+        addressing: 'path' as const,
+        credentials: { type: 'chain' as const },
+        encrypted: false,
+      };
+      sut.configure([
+        {
+          ...remote,
+          id: 'separate',
+          role: StorageBackendRole.Originals,
+          deletionCredentials: { type: 'chain', profile: 'deleter' },
+        },
+        { ...remote, id: 'shared', role: StorageBackendRole.Derived },
+      ]);
+
+      expect(sut.getDeletionStore('separate')).toBeInstanceOf(S3BlobStore);
+      expect(sut.getDeletionStore('separate')).not.toBe(sut.get('separate'));
+      expect(sut.getDeletionStore('separate')).toBe(sut.getDeletionStore('separate'));
+      expect(sut.getDeletionStore('shared')).toBe(sut.get('shared'));
+      expect(sut.getDeletionStore('media')).toBe(sut.get('media'));
+    });
+
+    it('should keep originals for the configured delay and derived files for a fixed one', () => {
+      sut.configure(
+        [
+          {
+            id: 'originals',
+            driver: StorageBackendDriver.Local,
+            role: StorageBackendRole.Originals,
+            root: '/o',
+            encrypted: false,
+          },
+          {
+            id: 'derived',
+            driver: StorageBackendDriver.Local,
+            role: StorageBackendRole.Derived,
+            root: '/d',
+            encrypted: false,
+          },
+        ],
+        undefined,
+        { delayDays: 720 },
+      );
+
+      expect(sut.getDeletionDelay('originals')).toEqual({ days: 720, isOriginal: true });
+      expect(sut.getDeletionDelay('derived')).toEqual({ days: 30, isOriginal: false });
+      // a backend that is no longer configured keeps its files the longer time
+      expect(sut.getDeletionDelay('old')).toEqual({ days: 720, isOriginal: true });
+      expect(sut.getOriginalsDeletionDelayDays()).toBe(720);
     });
 
     it('should replace the backends configured before', () => {

@@ -240,6 +240,8 @@ export class AssetMediaService extends BaseService {
         data: {
           files: [file.originalPath, sidecarFile?.originalPath],
           locations: copies.map(({ backendId, key }) => ({ backendId, key })),
+          // the copies were never recorded
+          immediate: true,
         },
       });
 

@@ -400,6 +400,7 @@ export enum SystemMetadataKey {
   VersionCheckState = 'version-check-state',
   License = 'license',
   IntegrityChecksumCheckpoint = 'integrity-checksum-checkpoint',
+  StorageDeletionState = 'storage-deletion-state',
 }
 
 export enum UserMetadataKey {
@@ -909,6 +910,7 @@ export enum JobName {
   AssetFileMigration = 'AssetFileMigration',
   FileLocationBackfill = 'FileLocationBackfill',
   LocalCopyCleanup = 'LocalCopyCleanup',
+  StorageDeletionRun = 'StorageDeletionRun',
   AssetGenerateThumbnailsQueueAll = 'AssetGenerateThumbnailsQueueAll',
   AssetGenerateThumbnails = 'AssetGenerateThumbnails',
 

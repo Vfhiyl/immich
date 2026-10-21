@@ -42,6 +42,7 @@ import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.re
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
+import { StorageDeletionRepository } from 'src/repositories/storage-deletion.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
@@ -101,6 +102,7 @@ export const repositories = [
   SharedLinkAssetRepository,
   StackRepository,
   StorageBackendRepository,
+  StorageDeletionRepository,
   StorageRepository,
   SyncRepository,
   SyncCheckpointRepository,

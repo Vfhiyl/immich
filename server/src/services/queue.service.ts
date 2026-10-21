@@ -267,7 +267,7 @@ export class QueueService extends BaseService {
   async handleNightlyJobs() {
     const config = await this.getConfig({ withCache: false });
     // not a setting: local copies are an internal shortcut that must not pile up
-    const jobs: JobItem[] = [{ name: JobName.LocalCopyCleanup }];
+    const jobs: JobItem[] = [{ name: JobName.LocalCopyCleanup }, { name: JobName.StorageDeletionRun }];
 
     if (config.nightlyTasks.databaseCleanup) {
       jobs.push(

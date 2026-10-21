@@ -41,7 +41,9 @@ import {
 } from 'src/enum.js';
 import {
   RecordedFile,
+  isBuiltinStorageBackend,
   isSameStoredFile,
+  toBuffer,
   toFileDeletion,
   toRecordedFile,
 } from 'src/repositories/storage-backend.repository.js';
@@ -395,7 +397,26 @@ export class AssetService extends BaseService {
     ];
 
     if (deleteOnDisk && !asset.isOffline) {
-      files.push(assetFiles.sidecarFile, toRecordedFile(asset.originalPath, asset.originalFile));
+      files.push(assetFiles.sidecarFile);
+      const original = asset.originalFile;
+      if (original && !isBuiltinStorageBackend(original.backendId)) {
+        // kept for the deletion delay, with what recovering it as a new photo needs
+        await this.registerDeletions([
+          {
+            backendId: original.backendId,
+            key: original.key,
+            ownerId: asset.ownerId,
+            originalFileName: asset.originalFileName,
+            originalPath: asset.originalPath,
+            fileCreatedAt: asset.fileCreatedAt,
+            size: original.size,
+            checksum: asset.checksum,
+            encryption: toBuffer(original.encryption) ?? null,
+          },
+        ]);
+      } else {
+        files.push(toRecordedFile(asset.originalPath, original));
+      }
     }
 
     await this.jobRepository.queue({ name: JobName.FileDelete, data: toFileDeletion(files) });

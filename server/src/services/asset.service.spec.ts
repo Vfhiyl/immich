@@ -727,7 +727,7 @@ describe(AssetService.name, () => {
         .build();
       mocks.assetJob.getForAssetDeletion.mockResolvedValue({
         ...getForAssetDeletion(asset),
-        originalFile: { backendId: 'originals', key: 'original-key', size: null, encryption: null },
+        originalFile: { backendId: 'originals', key: 'original-key', size: 1234, encryption: String.raw`\x0102` },
         files: [
           { ...asset.files[0], backendId: 'derived', key: 'preview-key' },
           { ...asset.files[1], backendId: null, key: null },
@@ -738,14 +738,36 @@ describe(AssetService.name, () => {
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: {
-          files: [asset.files[1].path],
-          locations: [
-            { backendId: 'derived', key: 'preview-key' },
-            { backendId: 'originals', key: 'original-key' },
-          ],
-        },
+        data: { files: [asset.files[1].path], locations: [{ backendId: 'derived', key: 'preview-key' }] },
       });
+    });
+
+    it('should register the original on a storage backend with what recovering it needs', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue({
+        ...getForAssetDeletion(asset),
+        originalFile: { backendId: 'originals', key: 'original-key', size: 1234, encryption: String.raw`\x0102` },
+      });
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      expect(mocks.storageDeletion.register).toHaveBeenCalledWith([
+        {
+          backendId: 'originals',
+          key: 'original-key',
+          isOriginal: true,
+          notBefore: expect.any(Date),
+          ownerId: asset.ownerId,
+          originalFileName: asset.originalFileName,
+          originalPath: asset.originalPath,
+          fileCreatedAt: asset.fileCreatedAt,
+          size: 1234,
+          checksum: asset.checksum,
+          encryption: Buffer.from('0102', 'hex'),
+        },
+      ]);
+      const [[[{ notBefore }]]] = mocks.storageDeletion.register.mock.calls;
+      expect(new Date(notBefore).getTime()).toBeGreaterThan(Date.now() + 359 * 24 * 60 * 60 * 1000);
     });
 
     it('should keep the original and sidecar on a storage backend when not deleting from disk', async () => {

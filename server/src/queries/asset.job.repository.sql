@@ -619,6 +619,9 @@ select
   "asset"."livePhotoVideoId",
   "asset"."originalPath",
   "asset"."isOffline",
+  "asset"."originalFileName",
+  "asset"."fileCreatedAt",
+  "asset"."checksum",
   (
     select
       to_json(obj)

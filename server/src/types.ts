@@ -261,8 +261,13 @@ export interface ILibraryBulkIdsJob {
 export interface IDeleteFilesJob extends IBaseJob {
   /** Local paths, for temporary files and files recorded before storage backends existed */
   files: Array<string | null | undefined>;
-  /** Files on a storage backend */
+  /**
+   * Files on a storage backend. Files of the built-in backends are deleted right away; files on configured backends are
+   * registered to be deleted once their delay has passed
+   */
   locations?: Array<{ backendId: string; key: string }>;
+  /** Delete files on configured backends right away, for files that were stored but never recorded */
+  immediate?: boolean;
 }
 
 export interface IDeferrableJob extends IEntityJob {
@@ -354,6 +359,7 @@ export type JobItem =
   | { name: JobName.AuditTableCleanup; data?: IBaseJob }
   | { name: JobName.FileLocationBackfill; data?: IBaseJob }
   | { name: JobName.LocalCopyCleanup; data?: IBaseJob }
+  | { name: JobName.StorageDeletionRun; data?: IBaseJob }
 
   // Backups
   | { name: JobName.DatabaseBackup; data?: IBaseJob }
@@ -555,6 +561,13 @@ export type MemoriesState = {
 };
 export type MediaLocation = { location: string };
 
+export type StorageDeletionState = {
+  /** Set while deleting files from storage backends is paused */
+  pausedAt?: string;
+  dueOriginals?: number;
+  limit?: number;
+};
+
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
@@ -567,6 +580,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.VersionCheckState]: VersionCheckMetadata;
   [SystemMetadataKey.MemoriesState]: MemoriesState;
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
+  [SystemMetadataKey.StorageDeletionState]: StorageDeletionState;
 }
 
 export type UserPreferences = {

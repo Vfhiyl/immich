@@ -292,6 +292,10 @@ export class AssetJobRepository {
         'asset.livePhotoVideoId',
         'asset.originalPath',
         'asset.isOffline',
+        // what recovering a deleted original needs
+        'asset.originalFileName',
+        'asset.fileCreatedAt',
+        'asset.checksum',
       ])
       .select(withOriginalFile)
       .$call(withExif)

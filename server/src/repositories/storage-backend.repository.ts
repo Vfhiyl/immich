@@ -39,7 +39,7 @@ export interface RecordedFile {
 }
 
 /** A bytea value, which JSON columns hold as hex text (`\\x…`) */
-const toBuffer = (value: Buffer | string | null | undefined) =>
+export const toBuffer = (value: Buffer | string | null | undefined) =>
   typeof value === 'string' ? Buffer.from(value.replace(/^\\x/, ''), 'hex') : (value ?? undefined);
 
 /** What a read of a recorded file is verified against, if anything was recorded */
@@ -86,6 +86,11 @@ const READ_RETRY_DELAYS = [500, 1000, 2000, 4000, 8000];
 
 /** Temporary files for tools that write to a path, kept below the media location */
 export const STAGING_FOLDER = '.immich-staging';
+
+export const DEFAULT_DELETION_DELAY_DAYS = 360;
+
+/** Derived files can be generated again, but are kept as long as the database backups that may still record them */
+export const DERIVED_DELETION_DELAY_DAYS = 30;
 
 /** Local copies of stored files for processing, on the same filesystem as the staging folder so they can be linked */
 export const LOCAL_COPIES_FOLDER = '.immich-copies';
@@ -156,6 +161,9 @@ export class StorageBackendRepository {
   private encryptedBackends = new Set<string>();
   private keys?: KeyProvider;
   private decrypting = new Map<string, EncryptedBlobStore>();
+  private configs = new Map<string, StorageBackendConfig>();
+  private deletionStores = new Map<string, BlobStore>();
+  private originalsDeletionDelayDays = DEFAULT_DELETION_DELAY_DAYS;
   private roles = new Map<StorageBackendRole, string>();
   protected readRetryDelays = READ_RETRY_DELAYS;
 
@@ -193,7 +201,11 @@ export class StorageBackendRepository {
    * Make the configured storage backends available, replacing any configured before. Master keys are needed to write
    * to encrypted backends, and to read any encrypted file.
    */
-  configure(backends: StorageBackendConfig[], keys?: KeyProvider) {
+  configure(
+    backends: StorageBackendConfig[],
+    keys?: KeyProvider,
+    { delayDays = DEFAULT_DELETION_DELAY_DAYS }: Partial<StorageBackendsConfig['deletion']> = {},
+  ) {
     const encrypted = backends.filter((backend) => backend.encrypted);
     if (encrypted.length > 0 && !keys) {
       throw new Error(`Storage backend ${encrypted[0].id} is encrypted, but no master key is configured`);
@@ -204,6 +216,38 @@ export class StorageBackendRepository {
     this.encryptedBackends = new Set(encrypted.map(({ id }) => id));
     this.keys = keys;
     this.decrypting.clear();
+    this.configs = new Map(backends.map((backend) => [backend.id, backend]));
+    this.deletionStores.clear();
+    this.originalsDeletionDelayDays = delayDays;
+  }
+
+  /**
+   * How long a file deleted from a backend is kept before it is deleted: originals (all files but those on the backend
+   * for derived files, which can be generated again) for the configured delay, derived files for a fixed one
+   */
+  getDeletionDelay(backendId: string): { days: number; isOriginal: boolean } {
+    const isOriginal = backendId !== this.getBackendFor(StorageBackendRole.Derived);
+    return { days: isOriginal ? this.originalsDeletionDelayDays : DERIVED_DELETION_DELAY_DAYS, isOriginal };
+  }
+
+  getOriginalsDeletionDelayDays() {
+    return this.originalsDeletionDelayDays;
+  }
+
+  /** The store that deletes from a backend: with the deletion credentials of the backend, if it has its own */
+  getDeletionStore(backendId: string): BlobStore {
+    const config = this.configs.get(backendId);
+    if (config?.driver !== StorageBackendDriver.S3 || !config.deletionCredentials) {
+      return this.get(backendId);
+    }
+
+    let store = this.deletionStores.get(backendId);
+    if (!store) {
+      const client = createS3Client({ ...config, credentials: config.deletionCredentials });
+      store = new S3BlobStore(client, config.bucket, config.prefix);
+      this.deletionStores.set(backendId, store);
+    }
+    return store;
   }
 
   hasConfiguredBackends(): boolean {

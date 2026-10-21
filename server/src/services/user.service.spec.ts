@@ -344,6 +344,27 @@ describe(UserService.name, () => {
       expect(mocks.user.delete).not.toHaveBeenCalled();
     });
 
+    it('should register the files of the user on storage backends before deleting their records', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      mocks.storageBackend.getBackendFor.mockReturnValue('derived');
+      mocks.storageBackend.getOriginalsDeletionDelayDays.mockReturnValue(360);
+
+      await sut.handleUserDelete({ id: user.id });
+
+      expect(mocks.storageDeletion.registerUserFiles).toHaveBeenCalledWith('deleted-user', {
+        derivedBackendId: 'derived',
+        originalsNotBefore: expect.any(Date),
+        derivedNotBefore: expect.any(Date),
+      });
+      const [[, { originalsNotBefore, derivedNotBefore }]] = mocks.storageDeletion.registerUserFiles.mock.calls;
+      const days = (date: Date) => Math.round((date.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+      expect([days(originalsNotBefore), days(derivedNotBefore)]).toEqual([360, 30]);
+      expect(mocks.storageDeletion.registerUserFiles.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.user.delete.mock.invocationCallOrder[0],
+      );
+    });
+
     it('should delete the user and associated assets', async () => {
       const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
       const options = { force: true, recursive: true };

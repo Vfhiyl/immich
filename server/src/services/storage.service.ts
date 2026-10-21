@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { chunk } from 'lodash-es';
+import { chunk, partition } from 'lodash-es';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { buffer } from 'node:stream/consumers';
@@ -155,10 +155,11 @@ export class StorageService extends BaseService {
     const { backendsFile } = this.configRepository.getEnv().storage;
     let backends: StorageBackendConfig[] = [];
     let encryption: StorageBackendsConfig['encryption'];
+    let deletion: StorageBackendsConfig['deletion'] | undefined;
     let keys: KeyProvider | undefined;
     if (backendsFile) {
       try {
-        ({ backends, encryption } = await this.storageBackendRepository.readConfig(backendsFile));
+        ({ backends, encryption, deletion } = await this.storageBackendRepository.readConfig(backendsFile));
         if (encryption) {
           keys = this.storageBackendRepository.readMasterKeys(encryption.masterKeyFile);
         }
@@ -214,7 +215,7 @@ export class StorageService extends BaseService {
       );
     });
 
-    this.storageBackendRepository.configure(backends, keys);
+    this.storageBackendRepository.configure(backends, keys, deletion);
 
     for (const backend of backends) {
       await this.probeStorageBackend(backend.id);
@@ -237,7 +238,8 @@ export class StorageService extends BaseService {
       if (!read.equals(content)) {
         throw new Error('the probe read back different content');
       }
-      const { failed } = await store.deleteMany([key]);
+      // deleted with the credentials of the cleanup, which are checked too
+      const { failed } = await this.storageBackendRepository.getDeletionStore(backendId).deleteMany([key]);
       if (failed.length > 0) {
         this.logger.warn(`Unable to remove the probe ${key} from storage backend ${backendId}`);
       }
@@ -379,7 +381,18 @@ export class StorageService extends BaseService {
       await this.storageBackendRepository.dropLocalCopy(location);
     }
 
-    for (const [backendId, keys] of Map.groupBy(locations, ({ backendId }) => backendId)) {
+    const [delayed, now] = partition(
+      locations,
+      ({ backendId }) => !job.immediate && !isBuiltinStorageBackend(backendId),
+    );
+    await this.registerDeletions(delayed);
+
+    // never deleted while recorded: a file that is recorded again (or still) is not the one to delete
+    const configured = now.filter(({ backendId }) => !isBuiltinStorageBackend(backendId));
+    const recordedFiles = await this.storageDeletionRepository.getRecorded(configured);
+    const recorded = new Set(recordedFiles.map(({ backendId, key }) => `${backendId}:${key}`));
+    const unrecorded = now.filter(({ backendId, key }) => !recorded.has(`${backendId}:${key}`));
+    for (const [backendId, keys] of Map.groupBy(unrecorded, ({ backendId }) => backendId)) {
       await this.deleteFromBackend(
         backendId,
         keys.map(({ key }) => key),
@@ -391,7 +404,7 @@ export class StorageService extends BaseService {
 
   private async deleteFromBackend(backendId: string, keys: string[]) {
     try {
-      const store = this.storageBackendRepository.get(backendId);
+      const store = this.storageBackendRepository.getDeletionStore(backendId);
       for (const batch of chunk(keys, store.limits.maxDeleteBatch)) {
         const { failed } = await store.deleteMany(batch);
         for (const key of failed) {

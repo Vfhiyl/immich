@@ -223,7 +223,7 @@ describe(StorageService.name, () => {
     });
     const configure = (backends: ReturnType<typeof localBackend>[]) => {
       mocks.config.getEnv.mockReturnValue(mockEnvData({ storage: { ignoreMountCheckErrors: false, backendsFile } }));
-      mocks.storageBackend.readConfig.mockResolvedValue({ backends });
+      mocks.storageBackend.readConfig.mockResolvedValue({ backends, deletion: { delayDays: 360 } });
     };
 
     beforeEach(async () => {
@@ -240,7 +240,7 @@ describe(StorageService.name, () => {
 
       expect(mocks.storageBackend.readConfig).not.toHaveBeenCalled();
       expect(mocks.storageBackend.register).toHaveBeenCalledWith([]);
-      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([], undefined);
+      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([], undefined, undefined);
     });
 
     it('should register, configure and probe the configured backends', async () => {
@@ -251,7 +251,7 @@ describe(StorageService.name, () => {
 
       expect(mocks.storageBackend.readConfig).toHaveBeenCalledWith(backendsFile);
       expect(mocks.storageBackend.register).toHaveBeenCalledWith([{ id: 'originals', driver: 'local' }]);
-      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([originals], undefined);
+      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([originals], undefined, { delayDays: 360 });
       // the probe was written, read back and removed
       await expect(fs.readdir(join(root, 'originals', '.immich-probe'))).resolves.toEqual([]);
     });
@@ -263,6 +263,7 @@ describe(StorageService.name, () => {
       mocks.storageBackend.readConfig.mockResolvedValue({
         backends: [originals],
         encryption: { masterKeyFile: '/run/secrets/master.key' },
+        deletion: { delayDays: 360 },
       });
       mocks.storageBackend.readMasterKeys.mockReturnValue(keys);
       const put = vi.spyOn(EncryptedBlobStore.prototype, 'put');
@@ -270,7 +271,7 @@ describe(StorageService.name, () => {
       await sut.onBootstrapStorageBackends();
 
       expect(mocks.storageBackend.readMasterKeys).toHaveBeenCalledWith('/run/secrets/master.key');
-      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([originals], keys);
+      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([originals], keys, { delayDays: 360 });
       expect(mocks.storageBackend.registerMasterKey).toHaveBeenCalledWith(keys.currentKeyId);
       expect(put).toHaveBeenCalledOnce();
       await expect(fs.readdir(join(root, 'originals', '.immich-probe'))).resolves.toEqual([]);
@@ -281,6 +282,7 @@ describe(StorageService.name, () => {
       mocks.storageBackend.readConfig.mockResolvedValue({
         backends: [localBackend('originals', StorageBackendRole.Originals)],
         encryption: { masterKeyFile: '/run/secrets/master.key' },
+        deletion: { delayDays: 360 },
       });
       mocks.storageBackend.readMasterKeys.mockReturnValue(new MasterKeys([randomBytes(32)]));
 
@@ -296,6 +298,7 @@ describe(StorageService.name, () => {
       mocks.storageBackend.readConfig.mockResolvedValue({
         backends: [],
         encryption: { masterKeyFile: '/run/secrets/master.key' },
+        deletion: { delayDays: 360 },
       });
       mocks.storageBackend.readMasterKeys.mockReturnValue(new MasterKeys([current]));
       mocks.storageBackend.getMasterKeyIds.mockResolvedValue([getMasterKeyId(current), getMasterKeyId(lost)]);
@@ -320,6 +323,7 @@ describe(StorageService.name, () => {
       mocks.storageBackend.readConfig.mockResolvedValue({
         backends: [],
         encryption: { masterKeyFile: '/run/secrets/master.key' },
+        deletion: { delayDays: 360 },
       });
       mocks.storageBackend.readMasterKeys.mockImplementation(() => {
         throw new Error('ENOENT: no such file');
@@ -428,11 +432,36 @@ describe(StorageService.name, () => {
             { backendId: 'derived', key: 'a' },
             { backendId: 'derived', key: 'b' },
           ],
+          immediate: true,
         }),
       ).resolves.toBe(JobStatus.Success);
 
       await expect(fs.readdir(root)).resolves.toEqual([]);
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('should register files for deletion once their delay has passed, instead of deleting them', async () => {
+      await fs.writeFile(join(root, 'a'), 'a');
+
+      await sut.handleDeleteFiles({ files: [], locations: [{ backendId: 'derived', key: 'a' }] });
+
+      await expect(fs.readdir(root)).resolves.toEqual(['a']);
+      expect(mocks.storageDeletion.register).toHaveBeenCalledWith([
+        { backendId: 'derived', key: 'a', isOriginal: false, notBefore: expect.any(Date) },
+      ]);
+      const [[[{ notBefore }]]] = mocks.storageDeletion.register.mock.calls;
+      // derived files wait for a fixed 30 days
+      expect(new Date(notBefore).getTime()).toBeGreaterThan(Date.now() + 29 * 24 * 60 * 60 * 1000);
+      expect(new Date(notBefore).getTime()).toBeLessThan(Date.now() + 31 * 24 * 60 * 60 * 1000);
+    });
+
+    it('should not delete a file right away that is recorded again', async () => {
+      await fs.writeFile(join(root, 'a'), 'a');
+      mocks.storageDeletion.getRecorded.mockResolvedValue([{ backendId: 'derived', key: 'a' }]);
+
+      await sut.handleDeleteFiles({ files: [], locations: [{ backendId: 'derived', key: 'a' }], immediate: true });
+
+      await expect(fs.readdir(root)).resolves.toEqual(['a']);
     });
 
     it('should also remove the local copies of deleted files', async () => {
@@ -444,7 +473,11 @@ describe(StorageService.name, () => {
     it('should delete by path and by location in one job', async () => {
       await fs.writeFile(join(root, 'a'), 'a');
 
-      await sut.handleDeleteFiles({ files: ['/data/old.jpg'], locations: [{ backendId: 'derived', key: 'a' }] });
+      await sut.handleDeleteFiles({
+        files: ['/data/old.jpg'],
+        locations: [{ backendId: 'derived', key: 'a' }],
+        immediate: true,
+      });
 
       expect(mocks.storage.unlink).toHaveBeenCalledWith('/data/old.jpg');
       await expect(fs.readdir(root)).resolves.toEqual([]);
@@ -462,6 +495,7 @@ describe(StorageService.name, () => {
             { backendId: 'derived', key: 'directory' },
             { backendId: 'derived', key: 'a' },
           ],
+          immediate: true,
         }),
       ).resolves.toBe(JobStatus.Success);
 

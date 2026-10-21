@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
+import { DateTime } from 'luxon';
 import sanitize from 'sanitize-filename';
 import type { ClassConstructor } from 'src/types.js';
 import { SALT_ROUNDS } from 'src/constants.js';
@@ -51,6 +52,7 @@ import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.re
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageBackendRepository, isBuiltinStorageBackend } from 'src/repositories/storage-backend.repository.js';
+import { OriginalRecovery, StorageDeletionRepository } from 'src/repositories/storage-deletion.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
@@ -120,6 +122,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   SharedLinkAssetRepository,
   StackRepository,
   StorageBackendRepository,
+  StorageDeletionRepository,
   StorageRepository,
   SyncRepository,
   SyncCheckpointRepository,
@@ -184,6 +187,7 @@ export class BaseService {
     protected sharedLinkAssetRepository: SharedLinkAssetRepository,
     protected stackRepository: StackRepository,
     protected storageBackendRepository: StorageBackendRepository,
+    protected storageDeletionRepository: StorageDeletionRepository,
     protected storageRepository: StorageRepository,
     protected syncRepository: SyncRepository,
     protected syncCheckpointRepository: SyncCheckpointRepository,
@@ -257,6 +261,7 @@ export class BaseService {
       ctx.sharedLinkAssetRepository,
       ctx.stackRepository,
       ctx.storageBackendRepository,
+      ctx.storageDeletionRepository,
       ctx.storageRepository,
       ctx.syncRepository,
       ctx.syncCheckpointRepository,
@@ -355,6 +360,20 @@ export class BaseService {
   }
 
   /**
+   * Register files on configured backends to be deleted once their delay has passed, which is written with each one so
+   * that a shorter delay configured later does not delete it earlier. Originals can carry what recovering them needs.
+   */
+  protected async registerDeletions(files: Array<StorageLocation & OriginalRecovery>) {
+    const now = DateTime.now();
+    await this.storageDeletionRepository.register(
+      files.map(({ backendId, key, ...recovery }) => {
+        const { days, isOriginal } = this.storageBackendRepository.getDeletionDelay(backendId);
+        return { backendId, key, isOriginal, notBefore: now.plus({ days }).toJSDate(), ...recovery };
+      }),
+    );
+  }
+
+  /**
    * Record newly stored files in the database. If that fails, files stored on a backend under new keys would be lost,
    * so they are deleted; files written to their path may be the ones already recorded there and are kept, as before.
    */
@@ -366,7 +385,8 @@ export class BaseService {
         .filter(({ backendId }) => !isBuiltinStorageBackend(backendId))
         .map(({ backendId, key }) => ({ backendId, key }));
       if (locations.length > 0) {
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [], locations } });
+        // never recorded, so nothing can need them
+        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [], locations, immediate: true } });
       }
       throw error;
     }

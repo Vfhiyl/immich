@@ -816,9 +816,10 @@ export class MetadataService extends BaseService {
             await this.userRepository.updateUsage(asset.ownerId, video.byteLength);
           }
         } catch (error) {
+          // the video was never recorded, since its asset could not be created
           await this.jobRepository.queue({
             name: JobName.FileDelete,
-            data: toFileDeletion([{ path: motionAssetPath, ...motionFile }]),
+            data: { ...toFileDeletion([{ path: motionAssetPath, ...motionFile }]), immediate: true },
           });
           if (!isAssetChecksumConstraint(error)) {
             throw error;

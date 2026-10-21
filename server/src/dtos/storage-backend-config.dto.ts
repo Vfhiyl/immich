@@ -60,6 +60,11 @@ const S3BackendSchema = z
       .default(''),
     addressing: z.enum(['virtual-host', 'path']).default('virtual-host'),
     credentials: S3CredentialsSchema,
+    /**
+     * Credentials that may delete objects, used only by the cleanup of deleted files; `credentials` then need no delete
+     * permission, so that nothing else can delete objects
+     */
+    deletionCredentials: S3CredentialsSchema.optional(),
     /** Whether new files are encrypted, by default yes, since the files leave the server */
     encrypted: z.boolean().default(true),
   })
@@ -74,8 +79,25 @@ const EncryptionConfigSchema = z
   })
   .strict();
 
+/** The shortest delay: deleted originals must outlive the database backups that still record them */
+export const MIN_DELETION_DELAY_DAYS = 30;
+
+const DeletionConfigSchema = z
+  .object({
+    /**
+     * How long deleted originals stay on their backend before they are deleted, so that they can be recovered. A longer
+     * delay applies to originals deleted before too; a shorter one only to originals deleted after the change.
+     */
+    delayDays: z.int().min(MIN_DELETION_DELAY_DAYS).default(360),
+  })
+  .strict();
+
 export const StorageBackendsConfigSchema = z
-  .object({ backends: z.array(StorageBackendConfigSchema), encryption: EncryptionConfigSchema.optional() })
+  .object({
+    backends: z.array(StorageBackendConfigSchema),
+    encryption: EncryptionConfigSchema.optional(),
+    deletion: DeletionConfigSchema.default({ delayDays: 360 }),
+  })
   .strict()
   .superRefine(({ backends, encryption }, context) => {
     const ids = new Set<string>();

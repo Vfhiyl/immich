@@ -433,7 +433,7 @@ describe(AssetMediaService.name, () => {
       const [key] = await listOriginals();
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: [file.originalPath, undefined], locations: [{ backendId: 'originals', key }] },
+        data: { files: [file.originalPath, undefined], locations: [{ backendId: 'originals', key }], immediate: true },
       });
     });
 
@@ -448,7 +448,7 @@ describe(AssetMediaService.name, () => {
       const [key] = await listOriginals();
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: [file.originalPath, undefined], locations: [{ backendId: 'originals', key }] },
+        data: { files: [file.originalPath, undefined], locations: [{ backendId: 'originals', key }], immediate: true },
       });
     });
   });
@@ -478,7 +478,7 @@ describe(AssetMediaService.name, () => {
       expect(mocks.asset.remove).not.toHaveBeenCalled();
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: [file.originalPath, undefined], locations: [] },
+        data: { files: [file.originalPath, undefined], locations: [], immediate: true },
       });
       expect(mocks.event.emit).not.toHaveBeenCalled();
       expect(mocks.user.updateUsage).not.toHaveBeenCalledWith(authStub.user1.user.id, file.size);
@@ -547,7 +547,7 @@ describe(AssetMediaService.name, () => {
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: ['/data/fake_path/asset_1.jpeg', undefined], locations: [] },
+        data: { files: ['/data/fake_path/asset_1.jpeg', undefined], locations: [], immediate: true },
       });
       expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });
@@ -572,7 +572,7 @@ describe(AssetMediaService.name, () => {
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: ['/data/fake_path/asset_1.jpeg', undefined], locations: [] },
+        data: { files: ['/data/fake_path/asset_1.jpeg', undefined], locations: [], immediate: true },
       });
       expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });

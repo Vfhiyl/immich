@@ -190,17 +190,30 @@ describe('storage backends for originals and derived files', () => {
     await expect(stat(join(environment.backendRoot('derived'), encoded.key))).resolves.toBeTruthy();
   });
 
-  it('should remove every file of permanently deleted assets from the backends', async () => {
+  it('should keep the files of permanently deleted assets until their deletion delay has passed', async () => {
     const assets = await environment.query<{ id: string }>(
       `select id from asset where "livePhotoVideoId" is not null or id = $1`,
       [assetId],
     );
+    const stored = [...(await environment.listBackend('originals')), ...(await environment.listBackend('derived'))];
     await api.deleteAssets(assets.map(({ id }) => id));
 
     await eventually(async () => {
       await expect(environment.query(`select id from asset`)).resolves.toEqual([]);
+      const registered = await environment.query<{ key: string }>(`select key from storage_deletion`);
+      expect(registered.map(({ key }) => key)).toEqual(expect.arrayContaining(stored));
+      expect(registered).toHaveLength(stored.length);
+    });
+    await expect(environment.listBackend('originals')).resolves.not.toEqual([]);
+
+    await environment.makeDeletionsDue();
+    await server.stop();
+    server = await ImmichServer.start(environment);
+
+    await eventually(async () => {
       await expect(environment.listBackend('originals')).resolves.toEqual([]);
       await expect(environment.listBackend('derived')).resolves.toEqual([]);
+      await expect(environment.query(`select key from storage_deletion`)).resolves.toEqual([]);
     });
   });
 
@@ -441,9 +454,25 @@ describe('storage backends on an S3 service', () => {
     const assets = await environment.query<{ id: string }>(`select id from asset where visibility = 'timeline'`);
     await api.deleteAssets(assets.map(({ id }) => id));
 
+    // kept, with what recovering the originals needs
+    await eventually(async () => {
+      await expect(environment.query(`select id from asset`)).resolves.toEqual([]);
+      const originals = await environment.query<{ originalFileName: string; encryption: string }>(
+        `select "originalFileName", encode(encryption, 'hex') as encryption from storage_deletion where "isOriginal"
+         and "originalFileName" is not null order by "originalFileName"`,
+      );
+      expect(originals).toEqual(
+        expect.arrayContaining([{ originalFileName: 'el_torcal_rocks.jpg', encryption: expect.any(String) }]),
+      );
+    });
+
+    await environment.makeDeletionsDue();
+    await server.stop();
+    server = await ImmichServer.start(environment);
+
     await eventually(
       async () => {
-        await expect(environment.query(`select id from asset`)).resolves.toEqual([]);
+        await expect(environment.query(`select key from storage_deletion`)).resolves.toEqual([]);
         await expect(environment.listBackend('originals')).resolves.toEqual([]);
         await expect(environment.listBackend('derived')).resolves.toEqual([]);
         await expect(environment.listLocalCopies()).resolves.toEqual([]);

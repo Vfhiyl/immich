@@ -213,6 +213,9 @@ export const getForAssetDeletion = (asset: ReturnType<AssetFactory['build']>) =>
   ownerId: asset.ownerId,
   livePhotoVideoId: asset.livePhotoVideoId,
   originalPath: asset.originalPath,
+  originalFileName: asset.originalFileName,
+  fileCreatedAt: asset.fileCreatedAt,
+  checksum: asset.checksum,
   // not recorded yet, so the original is deleted by its path
   originalFile: null as { backendId: string; key: string; size: number | null; encryption: string | null } | null,
   isOffline: asset.isOffline,

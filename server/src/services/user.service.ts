@@ -13,8 +13,16 @@ import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js
 import { UserPreferencesResponseDto, UserPreferencesUpdateDto, mapPreferences } from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
 import { UserAdminResponseDto, UserResponseDto, UserUpdateMeDto, mapUser, mapUserAdmin } from 'src/dtos/user.dto.js';
-import { CacheControl, JobName, JobStatus, QueueName, StorageFolder, UserMetadataKey } from 'src/enum.js';
-import { toFileDeletion } from 'src/repositories/storage-backend.repository.js';
+import {
+  CacheControl,
+  JobName,
+  JobStatus,
+  QueueName,
+  StorageBackendRole,
+  StorageFolder,
+  UserMetadataKey,
+} from 'src/enum.js';
+import { DERIVED_DELETION_DELAY_DAYS, toFileDeletion } from 'src/repositories/storage-backend.repository.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -296,6 +304,14 @@ export class UserService extends BaseService {
     }
 
     this.logger.log(`Deleting user: ${user.id}`);
+
+    // files on storage backends are not in the folders below: registered before their records are deleted with the user
+    const now = DateTime.now();
+    await this.storageDeletionRepository.registerUserFiles(user.id, {
+      derivedBackendId: this.storageBackendRepository.getBackendFor(StorageBackendRole.Derived),
+      originalsNotBefore: now.plus({ days: this.storageBackendRepository.getOriginalsDeletionDelayDays() }).toJSDate(),
+      derivedNotBefore: now.plus({ days: DERIVED_DELETION_DELAY_DAYS }).toJSDate(),
+    });
 
     const folders = [
       StorageCore.getLibraryFolder(user),

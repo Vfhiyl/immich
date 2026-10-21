@@ -220,6 +220,13 @@ export class TestEnvironment {
     return copies.flat();
   }
 
+  /** Move the registered deletions of files into the past, as if their deletion delay had passed */
+  async makeDeletionsDue() {
+    await this.query(
+      `update storage_deletion set "notBefore" = now() - interval '1 day', "createdAt" = now() - interval '10 years'`,
+    );
+  }
+
   query<T extends pg.QueryResultRow>(text: string, values?: unknown[]) {
     return withDatabase(this.database, async (client) => {
       const { rows } = await client.query<T>(text, values);

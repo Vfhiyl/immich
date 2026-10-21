@@ -35,6 +35,7 @@ import { SessionService } from 'src/services/session.service.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { StackService } from 'src/services/stack.service.js';
+import { StorageDeletionService } from 'src/services/storage-deletion.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { SyncService } from 'src/services/sync.service.js';
@@ -90,6 +91,7 @@ export const services = [
   SharedLinkService,
   SmartInfoService,
   StackService,
+  StorageDeletionService,
   StorageService,
   StorageTemplateService,
   SyncService,

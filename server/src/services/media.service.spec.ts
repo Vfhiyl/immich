@@ -499,6 +499,7 @@ describe(MediaService.name, () => {
         data: {
           files: [],
           locations: expect.arrayContaining(keys.map((key) => ({ backendId: 'derived', key }))),
+          immediate: true,
         },
       });
     });

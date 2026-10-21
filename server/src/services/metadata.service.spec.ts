@@ -1004,7 +1004,7 @@ describe(MetadataService.name, () => {
         const [key] = await fs.readdir(join(root, 'originals'));
         expect(mocks.job.queue).toHaveBeenCalledWith({
           name: JobName.FileDelete,
-          data: { files: [], locations: [{ backendId: 'originals', key }] },
+          data: { files: [], locations: [{ backendId: 'originals', key }], immediate: true },
         });
         // the existing motion video is not written again
         expect(mocks.storage.checkFileExists).not.toHaveBeenCalled();

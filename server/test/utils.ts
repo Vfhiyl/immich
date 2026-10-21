@@ -63,6 +63,7 @@ import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.re
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
+import { StorageDeletionRepository } from 'src/repositories/storage-deletion.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
@@ -89,6 +90,7 @@ import { newJobRepositoryMock } from 'test/repositories/job.repository.mock.js';
 import { newMediaRepositoryMock } from 'test/repositories/media.repository.mock.js';
 import { newMetadataRepositoryMock } from 'test/repositories/metadata.repository.mock.js';
 import { newStorageBackendRepositoryMock } from 'test/repositories/storage-backend.repository.mock.js';
+import { newStorageDeletionRepositoryMock } from 'test/repositories/storage-deletion.repository.mock.js';
 import { newStorageRepositoryMock } from 'test/repositories/storage.repository.mock.js';
 import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metadata.repository.mock.js';
 import { ITelemetryRepositoryMock, newTelemetryRepositoryMock } from 'test/repositories/telemetry.repository.mock.js';
@@ -282,6 +284,7 @@ export type ServiceOverrides = {
   sharedLinkAsset: SharedLinkAssetRepository;
   stack: StackRepository;
   storageBackend: StorageBackendRepository;
+  storageDeletion: StorageDeletionRepository;
   storage: StorageRepository;
   sync: SyncRepository;
   syncCheckpoint: SyncCheckpointRepository;
@@ -371,6 +374,7 @@ export const getMocks = () => {
     sharedLinkAsset: automock(SharedLinkAssetRepository),
     stack: automock(StackRepository),
     storageBackend: newStorageBackendRepositoryMock(),
+    storageDeletion: newStorageDeletionRepositoryMock(),
     storage: newStorageRepositoryMock(),
     sync: automock(SyncRepository),
     syncCheckpoint: automock(SyncCheckpointRepository),
@@ -446,6 +450,7 @@ export const newTestService = <T extends BaseService>(
     overrides.sharedLinkAsset || (mocks.sharedLinkAsset as As<SharedLinkAssetRepository>),
     overrides.stack || (mocks.stack as As<StackRepository>),
     overrides.storageBackend || (mocks.storageBackend as As<StorageBackendRepository>),
+    overrides.storageDeletion || (mocks.storageDeletion as As<StorageDeletionRepository>),
     overrides.storage || (mocks.storage as As<StorageRepository>),
     overrides.sync || (mocks.sync as As<SyncRepository>),
     overrides.syncCheckpoint || (mocks.syncCheckpoint as As<SyncCheckpointRepository>),
