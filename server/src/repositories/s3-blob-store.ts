@@ -27,6 +27,11 @@ import {
   BlobStat,
   BlobStore,
   BlobStoreLimits,
+  BlobUpload,
+  BlobUploadNotFoundError,
+  BlobUploadOptions,
+  BlobUploadPart,
+  UploadedPart,
   assertValidBlobKey,
   assertValidBlobPrefix,
   createVerifyingStream,
@@ -75,7 +80,7 @@ export const createS3Client = (options: S3BackendOptions, overrides: Partial<S3C
   });
 };
 
-const errorName = (error: unknown) => (error as { name?: string } | undefined)?.name;
+const errorName = (error: unknown) => (error as { name?: string } | undefined)?.name ?? '';
 const statusCode = (error: unknown) =>
   (error as { $metadata?: { httpStatusCode?: number } } | undefined)?.$metadata?.httpStatusCode;
 const isNotFound = (error: unknown) =>
@@ -227,6 +232,85 @@ export class S3BlobStore implements BlobStore {
       }
       continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
     } while (continuationToken);
+  }
+
+  async createUpload(key: string, { partSize }: BlobUploadOptions): Promise<BlobUpload> {
+    const objectKey = this.toObjectKey(key);
+    if (partSize < this.limits.minPartSize) {
+      throw new Error(`Parts of ${partSize} bytes are smaller than the ${this.limits.minPartSize} bytes S3 needs`);
+    }
+
+    const { UploadId: uploadId } = await this.client.send(
+      new CreateMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
+        ContentType: 'application/octet-stream',
+      }),
+    );
+    if (!uploadId) {
+      throw new Error(`No upload id returned for ${objectKey}`);
+    }
+    return { uploadId, partSize };
+  }
+
+  async uploadPart(key: string, upload: BlobUpload, { number, data }: BlobUploadPart): Promise<UploadedPart> {
+    const objectKey = this.toObjectKey(key);
+    if (number < 1 || number > MAX_PARTS) {
+      throw new Error(`Part ${number} of ${objectKey} is not between 1 and ${MAX_PARTS}`);
+    }
+
+    try {
+      const { ETag } = await this.client.send(
+        new UploadPartCommand({
+          Bucket: this.bucket,
+          Key: objectKey,
+          UploadId: upload.uploadId,
+          PartNumber: number,
+          Body: data,
+          ContentLength: data.length,
+        }),
+      );
+      if (!ETag) {
+        throw new Error(`No ETag returned for part ${number} of ${objectKey}`);
+      }
+      return { number, etag: ETag, size: data.length };
+    } catch (error) {
+      throw this.toUploadError(key, upload, error);
+    }
+  }
+
+  async completeUpload(key: string, upload: BlobUpload, parts: UploadedPart[]): Promise<void> {
+    const objectKey = this.toObjectKey(key);
+    const size = parts.reduce((total, part) => total + part.size, 0);
+    try {
+      await this.completeMultipart(
+        objectKey,
+        upload.uploadId,
+        parts.map(({ number, etag }) => ({ PartNumber: number, ETag: etag })),
+        size,
+      );
+    } catch (error) {
+      throw this.toUploadError(key, upload, error);
+    }
+  }
+
+  async abortUpload(key: string, upload: BlobUpload): Promise<void> {
+    try {
+      await this.client.send(
+        new AbortMultipartUploadCommand({ Bucket: this.bucket, Key: this.toObjectKey(key), UploadId: upload.uploadId }),
+      );
+    } catch (error) {
+      if (!['NoSuchUpload', 'NotFound'].includes(errorName(error))) {
+        throw error;
+      }
+    }
+  }
+
+  /** An upload the service no longer knows can only be started again */
+  private toUploadError(key: string, upload: BlobUpload, error: unknown) {
+    return ['NoSuchUpload', 'NotFound'].includes(errorName(error))
+      ? new BlobUploadNotFoundError(key, upload.uploadId)
+      : error;
   }
 
   private async putMultipart(

@@ -87,4 +87,69 @@ describe.each(stores)('encrypted blob store: $name', ({ create }) => {
       .then((stream) => buffer(stream));
     await expect(read).rejects.toThrow(BlobIntegrityError);
   });
+
+  describe('uploads in parts', () => {
+    // 80 chunks of content, which are more than the 5 MiB every S3 service needs once encrypted
+    const partSize = 80 * CHUNK;
+
+    const uploadInParts = async (key: string, content: Buffer) => {
+      const upload = await store.createUpload(key, { partSize });
+      const count = Math.max(1, Math.ceil(content.length / partSize));
+      const parts = [];
+      for (let number = 1; number <= count; number++) {
+        const data = content.subarray((number - 1) * partSize, number * partSize);
+        const last = number === count ? { size: content.length, sha1: sha1(content) } : undefined;
+        parts.push(await store.uploadPart(key, upload, { number, data, last }));
+      }
+      await store.completeUpload(key, upload, parts);
+      return upload;
+    };
+
+    it.each([
+      ['a blob of several parts', 2 * 80 * CHUNK + 4321],
+      ['a blob of exactly two parts', 2 * 80 * CHUNK],
+      ['an empty blob', 0],
+    ])('should write and read %s', async (_, size) => {
+      const content = randomBytes(size);
+      const key = `encrypted/parts-${size}`;
+      const { encryption } = await uploadInParts(key, content);
+
+      const read = await buffer(await store.get(key, { encryption, expect: { size, sha1: sha1(content) } }));
+      expect(read.equals(content)).toBe(true);
+    });
+
+    it('should read a range across parts', async () => {
+      const content = randomBytes(partSize + 5000);
+      const { encryption } = await uploadInParts('encrypted/parts-range', content);
+
+      const range = { start: partSize - 100, end: partSize + 100 };
+      const read = await buffer(
+        await store.get('encrypted/parts-range', { encryption, expect: { size: content.length }, range }),
+      );
+      expect(read.equals(content.subarray(range.start, range.end + 1))).toBe(true);
+    });
+
+    it('should write a part again with the same result, from what the caller kept', async () => {
+      const content = randomBytes(partSize + 10);
+      const upload = await store.createUpload('encrypted/again', { partSize });
+      const kept = { ...upload, encryption: Buffer.from(upload.encryption!) };
+      const first = await store.uploadPart('encrypted/again', upload, {
+        number: 1,
+        data: content.subarray(0, partSize),
+      });
+      const again = await store.uploadPart('encrypted/again', kept, { number: 1, data: content.subarray(0, partSize) });
+      const last = await store.uploadPart('encrypted/again', kept, {
+        number: 2,
+        data: content.subarray(partSize),
+        last: { size: content.length, sha1: sha1(content) },
+      });
+      expect(again.size).toBe(first.size);
+
+      await store.completeUpload('encrypted/again', kept, [again, last]);
+      const read = await buffer(
+        await store.get('encrypted/again', { encryption: upload.encryption, expect: { size: content.length } }),
+      );
+      expect(read.equals(content)).toBe(true);
+    });
+  });
 });

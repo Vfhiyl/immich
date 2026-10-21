@@ -11,6 +11,8 @@ import {
   BlobRangeError,
   BlobStat,
   BlobStore,
+  BlobUpload,
+  UploadedPart,
   resolveBlobRange,
 } from 'src/repositories/blob-store.js';
 import {
@@ -78,6 +80,22 @@ class FileAsBlobStore implements BlobStore {
   }
 
   list(): AsyncIterable<BlobListEntry> {
+    throw new Error('Read only');
+  }
+
+  createUpload(): Promise<BlobUpload> {
+    throw new Error('Read only');
+  }
+
+  uploadPart(): Promise<UploadedPart> {
+    throw new Error('Read only');
+  }
+
+  completeUpload(): Promise<void> {
+    throw new Error('Read only');
+  }
+
+  abortUpload(): Promise<void> {
     throw new Error('Read only');
   }
 }

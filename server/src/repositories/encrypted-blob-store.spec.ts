@@ -228,6 +228,86 @@ describe(EncryptedBlobStore.name, () => {
     });
   });
 
+  describe('uploads in parts', () => {
+    const partSize = 2 * CHUNK;
+
+    it('should write parts that decode like a blob written at once, with its manifest', async () => {
+      const content = randomBytes(2 * partSize + 100);
+      const upload = await sut.createUpload('parts', { partSize });
+      const parts = [
+        await sut.uploadPart('parts', upload, { number: 1, data: content.subarray(0, partSize) }),
+        await sut.uploadPart('parts', upload, { number: 2, data: content.subarray(partSize, 2 * partSize) }),
+        await sut.uploadPart('parts', upload, {
+          number: 3,
+          data: content.subarray(2 * partSize),
+          last: { size: content.length, sha1: sha1(content), manifest: { path: '/upload/a.mp4' } },
+        }),
+      ];
+      // every part but the last holds two whole encrypted chunks
+      expect(parts.map(({ size }) => size).slice(0, 2)).toEqual([2 * (CHUNK + 16), 2 * (CHUNK + 16)]);
+      await sut.completeUpload('parts', upload, parts);
+
+      const decoded = decodeIndependently(await stored('parts'), masterKey, 'parts');
+      expect(decoded.header).toEqual(upload.encryption);
+      expect(decoded.plaintext).toEqual(content);
+      expect(decoded.manifest).toEqual({
+        path: '/upload/a.mp4',
+        key: 'parts',
+        size: content.length,
+        sha1: sha1(content).toString('hex'),
+      });
+    });
+
+    it('should seal the last chunk as last when the content ends with a whole part', async () => {
+      const content = randomBytes(partSize);
+      const upload = await sut.createUpload('whole', { partSize });
+      const part = await sut.uploadPart('whole', upload, {
+        number: 1,
+        data: content,
+        last: { size: partSize, sha1: sha1(content) },
+      });
+      await sut.completeUpload('whole', upload, [part]);
+
+      expect(decodeIndependently(await stored('whole'), masterKey, 'whole').plaintext).toEqual(content);
+    });
+
+    it('should write an empty blob as one empty last part', async () => {
+      const upload = await sut.createUpload('empty', { partSize });
+      const part = await sut.uploadPart('empty', upload, {
+        number: 1,
+        data: Buffer.alloc(0),
+        last: { size: 0, sha1: sha1(Buffer.alloc(0)) },
+      });
+      await sut.completeUpload('empty', upload, [part]);
+
+      const stream = await sut.get('empty', { encryption: upload.encryption, expect: { size: 0 } });
+      await expect(buffer(stream)).resolves.toEqual(Buffer.alloc(0));
+    });
+
+    it('should only take parts of whole chunks, and a last part that ends the content', async () => {
+      await expect(sut.createUpload('bad', { partSize: CHUNK + 1 })).rejects.toThrow('multiple of 65536 bytes');
+
+      const upload = await sut.createUpload('bad', { partSize });
+      await expect(sut.uploadPart('bad', upload, { number: 1, data: randomBytes(partSize - 1) })).rejects.toThrow(
+        'does not fit',
+      );
+      const sha = sha1(Buffer.alloc(0));
+      await expect(
+        sut.uploadPart('bad', upload, { number: 2, data: Buffer.alloc(0), last: { size: partSize, sha1: sha } }),
+      ).rejects.toThrow('does not fit');
+      await expect(
+        sut.uploadPart('bad', upload, { number: 2, data: randomBytes(10), last: { size: 5, sha1: sha } }),
+      ).rejects.toThrow('does not fit');
+    });
+
+    it('should need the encryption header of the upload', async () => {
+      const upload = await sut.createUpload('header', { partSize });
+      await expect(
+        sut.uploadPart('header', { ...upload, encryption: undefined }, { number: 1, data: randomBytes(partSize) }),
+      ).rejects.toThrow('needs its encryption header');
+    });
+  });
+
   describe('get', () => {
     it.each([0, 1, CHUNK - 1, CHUNK, CHUNK + 1, 2 * CHUNK, 3 * CHUNK + 5])(
       'should read back a blob of %i bytes',

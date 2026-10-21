@@ -15,6 +15,11 @@ import {
   BlobStat,
   BlobStore,
   BlobStoreLimits,
+  BlobUpload,
+  BlobUploadNotFoundError,
+  BlobUploadOptions,
+  BlobUploadPart,
+  UploadedPart,
   assertValidBlobKey,
   assertValidBlobPrefix,
   createVerifyingStream,
@@ -70,6 +75,60 @@ export class LocalBlobStore implements BlobStore {
     }
 
     return { size, sha1: hash.digest() };
+  }
+
+  createUpload(key: string, { partSize }: BlobUploadOptions): Promise<BlobUpload> {
+    const upload = { uploadId: randomUUID(), partSize };
+    return fs.mkdir(this.toUploadPath(key, upload), { recursive: true }).then(() => upload);
+  }
+
+  async uploadPart(key: string, upload: BlobUpload, { number, data }: BlobUploadPart): Promise<UploadedPart> {
+    const folder = this.toUploadPath(key, upload);
+    await this.requireUpload(key, upload, folder);
+
+    // written aside and renamed, so a part is either complete or absent, and writing it again replaces it
+    const target = join(folder, String(number));
+    const temp = `${target}.${randomUUID()}${LOCAL_BLOB_TEMP_SUFFIX}`;
+    try {
+      await fs.writeFile(temp, data, { flag: 'wx' });
+      await fs.rename(temp, target);
+    } finally {
+      await fs.rm(temp, { force: true });
+    }
+    return { number, etag: createHash('sha1').update(data).digest('hex'), size: data.length };
+  }
+
+  async completeUpload(key: string, upload: BlobUpload, parts: UploadedPart[]): Promise<void> {
+    const folder = this.toUploadPath(key, upload);
+    await this.requireUpload(key, upload, folder);
+
+    const target = this.toPath(key);
+    const temp = `${target}.${randomUUID()}${LOCAL_BLOB_TEMP_SUFFIX}`;
+    try {
+      const output = await fs.open(temp, 'wx');
+      try {
+        for (const [index, part] of parts.entries()) {
+          const path = join(folder, String(part.number));
+          const stat = await this.stat(path);
+          if (part.number !== index + 1 || stat?.size !== part.size) {
+            throw new Error(`Part ${part.number} of upload ${upload.uploadId} of ${key} is missing or incomplete`);
+          }
+          // parts are at most a few dozen MiB
+          await output.write(await fs.readFile(path));
+        }
+        await output.sync();
+      } finally {
+        await output.close();
+      }
+      await this.publish(key, temp, target);
+    } finally {
+      await fs.rm(temp, { force: true });
+    }
+    await fs.rm(folder, { recursive: true, force: true });
+  }
+
+  async abortUpload(key: string, upload: BlobUpload): Promise<void> {
+    await fs.rm(this.toUploadPath(key, upload), { recursive: true, force: true });
   }
 
   async get(key: string, options: BlobGetOptions = {}): Promise<NodeJS.ReadableStream> {
@@ -141,6 +200,10 @@ export class LocalBlobStore implements BlobStore {
     for (const entry of entries) {
       const key = directoryKey ? `${directoryKey}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
+        // the parts of unfinished uploads
+        if (entry.name.endsWith(LOCAL_BLOB_TEMP_SUFFIX)) {
+          continue;
+        }
         if (`${key}/`.startsWith(prefix) || prefix.startsWith(`${key}/`)) {
           yield* this.walk(key, prefix);
         }
@@ -161,6 +224,28 @@ export class LocalBlobStore implements BlobStore {
   private toPath(key: string) {
     assertValidBlobKey(key);
     return join(this.root, ...key.split('/'));
+  }
+
+  /** The parts of an upload, next to the blob, in a folder that listing skips */
+  private toUploadPath(key: string, { uploadId }: BlobUpload) {
+    if (!/^[0-9a-f-]{36}$/.test(uploadId)) {
+      throw new Error(`Invalid upload id: ${uploadId}`);
+    }
+    return `${this.toPath(key)}.${uploadId}.upload${LOCAL_BLOB_TEMP_SUFFIX}`;
+  }
+
+  private async requireUpload(key: string, upload: BlobUpload, folder: string) {
+    try {
+      const stat = await fs.stat(folder);
+      if (stat.isDirectory()) {
+        return;
+      }
+    } catch (error) {
+      if (!hasErrorCode(error, NOT_FOUND_CODES)) {
+        throw error;
+      }
+    }
+    throw new BlobUploadNotFoundError(key, upload.uploadId);
   }
 
   private async publish(key: string, temp: string, target: string) {

@@ -10,6 +10,10 @@ import {
   BlobStat,
   BlobStore,
   BlobStoreLimits,
+  BlobUpload,
+  BlobUploadOptions,
+  BlobUploadPart,
+  UploadedPart,
   createVerifyingStream,
   resolveBlobRange,
 } from 'src/repositories/blob-store.js';
@@ -194,6 +198,19 @@ export const openTrailer = (trailer: Buffer, keys: KeyProvider) => {
   return { header, manifest };
 };
 
+/** The end of an encrypted blob: the header, the encrypted manifest and the length of both */
+const createTrailer = (header: Buffer, fileKey: Buffer, manifest: Record<string, unknown>) => {
+  const { suite, noncePrefix } = decodeEncryptionHeader(header);
+  const content = Buffer.from(JSON.stringify(manifest), 'utf8');
+  const trailer = Buffer.concat([
+    header,
+    seal(suite, fileKey, nonce(noncePrefix, 0, NonceFlag.Manifest), header, content),
+  ]);
+  const trailerLength = Buffer.alloc(TRAILER_LENGTH_SIZE);
+  trailerLength.writeUInt32BE(trailer.length);
+  return Buffer.concat([trailer, trailerLength]);
+};
+
 export interface EncryptedBlobStoreOptions {
   suite?: EncryptionSuite;
 }
@@ -212,7 +229,8 @@ export class EncryptedBlobStore implements BlobStore {
     this.suite = options.suite ?? EncryptionSuite.Aes256Gcm;
   }
 
-  async put(key: string, body: NodeJS.ReadableStream, options: BlobPutOptions = {}): Promise<BlobPutResult> {
+  /** A new random file key, and the header that holds it wrapped with the current master key */
+  private createHeader() {
     const fileKey = randomBytes(FILE_KEY_LENGTH);
     const masterKeyId = this.keys.currentKeyId;
     const header = encodeEncryptionHeader({
@@ -222,6 +240,11 @@ export class EncryptedBlobStore implements BlobStore {
       masterKeyId,
       wrappedKey: wrapKey(this.keys.getKey(masterKeyId), fileKey),
     });
+    return { header, fileKey };
+  }
+
+  async put(key: string, body: NodeJS.ReadableStream, options: BlobPutOptions = {}): Promise<BlobPutResult> {
+    const { header, fileKey } = this.createHeader();
     const { suite, noncePrefix } = decodeEncryptionHeader(header);
     const chunkSize = 2 ** ENCRYPTION_CHUNK_SIZE_LOG;
     const aad = chunkAad(header, key);
@@ -247,23 +270,84 @@ export class EncryptedBlobStore implements BlobStore {
 
       yield seal(suite, fileKey, nonce(noncePrefix, index, NonceFlag.LastChunk), aad, rest);
 
-      const manifest = Buffer.from(
-        JSON.stringify({ ...options.manifest, key, size, sha1: hash.copy().digest('hex') }),
-        'utf8',
-      );
-      const trailer = Buffer.concat([
-        header,
-        seal(suite, fileKey, nonce(noncePrefix, 0, NonceFlag.Manifest), header, manifest),
-      ]);
-      const trailerLength = Buffer.alloc(TRAILER_LENGTH_SIZE);
-      trailerLength.writeUInt32BE(trailer.length);
-      yield Buffer.concat([trailer, trailerLength]);
+      yield createTrailer(header, fileKey, { ...options.manifest, key, size, sha1: hash.copy().digest('hex') });
     }
 
     const sizeHint =
       options.sizeHint === undefined ? undefined : encryptedDataLength(options.sizeHint, chunkSize) + 4096;
     await this.inner.put(key, Readable.from(encrypt()), { sizeHint });
     return { size, sha1: hash.digest(), encryption: header };
+  }
+
+  /** Parts are a whole number of chunks of content, so that each part can be encrypted on its own */
+  async createUpload(key: string, { partSize }: BlobUploadOptions): Promise<BlobUpload> {
+    const chunkSize = 2 ** ENCRYPTION_CHUNK_SIZE_LOG;
+    if (partSize <= 0 || partSize % chunkSize !== 0) {
+      throw new Error(`Parts of an encrypted upload must be a multiple of ${chunkSize} bytes, not ${partSize}`);
+    }
+
+    const { header } = this.createHeader();
+    const inner = await this.inner.createUpload(key, { partSize: (partSize / chunkSize) * (chunkSize + TAG_LENGTH) });
+    return { uploadId: inner.uploadId, partSize, encryption: header };
+  }
+
+  /**
+   * Encrypt and write a part. Which chunks it holds follows from its number, so a part can be written by any process and
+   * written again with the same result; the last part seals the last chunk as last and ends with the trailer.
+   */
+  async uploadPart(key: string, upload: BlobUpload, { number, data, last }: BlobUploadPart): Promise<UploadedPart> {
+    const { header, fileKey, chunkSize } = this.openUpload(upload);
+    const { suite, noncePrefix } = decodeEncryptionHeader(header);
+    const offset = (number - 1) * upload.partSize;
+    // the last part holds the last chunk, so it is only empty when the whole content is
+    const fits = last
+      ? last.size === offset + data.length && data.length <= upload.partSize && (data.length > 0 || number === 1)
+      : data.length === upload.partSize;
+    if (!fits) {
+      throw new Error(`Part ${number} of the encrypted upload of ${key} has ${data.length} bytes, which does not fit`);
+    }
+
+    const aad = chunkAad(header, key);
+    const sealed: Buffer[] = [];
+    const firstIndex = offset / chunkSize;
+    const count = last ? chunkCount(last.size, chunkSize) - firstIndex : data.length / chunkSize;
+    for (let index = 0; index < count; index++) {
+      const isLast = !!last && index === count - 1;
+      const iv = nonce(noncePrefix, firstIndex + index, isLast ? NonceFlag.LastChunk : NonceFlag.Chunk);
+      sealed.push(seal(suite, fileKey, iv, aad, data.subarray(index * chunkSize, (index + 1) * chunkSize)));
+    }
+    if (last) {
+      sealed.push(
+        createTrailer(header, fileKey, { ...last.manifest, key, size: last.size, sha1: last.sha1.toString('hex') }),
+      );
+    }
+
+    return this.inner.uploadPart(key, this.toInnerUpload(upload), { number, data: Buffer.concat(sealed) });
+  }
+
+  completeUpload(key: string, upload: BlobUpload, parts: UploadedPart[]): Promise<void> {
+    return this.inner.completeUpload(key, this.toInnerUpload(upload), parts);
+  }
+
+  abortUpload(key: string, upload: BlobUpload): Promise<void> {
+    return this.inner.abortUpload(key, this.toInnerUpload(upload));
+  }
+
+  private openUpload({ encryption }: BlobUpload) {
+    if (!encryption) {
+      throw new Error('An encrypted upload needs its encryption header');
+    }
+    const { masterKeyId, wrappedKey, chunkSizeLog } = decodeEncryptionHeader(encryption);
+    return {
+      header: encryption,
+      fileKey: unwrapKey(this.keys.getKey(masterKeyId), wrappedKey),
+      chunkSize: 2 ** chunkSizeLog,
+    };
+  }
+
+  private toInnerUpload({ uploadId, partSize, encryption }: BlobUpload): BlobUpload {
+    const chunkSize = 2 ** (encryption ? decodeEncryptionHeader(encryption).chunkSizeLog : ENCRYPTION_CHUNK_SIZE_LOG);
+    return { uploadId, partSize: (partSize / chunkSize) * (chunkSize + TAG_LENGTH) };
   }
 
   async get(key: string, { range, expect, encryption }: BlobGetOptions = {}): Promise<NodeJS.ReadableStream> {

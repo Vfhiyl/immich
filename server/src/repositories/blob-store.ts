@@ -31,6 +31,49 @@ export interface BlobStore {
 
   /** Where a blob lives on the local filesystem, for stores that keep blobs there. Does not check that it exists. */
   getLocalPath?(key: string): string;
+
+  /**
+   * Start writing a blob in parts, over several requests and possibly by several processes: the returned upload must be
+   * kept by the caller and passed back. Every part but the last has `partSize` bytes. An upload may be gone at any time
+   * (services do not promise to keep unfinished uploads), which `BlobUploadNotFoundError` reports.
+   */
+  createUpload(key: string, options: BlobUploadOptions): Promise<BlobUpload>;
+
+  /** Write part `number` (from 1) of an upload; writing a part again replaces it. The last part needs `last`. */
+  uploadPart(key: string, upload: BlobUpload, part: BlobUploadPart): Promise<UploadedPart>;
+
+  /** Turn the parts, all of them in order, into the blob, which fails if the key exists already */
+  completeUpload(key: string, upload: BlobUpload, parts: UploadedPart[]): Promise<void>;
+
+  /** Drop an unfinished upload and its parts; an upload that is gone counts as dropped */
+  abortUpload(key: string, upload: BlobUpload): Promise<void>;
+}
+
+export interface BlobUploadOptions {
+  /** Size of every part but the last; at least `limits.minPartSize` */
+  partSize: number;
+}
+
+/** An unfinished upload, as the caller keeps it between requests */
+export interface BlobUpload {
+  uploadId: string;
+  partSize: number;
+  /** For an encrypted blob, the header that reading it will need, and that encrypting its parts needs */
+  encryption?: Buffer;
+}
+
+export interface BlobUploadPart {
+  number: number;
+  data: Buffer;
+  /** Marks the last part, with the size and SHA-1 of the whole content, which an encrypted blob describes itself with */
+  last?: { size: number; sha1: Buffer; manifest?: Record<string, unknown> };
+}
+
+export interface UploadedPart {
+  number: number;
+  etag: string;
+  /** Bytes stored for the part, which for an encrypted blob are more than the content */
+  size: number;
 }
 
 export interface BlobStoreLimits {
@@ -99,6 +142,16 @@ export class BlobExistsError extends Error {
   constructor(public readonly key: string) {
     super(`Blob already exists: ${key}`);
     this.name = 'BlobExistsError';
+  }
+}
+
+export class BlobUploadNotFoundError extends Error {
+  constructor(
+    public readonly key: string,
+    public readonly uploadId: string,
+  ) {
+    super(`Upload ${uploadId} of blob ${key} no longer exists`);
+    this.name = 'BlobUploadNotFoundError';
   }
 }
 

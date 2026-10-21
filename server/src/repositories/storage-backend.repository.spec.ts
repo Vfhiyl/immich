@@ -566,6 +566,10 @@ describe(StorageBackendRepository.name, () => {
         head: (key) => local.head(key),
         deleteMany: (keys) => local.deleteMany(keys),
         list: (prefix) => local.list(prefix),
+        createUpload: (key, options) => local.createUpload(key, options),
+        uploadPart: (key, upload, part) => local.uploadPart(key, upload, part),
+        completeUpload: (key, upload, parts) => local.completeUpload(key, upload, parts),
+        abortUpload: (key, upload) => local.abortUpload(key, upload),
       };
       vi.spyOn(sut, 'get').mockImplementation((backendId) => (backendId === 'remote' ? remote : local));
       (sut as unknown as { readRetryDelays: number[] }).readRetryDelays = [1, 1];

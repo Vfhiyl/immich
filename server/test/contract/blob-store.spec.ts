@@ -1,7 +1,13 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { buffer } from 'node:stream/consumers';
-import { BlobIntegrityError, BlobNotFoundError, BlobRangeError, BlobStore } from 'src/repositories/blob-store.js';
+import {
+  BlobIntegrityError,
+  BlobNotFoundError,
+  BlobRangeError,
+  BlobStore,
+  BlobUploadNotFoundError,
+} from 'src/repositories/blob-store.js';
 import { S3BlobStore, S3_PART_SIZE } from 'src/repositories/s3-blob-store.js';
 import { toClient } from 'test/contract/servers.js';
 import { stores, targets } from 'test/contract/stores.js';
@@ -149,6 +155,97 @@ describe.each(stores)('blob store contract: $name', ({ create }) => {
       ]);
       await expect(listAll('list/u')).resolves.toHaveLength(3);
       await expect(listAll('list/none/')).resolves.toEqual([]);
+    });
+  });
+
+  describe('uploads in parts', () => {
+    // the smallest part every S3 service accepts
+    const partSize = 5 * 1024 * 1024;
+
+    it('should write a blob in parts, in any order and with parts written again', async () => {
+      const content = randomBytes(2 * partSize + 1234);
+      const upload = await store.createUpload('parts/a', { partSize });
+      const slice = (number: number) => content.subarray((number - 1) * partSize, number * partSize);
+
+      const third = await store.uploadPart('parts/a', upload, {
+        number: 3,
+        data: slice(3),
+        last: { size: content.length, sha1: sha1(content) },
+      });
+      await store.uploadPart('parts/a', upload, { number: 1, data: randomBytes(partSize) });
+      const first = await store.uploadPart('parts/a', upload, { number: 1, data: slice(1) });
+      const second = await store.uploadPart('parts/a', upload, { number: 2, data: slice(2) });
+      expect([first.size, second.size, third.size]).toEqual([partSize, partSize, 1234]);
+
+      // nothing shows until the upload is complete
+      await expect(store.head('parts/a')).resolves.toBeNull();
+      await expect(listAll('parts/')).resolves.toEqual([]);
+
+      await store.completeUpload('parts/a', upload, [first, second, third]);
+
+      const read = await buffer(await store.get('parts/a', { expect: { size: content.length, sha1: sha1(content) } }));
+      expect(read.equals(content)).toBe(true);
+      await expect(listAll('parts/')).resolves.toEqual([{ key: 'parts/a', size: content.length }]);
+    });
+
+    it('should continue an upload with what the caller kept of it', async () => {
+      const content = randomBytes(partSize + 10);
+      const kept = JSON.parse(JSON.stringify(await store.createUpload('parts/kept', { partSize })));
+      const first = await store.uploadPart('parts/kept', kept, { number: 1, data: content.subarray(0, partSize) });
+      const second = await store.uploadPart('parts/kept', JSON.parse(JSON.stringify(kept)), {
+        number: 2,
+        data: content.subarray(partSize),
+        last: { size: content.length, sha1: sha1(content) },
+      });
+
+      await store.completeUpload('parts/kept', kept, [first, second]);
+      await expect(buffer(await store.get('parts/kept'))).resolves.toEqual(content);
+    });
+
+    it('should write a blob of one small part', async () => {
+      const content = Buffer.from('small');
+      const upload = await store.createUpload('parts/small', { partSize });
+      const part = await store.uploadPart('parts/small', upload, {
+        number: 1,
+        data: content,
+        last: { size: 5, sha1: sha1(content) },
+      });
+      await store.completeUpload('parts/small', upload, [part]);
+      await expect(buffer(await store.get('parts/small'))).resolves.toEqual(content);
+    });
+
+    it('should drop an aborted upload, which takes no more parts', async () => {
+      const upload = await store.createUpload('parts/aborted', { partSize });
+      const part = await store.uploadPart('parts/aborted', upload, { number: 1, data: randomBytes(partSize) });
+
+      await store.abortUpload('parts/aborted', upload);
+      await store.abortUpload('parts/aborted', upload);
+
+      await expect(
+        store.uploadPart('parts/aborted', upload, { number: 2, data: randomBytes(partSize) }),
+      ).rejects.toThrow(BlobUploadNotFoundError);
+      await expect(store.completeUpload('parts/aborted', upload, [part])).rejects.toThrow(BlobUploadNotFoundError);
+      await expect(store.head('parts/aborted')).resolves.toBeNull();
+    });
+
+    it('should report an upload that it does not know', async () => {
+      const upload = await store.createUpload('parts/known', { partSize });
+      const unknown = { ...upload, uploadId: randomUUID() };
+
+      await expect(store.uploadPart('parts/known', unknown, { number: 1, data: randomBytes(10) })).rejects.toThrow(
+        BlobUploadNotFoundError,
+      );
+      await store.abortUpload('parts/known', upload);
+    });
+
+    it('should reject a completion with a missing part', async () => {
+      const upload = await store.createUpload('parts/missing', { partSize });
+      const first = await store.uploadPart('parts/missing', upload, { number: 1, data: randomBytes(partSize) });
+      const third = { number: 3, etag: first.etag, size: 10 };
+
+      await expect(store.completeUpload('parts/missing', upload, [first, third])).rejects.toThrow();
+      await expect(store.head('parts/missing')).resolves.toBeNull();
+      await store.abortUpload('parts/missing', upload);
     });
   });
 });
