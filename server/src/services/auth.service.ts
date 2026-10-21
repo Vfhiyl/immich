@@ -400,11 +400,13 @@ export class AuthService extends BaseService {
         Buffer.from(data),
       );
 
-      await this.userRepository.updateProfileImage(user.id, {
-        profileImagePath: profileImage.path,
-        profileImageFile: profileImage.file,
-        profileChangedAt: new Date(),
-      });
+      await this.recordStoredFiles([profileImage.file], () =>
+        this.userRepository.updateProfileImage(user.id, {
+          profileImagePath: profileImage.path,
+          profileImageFile: profileImage.file,
+          profileChangedAt: new Date(),
+        }),
+      );
 
       if (previous?.path) {
         await this.jobRepository.queue({ name: JobName.FileDelete, data: toFileDeletion([previous]) });

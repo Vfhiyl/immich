@@ -3,9 +3,10 @@ import { Insertable } from 'kysely';
 import sanitize from 'sanitize-filename';
 import type { ClassConstructor } from 'src/types.js';
 import { SALT_ROUNDS } from 'src/constants.js';
-import { StorageCore } from 'src/cores/storage.core.js';
+import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
+import { JobName } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
@@ -49,7 +50,7 @@ import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
-import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
+import { StorageBackendRepository, isBuiltinStorageBackend } from 'src/repositories/storage-backend.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
@@ -351,5 +352,23 @@ export class BaseService {
     await this.eventRepository.emit('UserCreate', user);
 
     return user;
+  }
+
+  /**
+   * Record newly stored files in the database. If that fails, files stored on a backend under new keys would be lost,
+   * so they are deleted; files written to their path may be the ones already recorded there and are kept, as before.
+   */
+  protected async recordStoredFiles<T>(files: StorageLocation[], record: () => Promise<T>): Promise<T> {
+    try {
+      return await record();
+    } catch (error) {
+      const locations = files
+        .filter(({ backendId }) => !isBuiltinStorageBackend(backendId))
+        .map(({ backendId, key }) => ({ backendId, key }));
+      if (locations.length > 0) {
+        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [], locations } });
+      }
+      throw error;
+    }
   }
 }

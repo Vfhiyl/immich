@@ -495,12 +495,9 @@ export class MediaService extends BaseService {
 
     await this.mediaRepository.generateThumbnail(decoded, thumbnailOptions, thumbnail.path);
     const stored = await thumbnail.commit();
-    const previous = await this.personRepository.updateThumbnail({
-      ownerId,
-      personGroupId,
-      thumbnailPath,
-      thumbnailFile: stored,
-    });
+    const previous = await this.recordStoredFiles([stored], () =>
+      this.personRepository.updateThumbnail({ ownerId, personGroupId, thumbnailPath, thumbnailFile: stored }),
+    );
     if (previous && !isSameStoredFile(previous, { path: thumbnailPath, ...stored })) {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: toFileDeletion([previous]) });
     }
@@ -695,13 +692,15 @@ export class MediaService extends BaseService {
     this.logger.log(`Successfully encoded ${asset.id}`);
 
     const stored = await encoded.commit();
-    await this.assetRepository.upsertFile({
-      assetId: asset.id,
-      type: AssetFileType.EncodedVideo,
-      path: output,
-      ...stored,
-      isEdited: false,
-    });
+    await this.recordStoredFiles([stored], () =>
+      this.assetRepository.upsertFile({
+        assetId: asset.id,
+        type: AssetFileType.EncodedVideo,
+        path: output,
+        ...stored,
+        isEdited: false,
+      }),
+    );
 
     // a video encoded again on a backend gets a new key, so the previous one is no longer used
     const previous = getAssetFile(asset.files, AssetFileType.EncodedVideo, { isEdited: false });
@@ -885,7 +884,7 @@ export class MediaService extends BaseService {
     }
 
     if (toUpsert.length > 0) {
-      await this.assetRepository.upsertFiles(toUpsert);
+      await this.recordStoredFiles(newFiles, () => this.assetRepository.upsertFiles(toUpsert));
     }
 
     if (toDelete.size > 0) {

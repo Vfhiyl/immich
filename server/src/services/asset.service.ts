@@ -286,12 +286,14 @@ export class AssetService extends BaseService {
     const sidecarPath = `${targetAsset.originalPath}.xmp`;
 
     const stored = await this.copyToNewFile(sourceFile, StorageBackendRole.Originals, sidecarPath);
-    await this.assetRepository.upsertFile({
-      assetId: targetAsset.id,
-      path: sidecarPath,
-      ...stored,
-      type: AssetFileType.Sidecar,
-    });
+    await this.recordStoredFiles([stored], () =>
+      this.assetRepository.upsertFile({
+        assetId: targetAsset.id,
+        path: sidecarPath,
+        ...stored,
+        type: AssetFileType.Sidecar,
+      }),
+    );
 
     // the copy replaces the target's sidecar, unless it was written over it
     if (targetFile?.path && !isSameStoredFile(targetFile, { path: sidecarPath, ...stored })) {

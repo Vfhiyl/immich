@@ -125,11 +125,13 @@ export class UserService extends BaseService {
       throw new BadRequestException('Unable to process profile image', { cause: error });
     }
 
-    const user = await this.userRepository.updateProfileImage(auth.user.id, {
-      profileImagePath: profileImage.path,
-      profileImageFile: profileImage.file,
-      profileChangedAt: new Date(),
-    });
+    const user = await this.recordStoredFiles([profileImage.file], () =>
+      this.userRepository.updateProfileImage(auth.user.id, {
+        profileImagePath: profileImage.path,
+        profileImageFile: profileImage.file,
+        profileChangedAt: new Date(),
+      }),
+    );
 
     // the raw upload, and the previous profile image
     const replaced = toFileDeletion([previous]);

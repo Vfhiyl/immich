@@ -468,6 +468,24 @@ describe(MediaService.name, () => {
       });
     });
 
+    it('should delete the stored thumbnails when they cannot be recorded, e.g. because the asset was deleted', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.asset.upsertFiles.mockRejectedValue(new Error('violates foreign key constraint'));
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('violates foreign key constraint');
+
+      const keys = await listDerived();
+      expect(keys).toHaveLength(2);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: {
+          files: [],
+          locations: expect.arrayContaining(keys.map((key) => ({ backendId: 'derived', key }))),
+        },
+      });
+    });
+
     it('should leave nothing behind when generation fails', async () => {
       const asset = AssetFactory.from().exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
@@ -2456,6 +2474,15 @@ describe(MediaService.name, () => {
         StorageCore.setMediaLocation('/data');
         await fs.rm(root, { recursive: true, force: true });
       }
+    });
+
+    it('should keep files written to their path when they cannot be recorded', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.multipleVideoStreams });
+      mocks.asset.upsertFile.mockRejectedValue(new Error('violates foreign key constraint'));
+
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).rejects.toThrow('violates foreign key constraint');
+
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
     });
 
     it('should keep an encoded video that was written over in place', async () => {
