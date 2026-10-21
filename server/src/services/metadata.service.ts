@@ -445,6 +445,12 @@ export class MetadataService extends BaseService {
       return;
     }
 
+    // sidecars are found next to originals on the local filesystem; an original on a storage backend only has the
+    // sidecar that was uploaded with it
+    if (asset.originalFile && !isBuiltinStorageBackend(asset.originalFile.backendId)) {
+      return JobStatus.Skipped;
+    }
+
     let sidecarPath = null;
     for (const candidate of this.getSidecarCandidates(asset)) {
       const isExists = await this.storageRepository.checkFileExists(candidate, constants.R_OK);

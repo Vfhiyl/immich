@@ -36,12 +36,14 @@ const forSidecarJob = (
   asset: {
     id?: string;
     originalPath?: string;
+    originalFile?: { backendId: string; key: string; size: number | null } | null;
     files?: { id: string; type: AssetFileType; path: string; isEdited: boolean }[];
   } = {},
 ) => {
   return {
     id: factory.uuid(),
     originalPath: '/path/to/IMG_123.jpg',
+    originalFile: null,
     ...asset,
     files: (asset.files ?? []).map((file) => ({ backendId: null, key: null, ...file })),
   };
@@ -2109,6 +2111,20 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleSidecarCheck', () => {
+    it('should keep the uploaded sidecar of an original on a storage backend', async () => {
+      const asset = forSidecarJob({
+        originalFile: { backendId: 'originals', key: 'original-key', size: 1 },
+        files: [{ id: 'sidecar', path: '/data/upload/IMG_123.jpg.xmp', type: AssetFileType.Sidecar, isEdited: false }],
+      });
+      mocks.assetJob.getForSidecarCheckJob.mockResolvedValue(asset);
+
+      await expect(sut.handleSidecarCheck({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.storage.checkFileExists).not.toHaveBeenCalled();
+      expect(mocks.asset.deleteFile).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+    });
+
     it('should do nothing if asset could not be found', async () => {
       mocks.assetJob.getForSidecarCheckJob.mockResolvedValue(void 0);
 

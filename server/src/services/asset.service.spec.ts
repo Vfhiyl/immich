@@ -1,5 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import { DateTime } from 'luxon';
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
@@ -10,6 +14,8 @@ import {
   AssetVisibility,
   JobName,
   JobStatus,
+  StorageBackendDriver,
+  StorageBackendRole,
 } from 'src/enum.js';
 import { AssetStats } from 'src/repositories/asset.repository.js';
 import { AssetService } from 'src/services/asset.service.js';
@@ -559,6 +565,72 @@ describe(AssetService.name, () => {
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
         { name: JobName.AssetDelete, data: { id: asset.id, deleteOnDisk: true } },
       ]);
+    });
+  });
+
+  describe('copy with a storage backend for originals', () => {
+    let root: string;
+
+    beforeEach(async () => {
+      root = await fs.mkdtemp(join(tmpdir(), 'immich-copy-'));
+      StorageCore.setMediaLocation(join(root, 'media'));
+      mocks.storageBackend.configure([
+        {
+          id: 'originals',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Originals,
+          root: join(root, 'originals'),
+        },
+      ]);
+      mocks.storage.copyFile.mockImplementation((source, target) => fs.copyFile(source, target));
+    });
+
+    afterEach(async () => {
+      StorageCore.setMediaLocation('/data');
+      await fs.rm(root, { recursive: true, force: true });
+    });
+
+    it('should copy a sidecar on the backend to a new key and delete the one it replaces', async () => {
+      await fs.mkdir(join(root, 'originals'), { recursive: true });
+      await fs.writeFile(join(root, 'originals', 'source-sidecar'), '<xmp/>');
+      const sourceSidecar = { id: 'f1', type: AssetFileType.Sidecar, path: '/data/a.jpg.xmp', isEdited: false };
+      const targetSidecar = { id: 'f2', type: AssetFileType.Sidecar, path: '/data/b.jpg.xmp', isEdited: false };
+      const source = { id: 'source', stackId: null, originalPath: '/data/a.jpg', isFavorite: false };
+      const target = { id: 'target', stackId: null, originalPath: '/data/b.jpg', isFavorite: false };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['source', 'target']));
+      mocks.asset.getForCopy
+        .mockResolvedValueOnce({
+          ...source,
+          files: [{ ...sourceSidecar, backendId: 'originals', key: 'source-sidecar' }],
+        })
+        .mockResolvedValueOnce({
+          ...target,
+          files: [{ ...targetSidecar, backendId: 'originals', key: 'target-sidecar' }],
+        });
+
+      await sut.copy(authStub.admin, {
+        sourceId: 'source',
+        targetId: 'target',
+        albums: false,
+        sharedLinks: false,
+        stack: false,
+        favorite: false,
+      });
+
+      expect(mocks.asset.upsertFile).toHaveBeenCalledWith({
+        assetId: 'target',
+        path: '/data/b.jpg.xmp',
+        backendId: 'originals',
+        key: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        size: 6,
+        checksum: expect.any(Buffer),
+        type: AssetFileType.Sidecar,
+      });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [], locations: [{ backendId: 'originals', key: 'target-sidecar' }] },
+      });
+      await expect(fs.readdir(join(root, 'originals'))).resolves.toHaveLength(2);
     });
   });
 

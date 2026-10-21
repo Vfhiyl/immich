@@ -198,6 +198,19 @@ export class IntegrityService extends BaseService {
     }
   }
 
+  /**
+   * These checks compare files on the local filesystem with their paths; files on a storage backend only have a logical
+   * path and would be reported as missing, so the checks are not run once storage backends are configured
+   */
+  private isUnavailableForStorageBackends() {
+    if (!this.storageBackendRepository.hasConfiguredBackends()) {
+      return false;
+    }
+
+    this.logger.warn('Skipping the integrity check, which does not support files on storage backends yet');
+    return true;
+  }
+
   private async queueRefreshAllUntrackedFiles() {
     this.logger.log(`Checking for out of date untracked file reports...`);
 
@@ -219,6 +232,10 @@ export class IntegrityService extends BaseService {
 
   @OnJob({ name: JobName.IntegrityUntrackedFilesQueueAll, queue: QueueName.IntegrityCheck })
   async handleUntrackedFilesQueueAll({ refreshOnly }: IIntegrityJob = {}): Promise<JobStatus> {
+    if (this.isUnavailableForStorageBackends()) {
+      return JobStatus.Skipped;
+    }
+
     await this.queueRefreshAllUntrackedFiles();
 
     if (refreshOnly) {
@@ -371,6 +388,10 @@ export class IntegrityService extends BaseService {
 
   @OnJob({ name: JobName.IntegrityMissingFilesQueueAll, queue: QueueName.IntegrityCheck })
   async handleMissingFilesQueueAll({ refreshOnly }: IIntegrityJob = {}): Promise<JobStatus> {
+    if (this.isUnavailableForStorageBackends()) {
+      return JobStatus.Skipped;
+    }
+
     if (refreshOnly) {
       await this.queueRefreshAllMissingFiles();
       return JobStatus.Success;
@@ -532,6 +553,10 @@ export class IntegrityService extends BaseService {
 
   @OnJob({ name: JobName.IntegrityChecksumFiles, queue: QueueName.IntegrityCheck })
   async handleChecksumFiles({ refreshOnly }: IIntegrityJob = {}): Promise<JobStatus> {
+    if (this.isUnavailableForStorageBackends()) {
+      return JobStatus.Skipped;
+    }
+
     if (refreshOnly) {
       await this.queueRefreshAllChecksumFiles();
       return JobStatus.Success;

@@ -123,6 +123,10 @@ export class StorageBackendRepository {
     this.roles = new Map(backends.map(({ id, role }) => [role, id]));
   }
 
+  hasConfiguredBackends(): boolean {
+    return this.configured.size > 0;
+  }
+
   /** The backend that new files of a kind are written to, or undefined to write them to their path as before */
   getBackendFor(role: StorageBackendRole): string | undefined {
     return this.roles.get(role);

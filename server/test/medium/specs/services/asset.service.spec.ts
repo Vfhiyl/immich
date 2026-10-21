@@ -14,6 +14,7 @@ import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
+import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -37,6 +38,7 @@ const setup = (db?: Kysely<DB>) => {
       AccessRepository,
       SharedLinkAssetRepository,
       StackRepository,
+      StorageBackendRepository,
       UserRepository,
     ],
     mock: [EventRepository, LoggingRepository, JobRepository, StorageRepository, OcrRepository],
@@ -239,6 +241,30 @@ describe(AssetService.name, () => {
       expect(jobRepo.queue).toHaveBeenCalledWith({
         name: JobName.AssetExtractMetadata,
         data: { id: newAsset.id },
+      });
+    });
+
+    it('should delete the sidecar that a copied sidecar replaces', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(StorageRepository).copyFile.mockResolvedValue();
+      ctx.getMock(JobRepository).queue.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const { asset: oldAsset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newAssetFile({ assetId: oldAsset.id, path: '/path/to/source.xmp', type: AssetFileType.Sidecar });
+      const { asset: newAsset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newAssetFile({ assetId: newAsset.id, path: '/path/to/other-name.xmp', type: AssetFileType.Sidecar });
+      await ctx.newExif({ assetId: oldAsset.id, description: 'foo' });
+      await ctx.newExif({ assetId: newAsset.id, description: 'bar' });
+
+      await sut.copy(factory.auth({ user: { id: user.id } }), { sourceId: oldAsset.id, targetId: newAsset.id });
+
+      expect(ctx.getMock(StorageRepository).copyFile).toHaveBeenCalledWith(
+        '/path/to/source.xmp',
+        `${newAsset.originalPath}.xmp`,
+      );
+      expect(ctx.getMock(JobRepository).queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [], locations: [{ backendId: 'host', key: 'path/to/other-name.xmp' }] },
       });
     });
   });

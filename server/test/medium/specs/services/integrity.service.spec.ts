@@ -11,6 +11,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -23,7 +24,7 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   return newMediumService(IntegrityService, {
     database: db || defaultDatabase,
-    real: [IntegrityRepository, AssetRepository, ConfigRepository, SystemMetadataRepository],
+    real: [IntegrityRepository, AssetRepository, ConfigRepository, StorageBackendRepository, SystemMetadataRepository],
     mock: [LoggingRepository, EventRepository, StorageRepository, JobRepository],
   });
 };

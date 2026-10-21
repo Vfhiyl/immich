@@ -4,7 +4,6 @@ import { DateTime, Duration } from 'luxon';
 import type { AssetFile } from 'src/database.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { JobItem, JobOf } from 'src/types.js';
-import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
 import { AssetResponseDto, SanitizedAssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
@@ -38,8 +37,14 @@ import {
   JobStatus,
   Permission,
   QueueName,
+  StorageBackendRole,
 } from 'src/enum.js';
-import { RecordedFile, toFileDeletion, toRecordedFile } from 'src/repositories/storage-backend.repository.js';
+import {
+  RecordedFile,
+  isSameStoredFile,
+  toFileDeletion,
+  toRecordedFile,
+} from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import {
@@ -278,19 +283,29 @@ export class AssetService extends BaseService {
     }
 
     const { sidecarFile: targetFile } = getAssetFiles(targetAsset.files ?? []);
-    if (targetFile?.path) {
-      await this.storageRepository.unlink(targetFile.path);
-    }
-
-    await this.storageRepository.copyFile(sourceFile.path, `${targetAsset.originalPath}.xmp`);
     const sidecarPath = `${targetAsset.originalPath}.xmp`;
+
+    const stored = await this.copyToNewFile(sourceFile, StorageBackendRole.Originals, sidecarPath);
     await this.assetRepository.upsertFile({
       assetId: targetAsset.id,
       path: sidecarPath,
-      ...StorageCore.getStorageLocation(sidecarPath),
+      ...stored,
       type: AssetFileType.Sidecar,
     });
+
+    // the copy replaces the target's sidecar, unless it was written over it
+    if (targetFile?.path && !isSameStoredFile(targetFile, { path: sidecarPath, ...stored })) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: toFileDeletion([targetFile]) });
+    }
+
     await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: { id: targetAsset.id } });
+  }
+
+  private async copyToNewFile(file: RecordedFile, role: StorageBackendRole, path: string) {
+    await using source = await this.storageBackendRepository.lease(file);
+    await using output = await this.storageBackendRepository.createOutput(role, path);
+    await this.storageRepository.copyFile(source.path, output.path);
+    return output.commit();
   }
 
   @OnJob({ name: JobName.AssetDeleteCheck, queue: QueueName.BackgroundTask })

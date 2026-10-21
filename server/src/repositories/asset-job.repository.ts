@@ -56,6 +56,7 @@ export class AssetJobRepository {
       .selectFrom('asset')
       .where('asset.id', '=', asUuid(id))
       .select(['id', 'originalPath'])
+      .select(withOriginalFile)
       .select((eb) => withFiles(eb, AssetFileType.Sidecar))
       .limit(1)
       .executeTakeFirst();
