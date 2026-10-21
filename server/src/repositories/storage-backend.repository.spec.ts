@@ -8,6 +8,7 @@ import { Mocked } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
 import { BlobNotFoundError, BlobStore } from 'src/repositories/blob-store.js';
+import { openTrailer } from 'src/repositories/encrypted-blob-store.js';
 import { MasterKeys } from 'src/repositories/key-provider.js';
 import { LocalBlobStore } from 'src/repositories/local-blob-store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -608,6 +609,24 @@ describe(StorageBackendRepository.name, () => {
       });
       const raw = await fs.readFile(join(directory, 'originals', stored.key));
       expect(raw.includes(Buffer.from('original content'))).toBe(false);
+    });
+
+    it('should describe an encrypted file with its path in the object itself', async () => {
+      sut.configure([encryptedBackend()], keys);
+      const path = join(directory, 'upload.jpg');
+      await fs.writeFile(path, 'original content');
+      const stored = await sut.storeFile(StorageBackendRole.Originals, path, { originalFileName: 'IMG_1.jpg' });
+
+      const blob = await fs.readFile(join(directory, 'originals', stored.key));
+      const trailerLength = blob.readUInt32BE(blob.length - 4);
+      const { manifest } = openTrailer(blob.subarray(-4 - trailerLength, -4), keys);
+      expect(manifest).toEqual({
+        path,
+        originalFileName: 'IMG_1.jpg',
+        key: stored.key,
+        size: 16,
+        sha1: stored.checksum!.toString('hex'),
+      });
     });
 
     it('should read encrypted files through their store, even on a backend that keeps files locally', async () => {

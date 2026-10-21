@@ -348,6 +348,24 @@ describe('storage backends on an S3 service', () => {
     );
   });
 
+  it('should recover an original from the stored object and the master key file alone', async () => {
+    const original = await getOriginal(environment, assetId);
+    const target = join(environment.root, 'recovered.jpg');
+
+    // the object as the service stores it, as a copy of the bucket would hold it
+    const output = await runEncryptionTool([
+      'decrypt',
+      '--keys',
+      environment.masterKeyFile,
+      join(environment.backendRoot('originals'), original.key),
+      target,
+    ]);
+
+    await expect(readFile(target)).resolves.toEqual(photo);
+    expect(output).toContain(`stored as ${original.key}`);
+    expect(output).toContain('originalFileName: el_torcal_rocks.jpg');
+  });
+
   it('should keep reading files after the master key was rotated, and encrypt new files with the new key', async () => {
     const before = await getOriginal(environment, assetId);
     const output = await runEncryptionTool(['generate-key', '--rotate', environment.masterKeyFile]);

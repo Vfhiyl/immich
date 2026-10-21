@@ -151,7 +151,13 @@ export class AssetMediaService extends BaseService {
       }
 
       // recorded one by one, so that copies already made are removed if a later step fails
-      stored.original = await this.storageBackendRepository.storeFile(StorageBackendRole.Originals, file.originalPath);
+      // described in the object itself, so that it can be told apart when recovered without the database
+      const manifest = { ownerId: auth.user.id, originalFileName: file.originalName };
+      stored.original = await this.storageBackendRepository.storeFile(
+        StorageBackendRole.Originals,
+        file.originalPath,
+        manifest,
+      );
       if (stored.original.checksum && !stored.original.checksum.equals(file.checksum)) {
         throw new Error(`The stored original of ${file.originalPath} does not match the uploaded file`);
       }
@@ -159,6 +165,7 @@ export class AssetMediaService extends BaseService {
         stored.sidecar = await this.storageBackendRepository.storeFile(
           StorageBackendRole.Originals,
           sidecarFile.originalPath,
+          manifest,
         );
       }
 

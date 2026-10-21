@@ -201,16 +201,19 @@ export class StorageBackendRepository {
 
   /**
    * Store a complete local file as a new file of a role. Without a backend for the role the file stays where it is;
-   * otherwise it is copied to the backend under a new key, and the caller removes the local file.
+   * otherwise it is copied to the backend under a new key, and the caller removes the local file. An encrypted copy
+   * describes itself with its path and `manifest`, for when it has to be recovered without the database.
    */
-  async storeFile(role: StorageBackendRole, path: string): Promise<StoredFile> {
+  async storeFile(role: StorageBackendRole, path: string, manifest: Record<string, unknown> = {}): Promise<StoredFile> {
     const backendId = this.getBackendFor(role);
     if (!backendId) {
       return { ...StorageCore.getStorageLocation(path), size: null, checksum: null, encryption: null };
     }
 
     const key = randomUUID();
-    const { size, sha1, encryption } = await this.getWriteStore(backendId).put(key, createReadStream(path));
+    const { size, sha1, encryption } = await this.getWriteStore(backendId).put(key, createReadStream(path), {
+      manifest: { path, ...manifest },
+    });
     return { backendId, key, size, checksum: sha1, encryption: encryption ?? null };
   }
 
@@ -218,7 +221,11 @@ export class StorageBackendRepository {
    * Prepare a new file that will be stored at `path`, or in the backend configured for its role. On a backend the file
    * gets a new random key, and `path` only serves as its logical name (its extension is kept for tools and type checks).
    */
-  async createOutput(role: StorageBackendRole, path: string): Promise<OutputFile> {
+  async createOutput(
+    role: StorageBackendRole,
+    path: string,
+    manifest: Record<string, unknown> = {},
+  ): Promise<OutputFile> {
     const backendId = this.getBackendFor(role);
     if (!backendId) {
       return {
@@ -238,7 +245,9 @@ export class StorageBackendRepository {
       path: stagingPath,
       commit: async () => {
         const key = randomUUID();
-        const { size, sha1, encryption } = await store.put(key, createReadStream(stagingPath));
+        const { size, sha1, encryption } = await store.put(key, createReadStream(stagingPath), {
+          manifest: { path, ...manifest },
+        });
         await rm(stagingPath, { force: true });
         return { backendId, key, size, checksum: sha1, encryption: encryption ?? null };
       },

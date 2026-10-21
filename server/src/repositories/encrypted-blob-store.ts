@@ -148,6 +148,52 @@ export const chunkCount = (size: number, chunkSize: number) => Math.max(1, Math.
 /** Bytes of the chunks of a plaintext, which is where the trailer starts */
 export const encryptedDataLength = (size: number, chunkSize: number) => size + chunkCount(size, chunkSize) * TAG_LENGTH;
 
+/** Bytes at the very end of a blob that hold the length of its trailer */
+export const TRAILER_LENGTH_SIZE = 4;
+
+/** What the trailer of a blob describes it with; callers may add more when they write it */
+export interface BlobManifest {
+  key: string;
+  size: number;
+  /** SHA-1 of the plaintext, hex encoded */
+  sha1: string;
+  [name: string]: unknown;
+}
+
+const isManifest = (value: unknown): value is BlobManifest => {
+  const { key, size, sha1 } = (value ?? {}) as Partial<BlobManifest>;
+  return (
+    typeof key === 'string' &&
+    Number.isSafeInteger(size) &&
+    size! >= 0 &&
+    typeof sha1 === 'string' &&
+    /^[0-9a-f]{40}$/.test(sha1)
+  );
+};
+
+/**
+ * The header and manifest kept in the trailer of a blob, which is all it takes to read a blob when nothing else about
+ * it is known (with the master key it was encrypted with)
+ */
+export const openTrailer = (trailer: Buffer, keys: KeyProvider) => {
+  const header = Buffer.from(trailer.subarray(0, ENCRYPTION_HEADER_LENGTH));
+  const { suite, noncePrefix, masterKeyId, wrappedKey } = decodeEncryptionHeader(header);
+  const fileKey = unwrapKey(keys.getKey(masterKeyId), wrappedKey);
+
+  let manifest: unknown;
+  try {
+    const sealed = trailer.subarray(ENCRYPTION_HEADER_LENGTH);
+    manifest = JSON.parse(open(suite, fileKey, nonce(noncePrefix, 0, NonceFlag.Manifest), header, sealed).toString());
+  } catch {
+    throw new Error('The manifest of the blob failed authentication');
+  }
+  if (!isManifest(manifest)) {
+    throw new Error('The manifest of the blob does not describe it');
+  }
+
+  return { header, manifest };
+};
+
 export interface EncryptedBlobStoreOptions {
   suite?: EncryptionSuite;
 }
@@ -209,7 +255,7 @@ export class EncryptedBlobStore implements BlobStore {
         header,
         seal(suite, fileKey, nonce(noncePrefix, 0, NonceFlag.Manifest), header, manifest),
       ]);
-      const trailerLength = Buffer.alloc(4);
+      const trailerLength = Buffer.alloc(TRAILER_LENGTH_SIZE);
       trailerLength.writeUInt32BE(trailer.length);
       yield Buffer.concat([trailer, trailerLength]);
     }
