@@ -67,7 +67,7 @@ export type AssetCreate = Insertable<AssetTable> & { originalFile: StorageLocati
 export type AssetFileUpsert = Pick<
   Insertable<AssetFileTable>,
   'assetId' | 'path' | 'type' | 'isEdited' | 'isProgressive' | 'isTransparent'
-> & { backendId: string; key: string };
+> & { backendId: string; key: string; size?: number | null; checksum?: Buffer | null };
 
 export interface BoundingBox {
   west: number;
@@ -1085,6 +1085,8 @@ export class AssetRepository {
           path: eb.ref('excluded.path'),
           backendId: eb.ref('excluded.backendId'),
           key: eb.ref('excluded.key'),
+          size: eb.ref('excluded.size'),
+          checksum: eb.ref('excluded.checksum'),
         })),
       )
       .execute();
@@ -1103,6 +1105,8 @@ export class AssetRepository {
           path: eb.ref('excluded.path'),
           backendId: eb.ref('excluded.backendId'),
           key: eb.ref('excluded.key'),
+          size: eb.ref('excluded.size'),
+          checksum: eb.ref('excluded.checksum'),
           isProgressive: eb.ref('excluded.isProgressive'),
           isTransparent: eb.ref('excluded.isTransparent'),
         })),

@@ -11,7 +11,7 @@ import type {
   VideoStreamInfo,
 } from 'src/types.js';
 import { FACE_THUMBNAIL_SIZE } from 'src/constants.js';
-import { ImagePathOptions, StorageCore, ThumbnailPathEntity } from 'src/cores/storage.core.js';
+import { ImagePathOptions, StorageCore, StorageLocation, ThumbnailPathEntity } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { ConfigFFmpegDto, SystemConfig } from 'src/dtos/config.dto.js';
@@ -28,6 +28,7 @@ import {
   JobStatus,
   QueueName,
   RawExtractedFormat,
+  StorageBackendRole,
   StorageFolder,
   TranscodeHardwareAcceleration,
   TranscodePolicy,
@@ -37,7 +38,13 @@ import {
 } from 'src/enum.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { BoundingBox } from 'src/repositories/machine-learning.repository.js';
-import { toRecordedFile } from 'src/repositories/storage-backend.repository.js';
+import {
+  OutputFile,
+  StoredFile,
+  isBuiltinStorageBackend,
+  toFileDeletion,
+  toRecordedFile,
+} from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
@@ -54,6 +61,9 @@ interface UpsertFileOptions {
   isProgressive: boolean;
   isTransparent: boolean;
 }
+
+/** A generated file, stored at its path or on the backend for derived files */
+type GeneratedFile = UpsertFileOptions & StoredFile;
 
 type ThumbnailAsset = NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>;
 
@@ -324,6 +334,9 @@ export class MediaService extends BaseService {
       isTransparent,
     });
     this.storageCore.ensureFolders(previewFile.path);
+    await using staged = new AsyncDisposableStack();
+    const previewOutput = staged.use(await this.createDerivedOutput(previewFile.path));
+    const thumbnailOutput = staged.use(await this.createDerivedOutput(thumbnailFile.path));
 
     // generate final images
     const decoded = { data, info };
@@ -332,11 +345,12 @@ export class MediaService extends BaseService {
     const previewOptions = { ...image.preview, ...baseOptions, format: previewFormat };
     const promises = [
       this.mediaRepository.generateThumbhash(decoded, baseOptions),
-      this.mediaRepository.generateThumbnail(decoded, thumbnailOptions, thumbnailFile.path),
-      this.mediaRepository.generateThumbnail(decoded, previewOptions, previewFile.path),
+      this.mediaRepository.generateThumbnail(decoded, thumbnailOptions, thumbnailOutput.path),
+      this.mediaRepository.generateThumbnail(decoded, previewOptions, previewOutput.path),
     ];
 
     let fullsizeFile: UpsertFileOptions | undefined;
+    let fullsizeOutput: OutputFile | undefined;
     if (convertFullsize) {
       const fullsizeFormat = image.fullsize.format;
       this.warnOnTransparencyLoss(isTransparent, fullsizeFormat, asset.id);
@@ -354,7 +368,8 @@ export class MediaService extends BaseService {
         quality: image.fullsize.quality,
         progressive: image.fullsize.progressive,
       };
-      promises.push(this.mediaRepository.generateThumbnail(decoded, fullsizeOptions, fullsizeFile.path));
+      fullsizeOutput = staged.use(await this.createDerivedOutput(fullsizeFile.path));
+      promises.push(this.mediaRepository.generateThumbnail(decoded, fullsizeOptions, fullsizeOutput.path));
     } else if (generateFullsize && extracted && extracted.format === RawExtractedFormat.Jpeg) {
       fullsizeFile = this.getImageFile(asset, {
         fileType: AssetFileType.FullSize,
@@ -364,15 +379,16 @@ export class MediaService extends BaseService {
         isTransparent,
       });
       this.storageCore.ensureFolders(fullsizeFile.path);
+      fullsizeOutput = staged.use(await this.createDerivedOutput(fullsizeFile.path));
 
       // Write the buffer to disk with essential EXIF data
-      await this.storageRepository.createOrOverwriteFile(fullsizeFile.path, extracted.buffer);
+      await this.storageRepository.createOrOverwriteFile(fullsizeOutput.path, extracted.buffer);
       await this.mediaRepository.writeExif(
         {
           orientation: asset.exifInfo.orientation,
           colorspace: asset.exifInfo.colorspace,
         },
-        fullsizeFile.path,
+        fullsizeOutput.path,
       );
     }
 
@@ -380,9 +396,9 @@ export class MediaService extends BaseService {
 
     if (asset.exifInfo.projectionType === 'EQUIRECTANGULAR') {
       const promises = [
-        this.mediaRepository.copyTagGroup('XMP-GPano', asset.originalPath, previewFile.path),
-        fullsizeFile
-          ? this.mediaRepository.copyTagGroup('XMP-GPano', asset.originalPath, fullsizeFile.path)
+        this.mediaRepository.copyTagGroup('XMP-GPano', asset.originalPath, previewOutput.path),
+        fullsizeOutput
+          ? this.mediaRepository.copyTagGroup('XMP-GPano', asset.originalPath, fullsizeOutput.path)
           : Promise.resolve(),
       ];
       await Promise.all(promises);
@@ -391,8 +407,17 @@ export class MediaService extends BaseService {
     const decodedDimensions = { width: info.width, height: info.height };
     const fullsizeDimensions = useEdits ? getOutputDimensions(asset.edits, decodedDimensions) : decodedDimensions;
 
+    // store the files only once they are complete
+    const files: GeneratedFile[] = [
+      { ...previewFile, ...(await previewOutput.commit()) },
+      { ...thumbnailFile, ...(await thumbnailOutput.commit()) },
+    ];
+    if (fullsizeFile && fullsizeOutput) {
+      files.push({ ...fullsizeFile, ...(await fullsizeOutput.commit()) });
+    }
+
     return {
-      files: fullsizeFile ? [previewFile, thumbnailFile, fullsizeFile] : [previewFile, thumbnailFile],
+      files,
       thumbhash: outputs[0] as Buffer,
       fullsizeDimensions,
     };
@@ -538,11 +563,13 @@ export class MediaService extends BaseService {
     const previewOptions = previewConfig.getCommand(TranscodeTarget.Video, videoStream, undefined, format ?? undefined);
     const thumbnailOptions = thumbConfig.getCommand(TranscodeTarget.Video, videoStream, undefined, format ?? undefined);
 
-    await this.mediaRepository.transcode(asset.originalPath, previewFile.path, previewOptions);
-    await this.mediaRepository.transcode(asset.originalPath, thumbnailFile.path, thumbnailOptions);
+    await using previewOutput = await this.createDerivedOutput(previewFile.path);
+    await using thumbnailOutput = await this.createDerivedOutput(thumbnailFile.path);
+    await this.mediaRepository.transcode(asset.originalPath, previewOutput.path, previewOptions);
+    await this.mediaRepository.transcode(asset.originalPath, thumbnailOutput.path, thumbnailOptions);
 
     const processInvalidImages = process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true';
-    const preview = await this.mediaRepository.decodeImage(previewFile.path, {
+    const preview = await this.mediaRepository.decodeImage(previewOutput.path, {
       colorspace: image.colorspace,
       processInvalidImages,
     });
@@ -552,7 +579,10 @@ export class MediaService extends BaseService {
     });
 
     return {
-      files: [previewFile, thumbnailFile],
+      files: [
+        { ...previewFile, ...(await previewOutput.commit()) },
+        { ...thumbnailFile, ...(await thumbnailOutput.commit()) },
+      ],
       thumbhash,
       fullsizeDimensions: { width: videoStream.width, height: videoStream.height },
     };
@@ -802,10 +832,10 @@ export class MediaService extends BaseService {
 
   private async syncFiles(
     oldFiles: (AssetFile & { isProgressive: boolean; isTransparent: boolean })[],
-    newFiles: UpsertFileOptions[],
+    newFiles: GeneratedFile[],
   ) {
-    const toUpsert: UpsertFileOptions[] = [];
-    const pathsToDelete: string[] = [];
+    const toUpsert: GeneratedFile[] = [];
+    const replaced: AssetFile[] = [];
     const toDelete = new Set(oldFiles);
 
     for (const newFile of newFiles) {
@@ -814,42 +844,55 @@ export class MediaService extends BaseService {
         toDelete.delete(existingFile);
       }
 
+      const isSameFile = existingFile !== undefined && this.isSameFile(existingFile, newFile);
+
       // upsert new file path
       // eslint-disable-next-line unicorn/prefer-continue
       if (
-        existingFile?.path !== newFile.path ||
+        !isSameFile ||
+        existingFile.path !== newFile.path ||
         existingFile.isProgressive !== newFile.isProgressive ||
         existingFile.isTransparent !== newFile.isTransparent
       ) {
         toUpsert.push(newFile);
 
         // delete old file from disk
-        if (existingFile && existingFile.path !== newFile.path) {
+        if (existingFile && !isSameFile) {
           this.logger.debug(
             `Deleting old ${newFile.type} image for asset ${newFile.assetId} in favor of a replacement`,
           );
-          pathsToDelete.push(existingFile.path);
+          replaced.push(existingFile);
         }
       }
     }
 
     if (toUpsert.length > 0) {
-      await this.assetRepository.upsertFiles(
-        toUpsert.map((file) => ({ ...file, ...StorageCore.getStorageLocation(file.path) })),
-      );
+      await this.assetRepository.upsertFiles(toUpsert);
     }
 
     if (toDelete.size > 0) {
       const toDeleteArray = [...toDelete];
-      for (const file of toDeleteArray) {
-        pathsToDelete.push(file.path);
-      }
+      replaced.push(...toDeleteArray);
       await this.assetRepository.deleteFiles(toDeleteArray);
     }
 
-    if (pathsToDelete.length > 0) {
-      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: pathsToDelete } });
+    if (replaced.length > 0) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: toFileDeletion(replaced) });
     }
+  }
+
+  /** Whether a regenerated file was written over the existing one, which must then be kept */
+  private isSameFile(existing: AssetFile, generated: StorageLocation & { path: string }) {
+    if (existing.backendId === null || existing.key === null) {
+      // only a file written to its path can replace a file that is only known by its path
+      return isBuiltinStorageBackend(generated.backendId) && existing.path === generated.path;
+    }
+
+    return existing.backendId === generated.backendId && existing.key === generated.key;
+  }
+
+  private createDerivedOutput(path: string) {
+    return this.storageBackendRepository.createOutput(StorageBackendRole.Derived, path);
   }
 
   private async generateEditedThumbnails(asset: ThumbnailAsset, config: SystemConfig) {

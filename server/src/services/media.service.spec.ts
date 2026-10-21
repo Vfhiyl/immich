@@ -1,6 +1,11 @@
 import { ShallowDehydrateObject } from 'kysely';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { OutputInfo } from 'sharp';
 import type { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { Exif } from 'src/database.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
@@ -17,6 +22,8 @@ import {
   JobName,
   JobStatus,
   RawExtractedFormat,
+  StorageBackendDriver,
+  StorageBackendRole,
   TranscodeHardwareAcceleration,
   TranscodePolicy,
   VideoCodec,
@@ -33,6 +40,9 @@ import { factory, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
 
 const fullsizeBuffer = Buffer.from('embedded image data');
+const sha1 = (value: string) => createHash('sha1').update(value).digest();
+// what an output written to its path stores, for a path outside the media location
+const writtenTo = (path: string) => ({ backendId: 'host', key: path.slice(1), size: null, checksum: null });
 const rawBuffer = Buffer.from('raw image data');
 const extractedBuffer = Buffer.from('embedded image file');
 
@@ -351,6 +361,142 @@ describe(MediaService.name, () => {
     });
   });
 
+  describe('handleGenerateThumbnails with a storage backend for derived files', () => {
+    let root: string;
+    const uuid = expect.stringMatching(/^[0-9a-f-]{36}$/);
+    const listDerived = () => fs.readdir(join(root, 'derived')).catch(() => []);
+    const listStaging = () => fs.readdir(join(root, 'media', '.immich-staging')).catch(() => []);
+
+    beforeEach(async () => {
+      root = await fs.mkdtemp(join(tmpdir(), 'immich-derived-'));
+      StorageCore.setMediaLocation(join(root, 'media'));
+      mocks.storageBackend.configure([
+        {
+          id: 'derived',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Derived,
+          root: join(root, 'derived'),
+        },
+      ]);
+      mocks.person.getFaces.mockResolvedValue([]);
+      mocks.ocr.getByAssetId.mockResolvedValue([]);
+      mocks.media.decodeImage.mockResolvedValue({ data: rawBuffer, info: { width: 100, height: 100 } as OutputInfo });
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 100, height: 100, isTransparent: false });
+      mocks.media.generateThumbhash.mockResolvedValue(Buffer.from('thumbhash'));
+      mocks.media.generateThumbnail.mockImplementation((_, { format }, path) => fs.writeFile(path, `${format} image`));
+    });
+
+    afterEach(async () => {
+      StorageCore.setMediaLocation('/data');
+      await fs.rm(root, { recursive: true, force: true });
+    });
+
+    it('should store new thumbnails on the backend under new keys and keep their logical paths', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.asset.upsertFiles).toHaveBeenCalledWith([
+        expect.objectContaining({
+          type: AssetFileType.Preview,
+          path: StorageCore.getImagePath(asset, {
+            fileType: AssetFileType.Preview,
+            format: ImageFormat.Jpeg,
+            isEdited: false,
+          }),
+          backendId: 'derived',
+          key: uuid,
+          size: 10,
+          checksum: sha1('jpeg image'),
+        }),
+        expect.objectContaining({
+          type: AssetFileType.Thumbnail,
+          backendId: 'derived',
+          key: uuid,
+          size: 10,
+          checksum: sha1('webp image'),
+        }),
+      ]);
+      await expect(listDerived()).resolves.toHaveLength(2);
+      await expect(listStaging()).resolves.toEqual([]);
+    });
+
+    it('should delete the files that regenerated thumbnails replace', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        files: [
+          {
+            id: 'f1',
+            type: AssetFileType.Preview,
+            path: '/p',
+            backendId: 'derived',
+            key: 'old-preview',
+            isEdited: false,
+            isProgressive: false,
+            isTransparent: false,
+          },
+          {
+            id: 'f2',
+            type: AssetFileType.Thumbnail,
+            path: '/data/t.webp',
+            backendId: null,
+            key: null,
+            isEdited: false,
+            isProgressive: false,
+            isTransparent: false,
+          },
+        ],
+      });
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: ['/data/t.webp'], locations: [{ backendId: 'derived', key: 'old-preview' }] },
+      });
+    });
+
+    it('should leave nothing behind when generation fails', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.generateThumbnail.mockImplementation(async (_, { format }, path) => {
+        await fs.writeFile(path, 'partial');
+        if (format === ImageFormat.Jpeg) {
+          throw new Error('out of memory');
+        }
+      });
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('out of memory');
+
+      expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+      await expect(listDerived()).resolves.toEqual([]);
+      await expect(listStaging()).resolves.toEqual([]);
+    });
+
+    it('should store video thumbnails on the backend', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.mp4' }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStream2160p,
+      });
+      mocks.media.transcode.mockImplementation((_, output) => fs.writeFile(output as string, 'frame'));
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(
+        expect.stringContaining(join(root, 'media', '.immich-staging')),
+        expect.any(Object),
+      );
+      expect(mocks.asset.upsertFiles).toHaveBeenCalledWith([
+        expect.objectContaining({ type: AssetFileType.Preview, backendId: 'derived', key: uuid, size: 5 }),
+        expect.objectContaining({ type: AssetFileType.Thumbnail, backendId: 'derived', key: uuid, size: 5 }),
+      ]);
+      await expect(listStaging()).resolves.toEqual([]);
+    });
+  });
+
   describe('handleGenerateThumbnails', () => {
     let rawInfo: RawImageInfo;
 
@@ -419,6 +565,7 @@ describe(MediaService.name, () => {
         name: JobName.FileDelete,
         data: {
           files: expect.arrayContaining([asset.files[0].path]),
+          locations: [],
         },
       });
     });
@@ -532,6 +679,8 @@ describe(MediaService.name, () => {
           path: expect.any(String),
           backendId: 'media',
           key: expect.any(String),
+          size: null,
+          checksum: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -542,6 +691,8 @@ describe(MediaService.name, () => {
           path: expect.any(String),
           backendId: 'media',
           key: expect.any(String),
+          size: null,
+          checksum: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -586,6 +737,8 @@ describe(MediaService.name, () => {
           path: expect.any(String),
           backendId: 'media',
           key: expect.any(String),
+          size: null,
+          checksum: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -596,6 +749,8 @@ describe(MediaService.name, () => {
           path: expect.any(String),
           backendId: 'media',
           key: expect.any(String),
+          size: null,
+          checksum: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -639,6 +794,8 @@ describe(MediaService.name, () => {
           path: expect.any(String),
           backendId: 'media',
           key: expect.any(String),
+          size: null,
+          checksum: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -649,6 +806,8 @@ describe(MediaService.name, () => {
           path: expect.any(String),
           backendId: 'media',
           key: expect.any(String),
+          size: null,
+          checksum: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -963,6 +1122,7 @@ describe(MediaService.name, () => {
         name: JobName.FileDelete,
         data: {
           files: expect.arrayContaining([asset.files[0].path]),
+          locations: [],
         },
       });
     });
@@ -1500,6 +1660,7 @@ describe(MediaService.name, () => {
         name: JobName.FileDelete,
         data: {
           files: expect.arrayContaining(['edited1.jpg', 'edited2.jpg', 'edited3.jpg']),
+          locations: [],
         },
       });
 
@@ -4117,6 +4278,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Preview,
           path: '/new/preview.jpg',
+          ...writtenTo('/new/preview.jpg'),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4125,6 +4287,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Thumbnail,
           path: '/new/thumbnail.jpg',
+          ...writtenTo('/new/thumbnail.jpg'),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4137,6 +4300,8 @@ describe(MediaService.name, () => {
           path: '/new/preview.jpg',
           backendId: 'host',
           key: 'new/preview.jpg',
+          size: null,
+          checksum: null,
           type: AssetFileType.Preview,
           isEdited: false,
           isProgressive: false,
@@ -4147,6 +4312,8 @@ describe(MediaService.name, () => {
           path: '/new/thumbnail.jpg',
           backendId: 'host',
           key: 'new/thumbnail.jpg',
+          size: null,
+          checksum: null,
           type: AssetFileType.Thumbnail,
           isEdited: false,
           isProgressive: false,
@@ -4191,6 +4358,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Preview,
           path: '/new/preview.jpg',
+          ...writtenTo('/new/preview.jpg'),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4199,6 +4367,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Thumbnail,
           path: '/new/thumbnail.jpg',
+          ...writtenTo('/new/thumbnail.jpg'),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4211,6 +4380,8 @@ describe(MediaService.name, () => {
           path: '/new/preview.jpg',
           backendId: 'host',
           key: 'new/preview.jpg',
+          size: null,
+          checksum: null,
           type: AssetFileType.Preview,
           isEdited: false,
           isProgressive: false,
@@ -4221,6 +4392,8 @@ describe(MediaService.name, () => {
           path: '/new/thumbnail.jpg',
           backendId: 'host',
           key: 'new/thumbnail.jpg',
+          size: null,
+          checksum: null,
           type: AssetFileType.Thumbnail,
           isEdited: false,
           isProgressive: false,
@@ -4230,7 +4403,7 @@ describe(MediaService.name, () => {
       expect(mocks.asset.deleteFiles).not.toHaveBeenCalled();
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: ['/old/preview.jpg', '/old/thumbnail.jpg'] },
+        data: { files: ['/old/preview.jpg', '/old/thumbnail.jpg'], locations: [] },
       });
     });
 
@@ -4292,7 +4465,7 @@ describe(MediaService.name, () => {
       ]);
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: ['/old/preview.jpg', '/old/thumbnail.jpg'] },
+        data: { files: ['/old/preview.jpg', '/old/thumbnail.jpg'], locations: [] },
       });
     });
 
@@ -4330,6 +4503,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Preview,
           path: '/same/preview.jpg',
+          ...writtenTo('/same/preview.jpg'),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4338,6 +4512,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Thumbnail,
           path: '/same/thumbnail.jpg',
+          ...writtenTo('/same/thumbnail.jpg'),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4383,6 +4558,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Preview,
           path: '/new/preview.jpg',
+          ...writtenTo('/new/preview.jpg'),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4391,6 +4567,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.FullSize,
           path: '/new/fullsize.jpg',
+          ...writtenTo('/new/fullsize.jpg'),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4403,6 +4580,8 @@ describe(MediaService.name, () => {
           path: '/new/preview.jpg',
           backendId: 'host',
           key: 'new/preview.jpg',
+          size: null,
+          checksum: null,
           type: AssetFileType.Preview,
           isEdited: false,
           isProgressive: false,
@@ -4413,6 +4592,8 @@ describe(MediaService.name, () => {
           path: '/new/fullsize.jpg',
           backendId: 'host',
           key: 'new/fullsize.jpg',
+          size: null,
+          checksum: null,
           type: AssetFileType.FullSize,
           isEdited: false,
           isProgressive: false,
@@ -4434,7 +4615,7 @@ describe(MediaService.name, () => {
       ]);
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: ['/old/preview.jpg', '/old/thumbnail.jpg'] },
+        data: { files: ['/old/preview.jpg', '/old/thumbnail.jpg'], locations: [] },
       });
     });
 
@@ -4487,7 +4668,7 @@ describe(MediaService.name, () => {
       ]);
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: ['/old/preview.jpg'] },
+        data: { files: ['/old/preview.jpg'], locations: [] },
       });
     });
 
@@ -4525,6 +4706,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Preview,
           path: '/old/preview.jpg',
+          ...writtenTo('/old/preview.jpg'),
           isEdited: false,
           isProgressive: true,
           isTransparent: false,
@@ -4533,6 +4715,7 @@ describe(MediaService.name, () => {
           assetId: asset.id,
           type: AssetFileType.Thumbnail,
           path: '/old/thumbnail.jpg',
+          ...writtenTo('/old/thumbnail.jpg'),
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4545,6 +4728,8 @@ describe(MediaService.name, () => {
           path: '/old/preview.jpg',
           backendId: 'host',
           key: 'old/preview.jpg',
+          size: null,
+          checksum: null,
           type: AssetFileType.Preview,
           isEdited: false,
           isProgressive: true,
