@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { connect } from 'node:net';
 import { dirname, resolve } from 'node:path';
@@ -24,6 +24,16 @@ export default async function setup() {
   } catch {
     throw new Error('The server is not built; run `pnpm --filter immich build` first');
   }
+
+  // the S3 service is downloaded and verified by the server's contract test tools, run with Node's type stripping
+  const tools = resolve(serverRoot, 'test/contract/tools.ts');
+  process.env.E2E_VERSITYGW = execFileSync(process.execPath, [
+    '--input-type=module',
+    '-e',
+    `const m = await import(${JSON.stringify(tools)}); console.log(await m.getTool(m.tools.versitygw));`,
+  ])
+    .toString()
+    .trim();
 
   if (await isRedisUp()) {
     return;

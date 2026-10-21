@@ -24,6 +24,58 @@ export const baseUrl = `http://localhost:${port}/api`;
 export interface LocalBackend {
   id: string;
   role: 'originals' | 'derived' | 'backup';
+  /** Store the backend's files on an S3 service, below this prefix, instead of a local folder */
+  s3?: { service: S3Service; prefix: string };
+}
+
+/** A versitygw S3 service storing objects as files, so that tests can look at what was stored */
+export class S3Service {
+  static async start(environment: TestEnvironment) {
+    // provided by the global setup: the S3 service the server's contract tests use, at the same pinned version
+    const executable = process.env.E2E_VERSITYGW;
+    if (!executable) {
+      throw new Error('E2E_VERSITYGW is not set; it is set by src/specs/storage-backends/setup.ts');
+    }
+    const root = join(environment.root, 's3');
+    const bucket = 'immich';
+    await mkdir(join(root, bucket), { recursive: true });
+    const accessKeyId = randomUUID();
+    const secretAccessKeyFile = join(environment.root, 's3-secret');
+    const secret = randomUUID();
+    await writeFile(secretAccessKeyFile, secret);
+
+    const port = 20_000 + Math.floor(Math.random() * 20_000);
+    const child = spawn(
+      executable,
+      ['--access', accessKeyId, '--secret', secret, '--port', `127.0.0.1:${port}`, 'posix', root],
+      { stdio: 'ignore' },
+    );
+    const service = new this(child, `http://127.0.0.1:${port}`, root, bucket, accessKeyId, secretAccessKeyFile);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try {
+        await fetch(service.endpoint);
+        return service;
+      } catch {
+        await sleep(100);
+      }
+    }
+    child.kill();
+    throw new Error('The S3 service did not start');
+  }
+
+  private constructor(
+    private process: ChildProcess,
+    readonly endpoint: string,
+    /** Objects are files at root/bucket/key */
+    readonly root: string,
+    readonly bucket: string,
+    readonly accessKeyId: string,
+    readonly secretAccessKeyFile: string,
+  ) {}
+
+  stop() {
+    this.process.kill();
+  }
 }
 
 export const sha1 = (value: Buffer) => createHash('sha1').update(value).digest('hex');
@@ -45,6 +97,7 @@ export class TestEnvironment {
     return environment;
   }
 
+  private backendFolders = new Map<string, string>();
   readonly database = `immich_e2e_storage_${randomUUID().slice(0, 8)}`;
 
   private constructor(readonly root: string) {}
@@ -100,14 +153,33 @@ export class TestEnvironment {
     return join(this.root, 'storage.yaml');
   }
 
+  /** The folder that holds a backend's files, also for backends on the S3 service */
   backendRoot(id: string) {
-    return join(this.root, 'backends', id);
+    return this.backendFolders.get(id) ?? join(this.root, 'backends', id);
   }
 
   async writeBackends(backends: LocalBackend[]) {
     const lines = ['backends:'];
-    for (const { id, role } of backends) {
-      lines.push(`  - id: ${id}`, '    driver: local', `    role: ${role}`, `    root: ${this.backendRoot(id)}`);
+    for (const { id, role, s3 } of backends) {
+      lines.push(`  - id: ${id}`, `    role: ${role}`);
+      if (s3) {
+        const { service, prefix } = s3;
+        this.backendFolders.set(id, join(service.root, service.bucket, prefix));
+        lines.push(
+          '    driver: s3',
+          `    endpoint: ${service.endpoint}`,
+          '    region: us-east-1',
+          `    bucket: ${service.bucket}`,
+          `    prefix: ${prefix}`,
+          '    addressing: path',
+          '    credentials:',
+          '      type: static',
+          `      accessKeyId: ${service.accessKeyId}`,
+          `      secretAccessKeyFile: ${service.secretAccessKeyFile}`,
+        );
+      } else {
+        lines.push('    driver: local', `    root: ${this.backendRoot(id)}`);
+      }
     }
     await writeFile(this.backendsFile, lines.join('\n') + (backends.length === 0 ? ' []' : '') + '\n');
   }
@@ -291,6 +363,15 @@ export class Api {
 
   async download(path: string, headers: Record<string, string> = {}) {
     const response = await this.request(path, { headers });
+    return { status: response.status, body: Buffer.from(await response.arrayBuffer()) };
+  }
+
+  async downloadArchive(assetIds: string[]) {
+    const response = await this.request('/download/archive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assetIds }),
+    });
     return { status: response.status, body: Buffer.from(await response.arrayBuffer()) };
   }
 
