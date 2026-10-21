@@ -1,4 +1,4 @@
-import { SystemMetadataKey } from 'src/enum.js';
+import { StorageBackendDriver, StorageBackendRole, SystemMetadataKey } from 'src/enum.js';
 import { ServerService } from 'src/services/server.service.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -128,6 +128,24 @@ describe(ServerService.name, () => {
   describe('ping', () => {
     it('should respond with pong', () => {
       expect(sut.ping()).toEqual({ res: 'pong' });
+    });
+  });
+
+  describe('getFeatures with originals on a storage backend', () => {
+    it('should not offer real-time transcoding', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { realtime: { enabled: true } } });
+      await expect(sut.getFeatures()).resolves.toEqual(expect.objectContaining({ realtimeTranscoding: true }));
+
+      mocks.storageBackend.configure([
+        {
+          id: 'originals',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Originals,
+          root: '/mnt/originals',
+        },
+      ]);
+
+      await expect(sut.getFeatures()).resolves.toEqual(expect.objectContaining({ realtimeTranscoding: false }));
     });
   });
 

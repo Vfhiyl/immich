@@ -14,7 +14,7 @@ import {
   ServerStorageResponseDto,
   UsageByUserDto,
 } from 'src/dtos/server.dto.js';
-import { StorageFolder, SystemMetadataKey } from 'src/enum.js';
+import { StorageBackendRole, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { UserStatsQueryResponse } from 'src/repositories/user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { asHumanReadable } from 'src/utils/bytes.js';
@@ -106,7 +106,9 @@ export class ServerService extends BaseService {
       passwordLogin: passwordLogin.enabled,
       configFile: !!configFile,
       email: notifications.smtp.enabled,
-      realtimeTranscoding: ffmpeg.realtime.enabled,
+      // real-time transcoding reads originals from the local filesystem
+      realtimeTranscoding:
+        ffmpeg.realtime.enabled && !this.storageBackendRepository.getBackendFor(StorageBackendRole.Originals),
     };
   }
 

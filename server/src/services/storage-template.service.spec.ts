@@ -1,6 +1,6 @@
 import { Stats } from 'node:fs';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
-import { AssetPathType, AssetType, JobStatus } from 'src/enum.js';
+import { AssetPathType, AssetType, JobStatus, StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -97,7 +97,41 @@ describe(StorageTemplateService.name, () => {
     });
   });
 
+  describe('handleMigration with originals on a storage backend', () => {
+    it('should not move any originals', async () => {
+      mocks.storageBackend.configure([
+        {
+          id: 'originals',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Originals,
+          root: '/mnt/originals',
+        },
+      ]);
+
+      await expect(sut.handleMigration()).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.assetJob.streamForStorageTemplateJob).not.toHaveBeenCalled();
+      expect(mocks.move.cleanMoveHistory).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleMigrationSingle', () => {
+    it('should not move originals on a storage backend', async () => {
+      mocks.storageBackend.configure([
+        {
+          id: 'originals',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Originals,
+          root: '/mnt/originals',
+        },
+      ]);
+
+      await expect(sut.handleMigrationSingle({ id: testAsset.id })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.assetJob.getForStorageTemplateJob).not.toHaveBeenCalled();
+      expect(mocks.asset.updateOriginalPath).not.toHaveBeenCalled();
+    });
+
     it('should skip when storage template is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue({ storageTemplate: { enabled: false } });
 

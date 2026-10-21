@@ -1,7 +1,16 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { PeopleUsersUpsertType, PersonUserRole, mapFaces, mapPerson } from 'src/dtos/person.dto.js';
-import { AssetFileType, CacheControl, JobName, JobStatus, SourceType, SystemMetadataKey } from 'src/enum.js';
+import {
+  AssetFileType,
+  CacheControl,
+  JobName,
+  JobStatus,
+  SourceType,
+  StorageBackendDriver,
+  StorageBackendRole,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { PersonService } from 'src/services/person.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
@@ -573,6 +582,16 @@ describe(PersonService.name, () => {
   });
 
   describe('handlePersonMigration', () => {
+    it('should not move person thumbnails on a storage backend', async () => {
+      mocks.storageBackend.configure([
+        { id: 'derived', driver: StorageBackendDriver.Local, role: StorageBackendRole.Derived, root: '/mnt/derived' },
+      ]);
+
+      await expect(sut.handlePersonMigration(PersonFactory.create())).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.person.getByGroupId).not.toHaveBeenCalled();
+    });
+
     it('should not move person files', async () => {
       await expect(sut.handlePersonMigration(PersonFactory.create())).resolves.toBe(JobStatus.Failed);
     });

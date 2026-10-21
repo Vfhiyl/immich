@@ -38,6 +38,7 @@ import {
   PersonPathType,
   QueueName,
   SourceType,
+  StorageBackendRole,
   SystemMetadataKey,
   VectorIndex,
 } from 'src/enum.js';
@@ -636,6 +637,11 @@ export class PersonService extends BaseService {
 
   @OnJob({ name: JobName.PersonFileMigration, queue: QueueName.Migration })
   async handlePersonMigration({ ownerId, personGroupId }: JobOf<JobName.PersonFileMigration>): Promise<JobStatus> {
+    // files on a storage backend keep their key
+    if (this.storageBackendRepository.getBackendFor(StorageBackendRole.Derived)) {
+      return JobStatus.Skipped;
+    }
+
     const person = await this.personRepository.getByGroupId({ ownerId, personGroupId });
     if (!person) {
       return JobStatus.Failed;

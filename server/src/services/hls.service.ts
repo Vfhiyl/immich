@@ -8,7 +8,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ConfigFFmpegDto } from 'src/dtos/config.dto.js';
-import { CacheControl, ImmichWorker, Permission } from 'src/enum.js';
+import { CacheControl, ImmichWorker, Permission, StorageBackendRole } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { PendingEvents } from 'src/utils/event.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
@@ -51,6 +51,10 @@ export class HlsService extends BaseService {
     const { ffmpeg } = await this.getConfig({ withCache: true });
     if (!ffmpeg.realtime.enabled) {
       throw new BadRequestException('Real-time transcoding is not enabled');
+    }
+
+    if (this.storageBackendRepository.getBackendFor(StorageBackendRole.Originals)) {
+      throw new BadRequestException('Real-time transcoding is not available for originals on a storage backend');
     }
 
     const asset = await this.videoStreamRepository.getForMainPlaylist(assetId);

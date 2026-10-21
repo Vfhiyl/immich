@@ -497,6 +497,11 @@ export class MetadataService extends BaseService {
   @OnJob({ name: JobName.SidecarWrite, queue: QueueName.Sidecar })
   async handleSidecarWrite(job: JobOf<JobName.SidecarWrite>): Promise<JobStatus> {
     const { id } = job;
+    // with originals on a storage backend, edited metadata is only kept in the database
+    if (this.storageBackendRepository.getBackendFor(StorageBackendRole.Originals)) {
+      return JobStatus.Skipped;
+    }
+
     const asset = await this.assetJobRepository.getForSidecarWriteJob(id);
     if (!asset) {
       return JobStatus.Failed;

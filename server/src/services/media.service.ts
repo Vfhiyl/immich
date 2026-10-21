@@ -148,6 +148,11 @@ export class MediaService extends BaseService {
 
   @OnJob({ name: JobName.AssetFileMigration, queue: QueueName.Migration })
   async handleAssetMigration({ id }: JobOf<JobName.AssetFileMigration>): Promise<JobStatus> {
+    // files on a storage backend keep their key
+    if (this.storageBackendRepository.getBackendFor(StorageBackendRole.Derived)) {
+      return JobStatus.Skipped;
+    }
+
     const { image } = await this.getConfig({ withCache: true });
     const asset = await this.assetJobRepository.getForMigrationJob(id);
     if (!asset) {

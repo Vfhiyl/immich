@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { HlsVideoResolution, VideoCodec } from 'src/enum.js';
+import { HlsVideoResolution, StorageBackendDriver, StorageBackendRole, VideoCodec } from 'src/enum.js';
 import { HlsService } from 'src/services/hls.service.js';
 import { eiffelTower, train, waterfall } from 'test/fixtures/media.stub.js';
 import { factory } from 'test/small.factory.js';
@@ -177,6 +177,25 @@ describe(HlsService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(HlsService));
+  });
+
+  describe('getMainPlaylist with originals on a storage backend', () => {
+    it('should not stream', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { realtime: { enabled: true } } });
+      mocks.storageBackend.configure([
+        {
+          id: 'originals',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Originals,
+          root: '/mnt/originals',
+        },
+      ]);
+
+      await expect(sut.getMainPlaylist(factory.auth(), 'asset-1')).rejects.toThrow(
+        'Real-time transcoding is not available for originals on a storage backend',
+      );
+    });
   });
 
   describe('getMainPlaylist', () => {

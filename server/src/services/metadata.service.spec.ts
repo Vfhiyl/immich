@@ -2197,6 +2197,24 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleSidecarWrite', () => {
+    it('should not write sidecars for originals on a storage backend', async () => {
+      mocks.storageBackend.configure([
+        {
+          id: 'originals',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Originals,
+          root: '/mnt/originals',
+        },
+      ]);
+      const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).exif().build();
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.assetJob.getForSidecarWriteJob).not.toHaveBeenCalled();
+      expect(mocks.metadata.writeTags).not.toHaveBeenCalled();
+    });
+
     it('should skip assets that no longer exist', async () => {
       mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([]);
       mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(void 0);

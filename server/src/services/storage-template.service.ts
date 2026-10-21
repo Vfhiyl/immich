@@ -16,6 +16,7 @@ import {
   JobName,
   JobStatus,
   QueueName,
+  StorageBackendRole,
   StorageFolder,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -140,11 +141,16 @@ export class StorageTemplateService extends BaseService {
     await this.jobRepository.queue({ name: JobName.StorageTemplateMigrationSingle, data: { source, id: assetId } });
   }
 
+  /** Files on a storage backend keep their key; the storage template then only names downloads */
+  private isOriginalsOnStorageBackend() {
+    return !!this.storageBackendRepository.getBackendFor(StorageBackendRole.Originals);
+  }
+
   @OnJob({ name: JobName.StorageTemplateMigrationSingle, queue: QueueName.StorageTemplateMigration })
   async handleMigrationSingle({ id }: JobOf<JobName.StorageTemplateMigrationSingle>): Promise<JobStatus> {
     const config = await this.getConfig({ withCache: true });
     const isStorageTemplateEnabled = config.storageTemplate.enabled;
-    if (!isStorageTemplateEnabled) {
+    if (!isStorageTemplateEnabled || this.isOriginalsOnStorageBackend()) {
       return JobStatus.Skipped;
     }
 
@@ -179,6 +185,11 @@ export class StorageTemplateService extends BaseService {
     const { enabled } = storageTemplate;
     if (!enabled) {
       this.logger.log('Storage template migration disabled, skipping');
+      return JobStatus.Skipped;
+    }
+
+    if (this.isOriginalsOnStorageBackend()) {
+      this.logger.log('Originals are kept on a storage backend, which the storage template does not apply to');
       return JobStatus.Skipped;
     }
 

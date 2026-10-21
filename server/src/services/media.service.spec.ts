@@ -318,6 +318,16 @@ describe(MediaService.name, () => {
   });
 
   describe('handleAssetMigration', () => {
+    it('should not move files on a storage backend', async () => {
+      mocks.storageBackend.configure([
+        { id: 'derived', driver: StorageBackendDriver.Local, role: StorageBackendRole.Derived, root: '/mnt/derived' },
+      ]);
+
+      await expect(sut.handleAssetMigration({ id: 'asset-id' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.assetJob.getForMigrationJob).not.toHaveBeenCalled();
+    });
+
     it('should fail if asset does not exist', async () => {
       mocks.assetJob.getForMigrationJob.mockResolvedValue(void 0);
       await expect(sut.handleAssetMigration({ id: 'non-existent' })).resolves.toBe(JobStatus.Failed);
