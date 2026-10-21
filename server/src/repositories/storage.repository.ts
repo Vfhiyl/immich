@@ -136,7 +136,14 @@ export class StorageRepository {
     };
 
     const addStream = (open: () => Promise<NodeJS.ReadableStream>, filename: string) => {
-      archive.append(lazyStream(open), { name: filename, mode: 0o644 });
+      const stream = lazyStream(open);
+      // archiver does not listen for errors of the streams it is given, so a failed read would crash the server; it
+      // fails the archive instead, which ends the download with an error rather than a silently incomplete file
+      stream.once('error', (error) => {
+        archive.abort();
+        archive.emit('error', error);
+      });
+      archive.append(stream, { name: filename, mode: 0o644 });
     };
 
     const finalize = () => archive.finalize();

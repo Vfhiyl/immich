@@ -1,4 +1,6 @@
 import mockfs from 'mock-fs';
+import { Readable } from 'node:stream';
+import { buffer } from 'node:stream/consumers';
 import { vitest } from 'vitest';
 import { CrawlOptionsDto } from 'src/dtos/library.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -279,6 +281,30 @@ describe(StorageRepository.name, () => {
         getHandler('unlink')('/photos/unlink.jpg');
         getHandler('error')(new Error('watch error'));
       }).not.toThrow();
+    });
+  });
+
+  describe('createZipStream', () => {
+    it('should add streams, opening each one when the archive reaches it', async () => {
+      const zip = sut.createZipStream();
+      const open = vitest.fn(() => Promise.resolve(Readable.from([Buffer.from('streamed content')])));
+      zip.addStream(open, 'a.jpg');
+      expect(open).not.toHaveBeenCalled();
+      void zip.finalize();
+
+      const archive = await buffer(zip.stream);
+      // files are stored uncompressed
+      expect(archive.includes(Buffer.from('streamed content'))).toBe(true);
+      expect(open).toHaveBeenCalledOnce();
+    });
+
+    it('should fail the archive when a stream fails, instead of crashing', async () => {
+      const zip = sut.createZipStream();
+      zip.addStream(() => Promise.resolve(Readable.from([Buffer.from('fine')])), 'a.jpg');
+      zip.addStream(() => Promise.reject(new Error('checksum mismatch')), 'b.jpg');
+      void zip.finalize();
+
+      await expect(buffer(zip.stream)).rejects.toThrow('checksum mismatch');
     });
   });
 });
