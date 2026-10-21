@@ -897,7 +897,8 @@ export class MetadataService extends BaseService {
     this.storageCore.ensureFolders(path);
     await using output = await this.storageBackendRepository.createOutput(StorageBackendRole.Originals, path);
     await this.storageRepository.createFile(output.path, video);
-    return output.commit();
+    // awaited here: the output is disposed when this function returns
+    return await output.commit();
   }
 
   private hasTaggedFaces(tags: ImmichTags): tags is ImmichTagsWithFaces {

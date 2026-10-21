@@ -307,7 +307,8 @@ export class AssetService extends BaseService {
     await using source = await this.storageBackendRepository.lease(file);
     await using output = await this.storageBackendRepository.createOutput(role, path);
     await this.storageRepository.copyFile(source.path, output.path);
-    return output.commit();
+    // awaited here: the output is disposed when this function returns
+    return await output.commit();
   }
 
   @OnJob({ name: JobName.AssetDeleteCheck, queue: QueueName.BackgroundTask })
