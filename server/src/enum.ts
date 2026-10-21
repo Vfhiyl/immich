@@ -919,6 +919,7 @@ export enum JobName {
   LocalCopyCleanup = 'LocalCopyCleanup',
   StorageDeletionRun = 'StorageDeletionRun',
   UploadSessionCleanup = 'UploadSessionCleanup',
+  DatabaseBackupStore = 'DatabaseBackupStore',
   AssetGenerateThumbnailsQueueAll = 'AssetGenerateThumbnailsQueueAll',
   AssetGenerateThumbnails = 'AssetGenerateThumbnails',
 

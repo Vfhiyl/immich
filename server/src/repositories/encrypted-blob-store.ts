@@ -1,10 +1,12 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
+import { buffer } from 'node:stream/consumers';
 import {
   BlobDeleteResult,
   BlobGetOptions,
   BlobIntegrityError,
   BlobListEntry,
+  BlobNotFoundError,
   BlobPutOptions,
   BlobPutResult,
   BlobStat,
@@ -154,6 +156,9 @@ export const encryptedDataLength = (size: number, chunkSize: number) => size + c
 
 /** Bytes at the very end of a blob that hold the length of its trailer */
 export const TRAILER_LENGTH_SIZE = 4;
+
+/** Largest trailer accepted: a header and a small manifest, so that a damaged length cannot ask for a huge read */
+export const MAX_TRAILER_LENGTH = 1024 * 1024;
 
 /** What the trailer of a blob describes it with; callers may add more when they write it */
 export interface BlobManifest {
@@ -427,6 +432,28 @@ export class EncryptedBlobStore implements BlobStore {
     const verifier = createVerifyingStream(key, { length: size, sha1 });
     plaintext.on('error', (error) => verifier.destroy(error));
     return plaintext.pipe(verifier);
+  }
+
+  /**
+   * The header and manifest of a blob, from its trailer: what a blob describes itself with, for when nothing else is
+   * known about it (e.g. listing backups without a database)
+   */
+  async describe(key: string): Promise<{ header: Buffer; manifest: BlobManifest; storedSize: number }> {
+    const stat = await this.inner.head(key);
+    if (!stat || stat.size < TRAILER_LENGTH_SIZE + ENCRYPTION_HEADER_LENGTH) {
+      throw new BlobNotFoundError(key);
+    }
+
+    const end = await buffer(
+      await this.inner.get(key, { range: { start: stat.size - TRAILER_LENGTH_SIZE, end: stat.size - 1 } }),
+    );
+    const length = end.readUInt32BE();
+    if (length < ENCRYPTION_HEADER_LENGTH || length > MAX_TRAILER_LENGTH || length > stat.size - TRAILER_LENGTH_SIZE) {
+      throw new BlobIntegrityError(key, 'it does not end with the trailer of an encrypted blob');
+    }
+    const start = stat.size - TRAILER_LENGTH_SIZE - length;
+    const trailer = await buffer(await this.inner.get(key, { range: { start, end: start + length - 1 } }));
+    return { ...openTrailer(trailer, this.keys), storedSize: stat.size };
   }
 
   /** The size of the stored, encrypted blob */

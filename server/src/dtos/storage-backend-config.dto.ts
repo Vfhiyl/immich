@@ -92,11 +92,22 @@ const DeletionConfigSchema = z
   })
   .strict();
 
+const DatabaseBackupsConfigSchema = z
+  .object({
+    /**
+     * How many database backups the backend for backups keeps: a backup is deleted once this many newer ones exist. A
+     * larger number applies to backups taken before too; a smaller one only to backups taken after the change.
+     */
+    keepLast: z.int().min(1).default(14),
+  })
+  .strict();
+
 export const StorageBackendsConfigSchema = z
   .object({
     backends: z.array(StorageBackendConfigSchema),
     encryption: EncryptionConfigSchema.optional(),
     deletion: DeletionConfigSchema.default({ delayDays: 360 }),
+    databaseBackups: DatabaseBackupsConfigSchema.default({ keepLast: 14 }),
   })
   .strict()
   .superRefine(({ backends, encryption }, context) => {
@@ -116,6 +127,15 @@ export const StorageBackendsConfigSchema = z
         });
       }
       roles.add(backend.role);
+
+      // backups are read when nothing but the backend and the master key are left, so they are always encrypted
+      if (backend.role === StorageBackendRole.Backup && !backend.encrypted) {
+        context.addIssue({
+          code: 'custom',
+          path: ['backends', index, 'encrypted'],
+          message: 'The storage backend for backups must be encrypted',
+        });
+      }
 
       if (backend.encrypted && !encryption) {
         context.addIssue({

@@ -108,6 +108,12 @@ export class JobService extends BaseService {
         break;
       }
 
+      case JobName.DatabaseBackup: {
+        // also on the storage backend for backups, if there is one
+        await this.jobRepository.queue({ name: JobName.DatabaseBackupStore });
+        break;
+      }
+
       case JobName.SidecarWrite: {
         await this.jobRepository.queue({
           name: JobName.AssetExtractMetadata,

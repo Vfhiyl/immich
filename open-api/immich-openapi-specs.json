@@ -1369,6 +1369,112 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/storage/database-backups": {
+      "get": {
+        "description": "Database backups on the storage backend for backups, the newest first",
+        "operationId": "getStoredDatabaseBackups",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredDatabaseBackupListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List stored database backups",
+        "tags": [
+          "Database Backups (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "backup.list",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage/database-backups/{key}/fetch": {
+      "post": {
+        "description": "Copy a database backup from the storage backend for backups into the backups folder, to restore it",
+        "operationId": "fetchStoredDatabaseBackup",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "description": "Key of the stored backup",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredDatabaseBackupFetchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Fetch a stored database backup",
+        "tags": [
+          "Database Backups (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "backup.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/storage/deletions": {
       "get": {
         "description": "Whether deleting is paused, and how many deleted files wait for their deletion delay",
@@ -23147,6 +23253,7 @@
           "LocalCopyCleanup",
           "StorageDeletionRun",
           "UploadSessionCleanup",
+          "DatabaseBackupStore",
           "AssetGenerateThumbnailsQueueAll",
           "AssetGenerateThumbnails",
           "AuditTableCleanup",
@@ -30461,6 +30568,60 @@
           "backups"
         ],
         "type": "string"
+      },
+      "StoredDatabaseBackupFetchResponseDto": {
+        "properties": {
+          "filename": {
+            "description": "File name of the backup in the backups folder, ready to restore",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "type": "object"
+      },
+      "StoredDatabaseBackupListResponseDto": {
+        "properties": {
+          "backups": {
+            "items": {
+              "properties": {
+                "createdAt": {
+                  "description": "When the backup was stored",
+                  "type": "string"
+                },
+                "filename": {
+                  "description": "File name of the backup",
+                  "type": "string"
+                },
+                "key": {
+                  "description": "Key of the backup on the storage backend for backups",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "size": {
+                  "description": "Size of the backup in bytes",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "key",
+                "filename",
+                "size",
+                "createdAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "backups"
+        ],
+        "type": "object"
       },
       "StringFilter": {
         "properties": {

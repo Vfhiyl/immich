@@ -156,10 +156,12 @@ export class StorageService extends BaseService {
     let backends: StorageBackendConfig[] = [];
     let encryption: StorageBackendsConfig['encryption'];
     let deletion: StorageBackendsConfig['deletion'] | undefined;
+    let databaseBackups: StorageBackendsConfig['databaseBackups'] | undefined;
     let keys: KeyProvider | undefined;
     if (backendsFile) {
       try {
-        ({ backends, encryption, deletion } = await this.storageBackendRepository.readConfig(backendsFile));
+        ({ backends, encryption, deletion, databaseBackups } =
+          await this.storageBackendRepository.readConfig(backendsFile));
         if (encryption) {
           keys = this.storageBackendRepository.readMasterKeys(encryption.masterKeyFile);
         }
@@ -215,7 +217,7 @@ export class StorageService extends BaseService {
       );
     });
 
-    this.storageBackendRepository.configure(backends, keys, deletion);
+    this.storageBackendRepository.configure(backends, keys, deletion, databaseBackups);
 
     for (const backend of backends) {
       await this.probeStorageBackend(backend.id);

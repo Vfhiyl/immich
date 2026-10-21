@@ -1,5 +1,6 @@
 import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import {
   Api,
   ImmichServer,
@@ -252,6 +253,7 @@ describe('storage backends on an S3 service', () => {
     await environment.writeBackends([
       { id: 'originals', role: 'originals', s3: { service: s3, prefix: 'originals/' } },
       { id: 'derived', role: 'derived', s3: { service: s3, prefix: 'derived/' } },
+      { id: 'backups', role: 'backup', s3: { service: s3, prefix: 'backups/' } },
     ]);
     server = await ImmichServer.start(environment);
     api = await Api.signUpAdmin();
@@ -465,6 +467,44 @@ describe('storage backends on an S3 service', () => {
     expect(body).toEqual(
       expect.objectContaining({ isPaused: false, delayDays: 360, pendingOriginals: expect.any(Number) }),
     );
+  });
+
+  it('should store database backups on the backend for backups, readable with the master key alone', async () => {
+    type Stored = { backups: Array<{ key: string; filename: string; size: number }> };
+    await expect(api.json('/jobs', { method: 'POST', body: { name: 'backup-database' } })).resolves.toMatchObject({
+      status: 204,
+    });
+
+    const [backup] = await eventually(
+      async () => {
+        const { body } = await api.json<Stored>('/admin/storage/database-backups');
+        expect(body.backups).toEqual([
+          {
+            key: uuid,
+            filename: expect.stringMatching(/^immich-db-backup-.*\.sql\.gz$/),
+            size: expect.any(Number),
+            createdAt: expect.any(String),
+          },
+        ]);
+        return body.backups;
+      },
+      { timeout: 60_000 },
+    );
+
+    // the object holds the backup encrypted, under a random key
+    const object = join(environment.backendRoot('backups'), backup.key);
+    const stored = await readFile(object);
+    expect(stored.subarray(0, 2).equals(Buffer.from([0x1f, 0x8b]))).toBe(false);
+    const target = join(environment.root, 'restored.sql.gz');
+    await runEncryptionTool(['decrypt', '--keys', environment.masterKeyFile, object, target]);
+    expect(gunzipSync(await readFile(target)).toString()).toContain('PostgreSQL database dump');
+
+    // fetched into the backups folder, where it can be restored like any backup
+    await expect(
+      api.json(`/admin/storage/database-backups/${backup.key}/fetch`, { method: 'POST' }),
+    ).resolves.toMatchObject({ status: 201, body: { filename: `uploaded-${backup.filename}` } });
+    const { body: local } = await api.json<{ backups: Array<{ filename: string }> }>('/admin/database-backups');
+    expect(local.backups.map(({ filename }) => filename)).toContain(`uploaded-${backup.filename}`);
   });
 
   it('should keep reading files after the master key was rotated, and encrypt new files with the new key', async () => {

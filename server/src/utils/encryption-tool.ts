@@ -19,6 +19,7 @@ import {
   ENCRYPTION_HEADER_LENGTH,
   EncryptedBlobStore,
   EncryptionSuite,
+  MAX_TRAILER_LENGTH,
   TRAILER_LENGTH_SIZE,
   decodeEncryptionHeader,
   encryptedDataLength,
@@ -46,9 +47,6 @@ Commands:
   decrypt --keys <file> <object> <output>
                                 Decrypt a stored object, e.g. one copied from the bucket, with nothing but the master
                                 key file; the content is checked against its size, SHA-1 and authentication tags`;
-
-/** Largest trailer accepted: a header and a small manifest, so that a damaged length cannot ask for a huge read */
-const MAX_TRAILER_LENGTH = 1024 * 1024;
 
 /** A single local file as a read-only store, so that it is decrypted exactly like blobs on a backend */
 class FileAsBlobStore implements BlobStore {

@@ -223,7 +223,11 @@ describe(StorageService.name, () => {
     });
     const configure = (backends: ReturnType<typeof localBackend>[]) => {
       mocks.config.getEnv.mockReturnValue(mockEnvData({ storage: { ignoreMountCheckErrors: false, backendsFile } }));
-      mocks.storageBackend.readConfig.mockResolvedValue({ backends, deletion: { delayDays: 360 } });
+      mocks.storageBackend.readConfig.mockResolvedValue({
+        backends,
+        deletion: { delayDays: 360 },
+        databaseBackups: { keepLast: 14 },
+      });
     };
 
     beforeEach(async () => {
@@ -240,7 +244,7 @@ describe(StorageService.name, () => {
 
       expect(mocks.storageBackend.readConfig).not.toHaveBeenCalled();
       expect(mocks.storageBackend.register).toHaveBeenCalledWith([]);
-      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([], undefined, undefined);
+      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([], undefined, undefined, undefined);
     });
 
     it('should register, configure and probe the configured backends', async () => {
@@ -251,7 +255,12 @@ describe(StorageService.name, () => {
 
       expect(mocks.storageBackend.readConfig).toHaveBeenCalledWith(backendsFile);
       expect(mocks.storageBackend.register).toHaveBeenCalledWith([{ id: 'originals', driver: 'local' }]);
-      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([originals], undefined, { delayDays: 360 });
+      expect(mocks.storageBackend.configure).toHaveBeenCalledWith(
+        [originals],
+        undefined,
+        { delayDays: 360 },
+        { keepLast: 14 },
+      );
       // the probe was written, read back and removed
       await expect(fs.readdir(join(root, 'originals', '.immich-probe'))).resolves.toEqual([]);
     });
@@ -264,6 +273,7 @@ describe(StorageService.name, () => {
         backends: [originals],
         encryption: { masterKeyFile: '/run/secrets/master.key' },
         deletion: { delayDays: 360 },
+        databaseBackups: { keepLast: 14 },
       });
       mocks.storageBackend.readMasterKeys.mockReturnValue(keys);
       const put = vi.spyOn(EncryptedBlobStore.prototype, 'put');
@@ -271,7 +281,12 @@ describe(StorageService.name, () => {
       await sut.onBootstrapStorageBackends();
 
       expect(mocks.storageBackend.readMasterKeys).toHaveBeenCalledWith('/run/secrets/master.key');
-      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([originals], keys, { delayDays: 360 });
+      expect(mocks.storageBackend.configure).toHaveBeenCalledWith(
+        [originals],
+        keys,
+        { delayDays: 360 },
+        { keepLast: 14 },
+      );
       expect(mocks.storageBackend.registerMasterKey).toHaveBeenCalledWith(keys.currentKeyId);
       expect(put).toHaveBeenCalledOnce();
       await expect(fs.readdir(join(root, 'originals', '.immich-probe'))).resolves.toEqual([]);
@@ -283,6 +298,7 @@ describe(StorageService.name, () => {
         backends: [localBackend('originals', StorageBackendRole.Originals)],
         encryption: { masterKeyFile: '/run/secrets/master.key' },
         deletion: { delayDays: 360 },
+        databaseBackups: { keepLast: 14 },
       });
       mocks.storageBackend.readMasterKeys.mockReturnValue(new MasterKeys([randomBytes(32)]));
 
@@ -299,6 +315,7 @@ describe(StorageService.name, () => {
         backends: [],
         encryption: { masterKeyFile: '/run/secrets/master.key' },
         deletion: { delayDays: 360 },
+        databaseBackups: { keepLast: 14 },
       });
       mocks.storageBackend.readMasterKeys.mockReturnValue(new MasterKeys([current]));
       mocks.storageBackend.getMasterKeyIds.mockResolvedValue([getMasterKeyId(current), getMasterKeyId(lost)]);
@@ -324,6 +341,7 @@ describe(StorageService.name, () => {
         backends: [],
         encryption: { masterKeyFile: '/run/secrets/master.key' },
         deletion: { delayDays: 360 },
+        databaseBackups: { keepLast: 14 },
       });
       mocks.storageBackend.readMasterKeys.mockImplementation(() => {
         throw new Error('ENOENT: no such file');

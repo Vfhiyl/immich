@@ -88,6 +88,7 @@ const READ_RETRY_DELAYS = [500, 1000, 2000, 4000, 8000];
 export const STAGING_FOLDER = '.immich-staging';
 
 export const DEFAULT_DELETION_DELAY_DAYS = 360;
+export const DEFAULT_DATABASE_BACKUPS_KEEP_LAST = 14;
 
 /** Derived files can be generated again, but are kept as long as the database backups that may still record them */
 export const DERIVED_DELETION_DELAY_DAYS = 30;
@@ -164,6 +165,7 @@ export class StorageBackendRepository {
   private configs = new Map<string, StorageBackendConfig>();
   private deletionStores = new Map<string, BlobStore>();
   private originalsDeletionDelayDays = DEFAULT_DELETION_DELAY_DAYS;
+  private databaseBackupsKeepLast = DEFAULT_DATABASE_BACKUPS_KEEP_LAST;
   private roles = new Map<StorageBackendRole, string>();
   protected readRetryDelays = READ_RETRY_DELAYS;
 
@@ -205,6 +207,7 @@ export class StorageBackendRepository {
     backends: StorageBackendConfig[],
     keys?: KeyProvider,
     { delayDays = DEFAULT_DELETION_DELAY_DAYS }: Partial<StorageBackendsConfig['deletion']> = {},
+    { keepLast = DEFAULT_DATABASE_BACKUPS_KEEP_LAST }: Partial<StorageBackendsConfig['databaseBackups']> = {},
   ) {
     const encrypted = backends.filter((backend) => backend.encrypted);
     if (encrypted.length > 0 && !keys) {
@@ -219,6 +222,12 @@ export class StorageBackendRepository {
     this.configs = new Map(backends.map((backend) => [backend.id, backend]));
     this.deletionStores.clear();
     this.originalsDeletionDelayDays = delayDays;
+    this.databaseBackupsKeepLast = keepLast;
+  }
+
+  /** How many database backups the backend for backups keeps, at the least */
+  getDatabaseBackupsKeepLast() {
+    return this.databaseBackupsKeepLast;
   }
 
   /**
@@ -501,6 +510,11 @@ export class StorageBackendRepository {
     }
 
     return { blob: { store, key: file.key, expect: toBlobExpectation(file) } };
+  }
+
+  /** The encrypted store of a backend, which also reads what blobs describe themselves with */
+  getEncryptedStore(backendId: string): EncryptedBlobStore {
+    return this.getDecryptingStore(backendId);
   }
 
   private getDecryptingStore(backendId: string): EncryptedBlobStore {

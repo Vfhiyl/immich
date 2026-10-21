@@ -44,6 +44,14 @@ describe(JobService.name, () => {
       expect(mocks.logger.error).not.toHaveBeenCalled();
     });
 
+    it('should store a new database backup on the storage backend for backups', async () => {
+      mocks.job.run.mockResolvedValue(JobStatus.Success);
+
+      await sut.onJobRun(QueueName.BackupDatabase, { name: JobName.DatabaseBackup });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.DatabaseBackupStore });
+    });
+
     const tests: Array<{ item: JobItem; jobs: JobName[]; stub?: any }> = [
       {
         item: { name: JobName.SidecarCheck, data: { id: 'asset-1' } },

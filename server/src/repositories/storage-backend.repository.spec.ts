@@ -163,6 +163,7 @@ describe(StorageBackendRepository.name, () => {
       await expect(sut.readConfig(path)).resolves.toEqual({
         backends: [{ id: 'originals', driver: 'local', role: 'originals', root: '/mnt/originals', encrypted: false }],
         deletion: { delayDays: 360 },
+        databaseBackups: { keepLast: 14 },
       });
     });
 
@@ -174,6 +175,7 @@ describe(StorageBackendRepository.name, () => {
       await expect(sut.readConfig(path)).resolves.toEqual({
         backends: [{ id: 'derived-1', driver: 'local', role: 'derived', root: '/mnt/derived', encrypted: false }],
         deletion: { delayDays: 360 },
+        databaseBackups: { keepLast: 14 },
       });
     });
 
@@ -181,6 +183,7 @@ describe(StorageBackendRepository.name, () => {
       await expect(sut.readConfig(await write('backends: []'))).resolves.toEqual({
         backends: [],
         deletion: { delayDays: 360 },
+        databaseBackups: { keepLast: 14 },
       });
     });
 
@@ -273,6 +276,7 @@ describe(StorageBackendRepository.name, () => {
         ],
         encryption: { masterKeyFile: '/run/secrets/master.key' },
         deletion: { delayDays: 360 },
+        databaseBackups: { keepLast: 14 },
       });
     });
 
@@ -285,6 +289,24 @@ describe(StorageBackendRepository.name, () => {
 
       const local = '{"backends":[{"id":"a","driver":"local","role":"originals","root":"/a","encrypted":true}]}';
       await expect(sut.readConfig(await write(local))).rejects.toThrow('needs a master key file');
+    });
+
+    it('should need the storage backend for backups to be encrypted', async () => {
+      const path = await write(
+        '{"backends":[{"id":"backups","driver":"local","role":"backup","root":"/b","encrypted":false}]}',
+      );
+      await expect(sut.readConfig(path)).rejects.toThrow('The storage backend for backups must be encrypted');
+    });
+
+    it('should read how many database backups to keep', async () => {
+      await expect(
+        sut.readConfig(await write('backends: []\ndatabaseBackups:\n  keepLast: 30')),
+      ).resolves.toMatchObject({
+        databaseBackups: { keepLast: 30 },
+      });
+      await expect(sut.readConfig(await write('backends: []\ndatabaseBackups:\n  keepLast: 0'))).rejects.toThrow(
+        'databaseBackups.keepLast',
+      );
     });
 
     it('should read an S3 backend that is not encrypted without a master key file', async () => {

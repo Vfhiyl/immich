@@ -545,6 +545,22 @@ export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
 };
+export type StoredDatabaseBackupListResponseDto = {
+    backups: {
+        /** When the backup was stored */
+        createdAt: string;
+        /** File name of the backup */
+        filename: string;
+        /** Key of the backup on the storage backend for backups */
+        key: string;
+        /** Size of the backup in bytes */
+        size: number;
+    }[];
+};
+export type StoredDatabaseBackupFetchResponseDto = {
+    /** File name of the backup in the backups folder, ready to restore */
+    filename: string;
+};
 export type StorageDeletionStatusResponseDto = {
     /** How long deleted originals are kept (from the configuration file) */
     delayDays: number;
@@ -4234,6 +4250,31 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
         method: "POST",
         body: adminConfigSmtpDto
     })));
+}
+/**
+ * List stored database backups
+ */
+export function getStoredDatabaseBackups(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StoredDatabaseBackupListResponseDto;
+    }>("/admin/storage/database-backups", {
+        ...opts
+    }));
+}
+/**
+ * Fetch a stored database backup
+ */
+export function fetchStoredDatabaseBackup({ key }: {
+    key: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StoredDatabaseBackupFetchResponseDto;
+    }>(`/admin/storage/database-backups/${encodeURIComponent(key)}/fetch`, {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Get the status of deleting files from storage
@@ -8564,6 +8605,7 @@ export enum JobName {
     LocalCopyCleanup = "LocalCopyCleanup",
     StorageDeletionRun = "StorageDeletionRun",
     UploadSessionCleanup = "UploadSessionCleanup",
+    DatabaseBackupStore = "DatabaseBackupStore",
     AssetGenerateThumbnailsQueueAll = "AssetGenerateThumbnailsQueueAll",
     AssetGenerateThumbnails = "AssetGenerateThumbnails",
     AuditTableCleanup = "AuditTableCleanup",
