@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { chmod, readFile, rename, writeFile } from 'node:fs/promises';
 
 /** Length of master key ids, which identify a key without revealing it */
 export const MASTER_KEY_ID_LENGTH = 8;
@@ -12,6 +13,7 @@ const MASTER_KEY_LENGTH = 32;
 export interface KeyProvider {
   readonly currentKeyId: Buffer;
   getKey(id: Buffer): Buffer;
+  hasKey(id: Buffer): boolean;
 }
 
 export const getMasterKeyId = (key: Buffer) =>
@@ -61,6 +63,10 @@ export class MasterKeys implements KeyProvider {
     this.currentKeyId = getMasterKeyId(keys[0]);
   }
 
+  hasKey(id: Buffer): boolean {
+    return this.keys.has(id.toString('hex'));
+  }
+
   getKey(id: Buffer): Buffer {
     const key = this.keys.get(id.toString('hex'));
     if (!key) {
@@ -69,3 +75,33 @@ export class MasterKeys implements KeyProvider {
     return key;
   }
 }
+
+/**
+ * Write a new master key to a key file, only readable by its owner. A new file gets the key; with `rotate`, an existing
+ * file gets it as its first line, so that it encrypts new files, and keeps the keys that older files need. An existing
+ * file is never replaced otherwise, since that would make every file encrypted with it unreadable.
+ */
+export const writeNewMasterKey = async (path: string, { rotate = false } = {}) => {
+  const key = generateMasterKey();
+  const id = getMasterKeyId(Buffer.from(key, 'base64')).toString('hex');
+  const header = `# Immich master keys: the first one encrypts new files, the others are needed to read older ones.\n# Keep a copy apart from the storage and the database; without it, encrypted files cannot be read.\n`;
+
+  if (!rotate) {
+    await writeFile(path, `${header}${key}\n`, { flag: 'wx', mode: 0o600 });
+    return { id };
+  }
+
+  const existing = await readFile(path, 'utf8');
+  const keys = existing
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+  // validates what is kept, so that a damaged file is not rotated into another damaged file
+  MasterKeys.fromFile(path);
+
+  const temporary = `${path}.new`;
+  await writeFile(temporary, `${header}${[key, ...keys].join('\n')}\n`, { flag: 'wx', mode: 0o600 });
+  await chmod(temporary, 0o600);
+  await rename(temporary, path);
+  return { id };
+};

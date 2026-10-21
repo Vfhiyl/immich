@@ -31,5 +31,7 @@ export const newStorageBackendRepositoryMock = (): Mocked<RepositoryInterface<St
     ]),
     register: vitest.fn(),
     isInUse: vitest.fn().mockResolvedValue(false),
+    getMasterKeyIds: vitest.fn().mockResolvedValue([]),
+    registerMasterKey: vitest.fn(),
   };
 };

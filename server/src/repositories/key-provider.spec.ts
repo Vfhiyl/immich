@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MasterKeys, generateMasterKey, getMasterKeyId } from 'src/repositories/key-provider.js';
+import { MasterKeys, generateMasterKey, getMasterKeyId, writeNewMasterKey } from 'src/repositories/key-provider.js';
 
 describe(MasterKeys.name, () => {
   let folder: string;
@@ -87,6 +87,50 @@ describe(MasterKeys.name, () => {
     it('should not reveal key material in errors', async () => {
       const path = await writeKeyFile(`${generateMasterKey()}x\n`);
       expect(() => MasterKeys.fromFile(path)).toThrow(/^The master key file .* holds a line that is not/);
+    });
+  });
+
+  describe('writeNewMasterKey', () => {
+    it('should create a key file that only its owner can read', async () => {
+      const path = join(folder, 'master.key');
+      const { id } = await writeNewMasterKey(path);
+
+      expect(MasterKeys.fromFile(path).currentKeyId.toString('hex')).toBe(id);
+      const { mode } = await fs.stat(path);
+      expect(mode & 0o777).toBe(0o600);
+    });
+
+    it('should never replace an existing key file', async () => {
+      const path = await writeKeyFile(`${generateMasterKey()}\n`);
+      const before = await fs.readFile(path, 'utf8');
+
+      await expect(writeNewMasterKey(path)).rejects.toThrow('EEXIST');
+      await expect(fs.readFile(path, 'utf8')).resolves.toBe(before);
+    });
+
+    it('should add a new current key and keep the older ones when rotating', async () => {
+      const old = Buffer.from(generateMasterKey(), 'base64');
+      const path = await writeKeyFile(`${old.toString('base64')}\n`);
+
+      const { id } = await writeNewMasterKey(path, { rotate: true });
+
+      const keys = MasterKeys.fromFile(path);
+      expect(keys.currentKeyId.toString('hex')).toBe(id);
+      expect(keys.hasKey(getMasterKeyId(old))).toBe(true);
+      const { mode } = await fs.stat(path);
+      expect(mode & 0o777).toBe(0o600);
+      await expect(fs.readdir(folder)).resolves.toEqual(['master.key']);
+    });
+
+    it('should not rotate a damaged key file', async () => {
+      const path = await writeKeyFile('not a key\n');
+
+      await expect(writeNewMasterKey(path, { rotate: true })).rejects.toThrow('not a base64 encoded 256-bit key');
+      await expect(fs.readFile(path, 'utf8')).resolves.toBe('not a key\n');
+    });
+
+    it('should not rotate a key file that does not exist', async () => {
+      await expect(writeNewMasterKey(join(folder, 'missing'), { rotate: true })).rejects.toThrow('ENOENT');
     });
   });
 });

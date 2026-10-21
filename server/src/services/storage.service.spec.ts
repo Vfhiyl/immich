@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { JobName, JobStatus, StorageBackendDriver, StorageBackendRole, SystemMetadataKey } from 'src/enum.js';
 import { EncryptedBlobStore } from 'src/repositories/encrypted-blob-store.js';
-import { MasterKeys } from 'src/repositories/key-provider.js';
+import { MasterKeys, getMasterKeyId } from 'src/repositories/key-provider.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
@@ -271,8 +271,48 @@ describe(StorageService.name, () => {
 
       expect(mocks.storageBackend.readMasterKeys).toHaveBeenCalledWith('/run/secrets/master.key');
       expect(mocks.storageBackend.configure).toHaveBeenCalledWith([originals], keys);
+      expect(mocks.storageBackend.registerMasterKey).toHaveBeenCalledWith(keys.currentKeyId);
       expect(put).toHaveBeenCalledOnce();
       await expect(fs.readdir(join(root, 'originals', '.immich-probe'))).resolves.toEqual([]);
+    });
+
+    it('should not record the master key when no backend is encrypted', async () => {
+      configure([localBackend('originals', StorageBackendRole.Originals)]);
+      mocks.storageBackend.readConfig.mockResolvedValue({
+        backends: [localBackend('originals', StorageBackendRole.Originals)],
+        encryption: { masterKeyFile: '/run/secrets/master.key' },
+      });
+      mocks.storageBackend.readMasterKeys.mockReturnValue(new MasterKeys([randomBytes(32)]));
+
+      await sut.onBootstrapStorageBackends();
+
+      expect(mocks.storageBackend.registerMasterKey).not.toHaveBeenCalled();
+    });
+
+    it('should refuse to start when a master key that encrypted files is not in the key file', async () => {
+      const current = randomBytes(32);
+      const lost = randomBytes(32);
+      configure([]);
+      mocks.storageBackend.readConfig.mockResolvedValue({
+        backends: [],
+        encryption: { masterKeyFile: '/run/secrets/master.key' },
+      });
+      mocks.storageBackend.readMasterKeys.mockReturnValue(new MasterKeys([current]));
+      mocks.storageBackend.getMasterKeyIds.mockResolvedValue([getMasterKeyId(current), getMasterKeyId(lost)]);
+
+      await expect(sut.onBootstrapStorageBackends()).rejects.toThrow(
+        `Files were encrypted with master keys that are not in /run/secrets/master.key: ${getMasterKeyId(lost).toString('hex')}`,
+      );
+      expect(mocks.storageBackend.configure).not.toHaveBeenCalled();
+    });
+
+    it('should refuse to start when files are encrypted but no master key file is configured', async () => {
+      configure([]);
+      mocks.storageBackend.getMasterKeyIds.mockResolvedValue([Buffer.from('0102030405060708', 'hex')]);
+
+      await expect(sut.onBootstrapStorageBackends()).rejects.toThrow(
+        'Files were encrypted with master keys 0102030405060708, but no master key file is configured',
+      );
     });
 
     it('should refuse to start when the master key file cannot be read', async () => {

@@ -1,10 +1,11 @@
-import { ChildProcess, spawn } from 'node:child_process';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { ChildProcess, execFile, spawn } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import pg from 'pg';
 
 /**
@@ -19,6 +20,7 @@ export const testAssetDir = resolve(dirname(fileURLToPath(import.meta.url)), '..
 const postgresBase = process.env.E2E_STORAGE_POSTGRES_URL ?? 'postgres://postgres:postgres@localhost:5432';
 export const redisPort = Number(process.env.E2E_STORAGE_REDIS_PORT ?? 6391);
 const port = Number(process.env.E2E_STORAGE_PORT ?? 2290);
+const execFileAsync = promisify(execFile);
 export const baseUrl = `http://localhost:${port}/api`;
 
 export interface LocalBackend {
@@ -167,7 +169,8 @@ export class TestEnvironment {
   async writeBackends(backends: LocalBackend[]) {
     const lines = [];
     if (backends.some(({ s3, encrypted }) => encrypted ?? !!s3)) {
-      await writeFile(this.masterKeyFile, `${randomBytes(32).toString('base64')}\n`);
+      await rm(this.masterKeyFile, { force: true });
+      await runEncryptionTool(['generate-key', this.masterKeyFile]);
       lines.push('encryption:', `  masterKeyFile: ${this.masterKeyFile}`);
     }
 
@@ -240,6 +243,29 @@ const withDatabase = async <T>(database: string, fn: (client: pg.Client) => Prom
   }
 };
 
+const serverEnv = (environment: TestEnvironment, { backends = true } = {}) => ({
+  ...process.env,
+  DB_URL: `${postgresBase}/${environment.database}`,
+  DB_VECTOR_EXTENSION: process.env.DB_VECTOR_EXTENSION ?? 'pgvector',
+  REDIS_HOSTNAME: 'localhost',
+  REDIS_PORT: String(redisPort),
+  IMMICH_PORT: String(port),
+  IMMICH_MEDIA_LOCATION: environment.mediaLocation,
+  IMMICH_CONFIG_FILE: environment.configFile,
+  IMMICH_BUILD_DATA: join(environment.root, 'build'),
+  IMMICH_LOG_LEVEL: 'log',
+  NO_COLOR: 'true',
+  ...(backends && { IMMICH_STORAGE_BACKENDS: environment.backendsFile }),
+});
+
+/** Run the `immich-encryption` tool, with an empty environment since it must not need anything else */
+export const runEncryptionTool = async (args: string[]) => {
+  const { stdout } = await execFileAsync(join(serverRoot, 'bin', 'immich-encryption'), args, {
+    env: { PATH: `${dirname(process.execPath)}:/usr/bin:/bin` },
+  });
+  return stdout;
+};
+
 /** A running server; `start` resolves once both workers are ready, or rejects with the output if it exits */
 export class ImmichServer {
   static async start(environment: TestEnvironment, { backends = true }: { backends?: boolean } = {}) {
@@ -247,20 +273,7 @@ export class ImmichServer {
       cwd: serverRoot,
       // a process group, so that the workers are stopped with the server
       detached: true,
-      env: {
-        ...process.env,
-        DB_URL: `${postgresBase}/${environment.database}`,
-        DB_VECTOR_EXTENSION: process.env.DB_VECTOR_EXTENSION ?? 'pgvector',
-        REDIS_HOSTNAME: 'localhost',
-        REDIS_PORT: String(redisPort),
-        IMMICH_PORT: String(port),
-        IMMICH_MEDIA_LOCATION: environment.mediaLocation,
-        IMMICH_CONFIG_FILE: environment.configFile,
-        IMMICH_BUILD_DATA: join(environment.root, 'build'),
-        IMMICH_LOG_LEVEL: 'log',
-        NO_COLOR: 'true',
-        ...(backends && { IMMICH_STORAGE_BACKENDS: environment.backendsFile }),
-      },
+      env: serverEnv(environment, { backends }),
     });
 
     const server = new this(child);

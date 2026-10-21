@@ -1,10 +1,20 @@
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { Api, ImmichServer, S3Service, TestEnvironment, eventually, sha1, testAssetDir } from 'src/storage-backends.js';
+import {
+  Api,
+  ImmichServer,
+  S3Service,
+  TestEnvironment,
+  eventually,
+  runEncryptionTool,
+  sha1,
+  testAssetDir,
+} from 'src/storage-backends.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const photoPath = join(testAssetDir, 'formats/jpg/el_torcal_rocks.jpg');
 const motionPhotoPath = join(testAssetDir, 'formats/motionphoto/pixel-6-pro.jpg');
+const otherPhotoPath = join(testAssetDir, 'formats/webp/denali.webp');
 const uuid = expect.stringMatching(/^[0-9a-f-]{36}$/);
 
 type OriginalRow = {
@@ -34,6 +44,9 @@ const getOriginal = async (environment: TestEnvironment, assetId: string) => {
   );
   return row;
 };
+
+/** The id of the master key that wrapped the key of a file, from its recorded header (bytes 18 to 26) */
+const masterKeyIdOf = ({ encryption }: { encryption: string | null }) => encryption?.slice(36, 52);
 
 const getFiles = (environment: TestEnvironment, assetId: string) =>
   environment.query<FileRow>(
@@ -333,6 +346,37 @@ describe('storage backends on an S3 service', () => {
       },
       { timeout: 60_000 },
     );
+  });
+
+  it('should keep reading files after the master key was rotated, and encrypt new files with the new key', async () => {
+    const before = await getOriginal(environment, assetId);
+    const output = await runEncryptionTool(['generate-key', '--rotate', environment.masterKeyFile]);
+    const [, newKeyId] = /Added master key ([0-9a-f]{16})/.exec(output) ?? [];
+    expect(newKeyId).toBeDefined();
+    expect(masterKeyIdOf(before)).not.toBe(newKeyId);
+
+    await server.stop();
+    server = await ImmichServer.start(environment);
+
+    await expect(api.download(`/assets/${assetId}/original`)).resolves.toEqual({ status: 200, body: photo });
+    const other = await readFile(otherPhotoPath);
+    const { id } = await api.upload(otherPhotoPath, other);
+    expect(masterKeyIdOf(await getOriginal(environment, id))).toBe(newKeyId);
+    await expect(api.download(`/assets/${id}/original`)).resolves.toEqual({ status: 200, body: other });
+  });
+
+  it('should refuse to start when the key file lost a master key that encrypted files', async () => {
+    const keyFile = await readFile(environment.masterKeyFile, 'utf8');
+    const current = keyFile.split('\n').find((line) => line && !line.startsWith('#'));
+    await server.stop();
+
+    await writeFile(environment.masterKeyFile, `${current}\n`);
+    await expect(ImmichServer.start(environment)).rejects.toThrow(
+      `Files were encrypted with master keys that are not in ${environment.masterKeyFile}`,
+    );
+
+    await writeFile(environment.masterKeyFile, keyFile);
+    server = await ImmichServer.start(environment);
   });
 
   it('should remove every object of permanently deleted assets', async () => {

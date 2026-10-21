@@ -9,6 +9,21 @@ from
 order by
   "id"
 
+-- StorageBackendRepository.getMasterKeyIds
+select
+  "id"
+from
+  "storage_master_key"
+order by
+  "createdAt"
+
+-- StorageBackendRepository.registerMasterKey
+insert into
+  "storage_master_key" ("id")
+values
+  ($1)
+on conflict ("id") do nothing
+
 -- StorageBackendRepository.isInUse
 select
   exists (

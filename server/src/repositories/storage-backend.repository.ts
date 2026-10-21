@@ -410,6 +410,22 @@ export class StorageBackendRepository {
       .execute();
   }
 
+  /** Ids of the master keys that have encrypted files */
+  @GenerateSql()
+  async getMasterKeyIds(): Promise<Buffer[]> {
+    const rows = await this.db.selectFrom('storage_master_key').select('id').orderBy('createdAt').execute();
+    return rows.map(({ id }) => id);
+  }
+
+  @GenerateSql({ params: [DummyValue.BUFFER] })
+  async registerMasterKey(id: Buffer) {
+    await this.db
+      .insertInto('storage_master_key')
+      .values({ id })
+      .onConflict((oc) => oc.column('id').doNothing())
+      .execute();
+  }
+
   /** Whether any file is stored on a backend; uses the (backendId, key) indexes of the file tables */
   @GenerateSql({ params: [DummyValue.STRING] })
   async isInUse(backendId: string): Promise<boolean> {

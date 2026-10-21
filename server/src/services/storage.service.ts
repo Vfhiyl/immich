@@ -154,10 +154,10 @@ export class StorageService extends BaseService {
   async onBootstrapStorageBackends() {
     const { backendsFile } = this.configRepository.getEnv().storage;
     let backends: StorageBackendConfig[] = [];
+    let encryption: StorageBackendsConfig['encryption'];
     let keys: KeyProvider | undefined;
     if (backendsFile) {
       try {
-        let encryption: StorageBackendsConfig['encryption'];
         ({ backends, encryption } = await this.storageBackendRepository.readConfig(backendsFile));
         if (encryption) {
           keys = this.storageBackendRepository.readMasterKeys(encryption.masterKeyFile);
@@ -191,6 +191,21 @@ export class StorageService extends BaseService {
             `Storage backend ${id} still holds files but is not configured${backendsFile ? ` in ${backendsFile}` : ''}`,
           );
         }
+      }
+
+      // files encrypted with a key that is gone cannot be read, so a key file that lost a key must not go unnoticed
+      const usedKeys = await this.storageBackendRepository.getMasterKeyIds();
+      const missingKeys = usedKeys.filter((id) => !keys?.hasKey(id));
+      if (missingKeys.length > 0) {
+        const ids = missingKeys.map((id) => id.toString('hex')).join(', ');
+        throw new ImmichStartupError(
+          encryption
+            ? `Files were encrypted with master keys that are not in ${encryption.masterKeyFile}: ${ids}`
+            : `Files were encrypted with master keys ${ids}, but no master key file is configured (encryption.masterKeyFile)`,
+        );
+      }
+      if (keys && backends.some(({ encrypted }) => encrypted)) {
+        await this.storageBackendRepository.registerMasterKey(keys.currentKeyId);
       }
 
       const registeredIds = new Set(registered.map(({ id }) => id));
