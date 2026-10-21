@@ -22,7 +22,46 @@ const LocalBackendSchema = z
   })
   .strict();
 
-export const StorageBackendConfigSchema = z.discriminatedUnion('driver', [LocalBackendSchema]);
+const absolutePath = z.string().regex(/^\//, 'Must be an absolute path');
+
+/** Secrets are read from files (or the standard credential chain), so that the configuration file holds none */
+const S3CredentialsSchema = z.discriminatedUnion('type', [
+  z
+    .object({
+      type: z.literal('static'),
+      accessKeyId: z.string().min(1),
+      secretAccessKeyFile: absolutePath,
+    })
+    .strict(),
+  z
+    .object({
+      // environment, shared config and credentials files (including credential_process), container and instance roles
+      type: z.literal('chain'),
+      profile: z.string().min(1).optional(),
+    })
+    .strict(),
+]);
+
+/** Any service that speaks the S3 protocol; everything that differs between services is a setting here, not code */
+const S3BackendSchema = z
+  .object({
+    id: BackendIdSchema,
+    driver: z.literal(StorageBackendDriver.S3),
+    role: z.enum(StorageBackendRole),
+    endpoint: z.url({ protocol: /^https?$/ }),
+    region: z.string().min(1),
+    bucket: z.string().min(1),
+    /** Keys are stored below this prefix, so that several backends can share a bucket */
+    prefix: z
+      .string()
+      .regex(/^([^/]+\/)*$/, 'Must be empty or end with a slash, without empty segments')
+      .default(''),
+    addressing: z.enum(['virtual-host', 'path']).default('virtual-host'),
+    credentials: S3CredentialsSchema,
+  })
+  .strict();
+
+export const StorageBackendConfigSchema = z.discriminatedUnion('driver', [LocalBackendSchema, S3BackendSchema]);
 
 export const StorageBackendsConfigSchema = z
   .object({ backends: z.array(StorageBackendConfigSchema) })

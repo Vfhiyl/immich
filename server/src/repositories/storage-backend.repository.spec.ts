@@ -8,8 +8,25 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
 import { BlobStore } from 'src/repositories/blob-store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { S3BlobStore } from 'src/repositories/s3-blob-store.js';
 import { StorageBackendRepository, toFileDeletion } from 'src/repositories/storage-backend.repository.js';
 import { DB } from 'src/schema/index.js';
+
+const s3 = (overrides: Record<string, unknown>) =>
+  JSON.stringify({
+    backends: [
+      {
+        id: 'originals',
+        driver: 's3',
+        role: 'originals',
+        endpoint: 'https://storage.example.com',
+        region: 'region-1',
+        bucket: 'photos',
+        credentials: { type: 'chain' },
+        ...overrides,
+      },
+    ],
+  });
 
 describe(StorageBackendRepository.name, () => {
   let sut: StorageBackendRepository;
@@ -184,6 +201,56 @@ describe(StorageBackendRepository.name, () => {
       await expect(sut.readConfig(path)).rejects.toThrow(message);
     });
 
+    it('should read an S3 backend with defaults for the prefix and addressing', async () => {
+      const path = await write(
+        [
+          'backends:',
+          '  - id: originals',
+          '    driver: s3',
+          '    role: originals',
+          '    endpoint: https://storage.example.com',
+          '    region: region-1',
+          '    bucket: photos',
+          '    credentials:',
+          '      type: static',
+          '      accessKeyId: AKID',
+          '      secretAccessKeyFile: /run/secrets/s3',
+        ].join('\n'),
+      );
+
+      await expect(sut.readConfig(path)).resolves.toEqual({
+        backends: [
+          {
+            id: 'originals',
+            driver: 's3',
+            role: 'originals',
+            endpoint: 'https://storage.example.com',
+            region: 'region-1',
+            bucket: 'photos',
+            prefix: '',
+            addressing: 'virtual-host',
+            credentials: { type: 'static', accessKeyId: 'AKID', secretAccessKeyFile: '/run/secrets/s3' },
+          },
+        ],
+      });
+    });
+
+    it.each([
+      ['an endpoint that is not http(s)', { endpoint: 'ftp://storage.example.com' }, 'endpoint'],
+      ['a prefix without a trailing slash', { prefix: 'immich' }, 'prefix'],
+      ['a prefix with an empty segment', { prefix: 'immich//' }, 'prefix'],
+      ['an unknown addressing', { addressing: 'dns' }, 'addressing'],
+      ['missing credentials', { credentials: undefined }, 'credentials'],
+      [
+        'a secret in the configuration',
+        { credentials: { type: 'static', accessKeyId: 'a', secretAccessKey: 'b' } },
+        'secretAccessKey',
+      ],
+    ])('should reject an S3 backend with %s', async (_, overrides, message) => {
+      const path = await write(s3(overrides));
+      await expect(sut.readConfig(path)).rejects.toThrow(message);
+    });
+
     it('should fail for a missing file', async () => {
       await expect(sut.readConfig(join(directory, 'missing.yaml'))).rejects.toThrow('ENOENT');
     });
@@ -197,6 +264,27 @@ describe(StorageBackendRepository.name, () => {
 
       expect(sut.get('originals').getLocalPath?.('a/b.jpg')).toBe('/mnt/o/a/b.jpg');
       expect(sut.get('media').getLocalPath?.('a.jpg')).toBe('/data/a.jpg');
+    });
+
+    it('should make configured S3 backends available, which do not keep files locally', () => {
+      sut.configure([
+        {
+          id: 'remote',
+          driver: StorageBackendDriver.S3,
+          role: StorageBackendRole.Originals,
+          endpoint: 'https://storage.example.com',
+          region: 'region-1',
+          bucket: 'photos',
+          prefix: '',
+          addressing: 'path',
+          credentials: { type: 'chain' },
+        },
+      ]);
+
+      expect(sut.get('remote')).toBeInstanceOf(S3BlobStore);
+      expect(() => sut.getLocalPath({ path: '/data/a.jpg', backendId: 'remote', key: 'k' })).toThrow(
+        'Storage backend remote does not keep files on the local filesystem',
+      );
     });
 
     it('should replace the backends configured before', () => {

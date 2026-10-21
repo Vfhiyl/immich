@@ -17,6 +17,7 @@ import { BuiltinStorageBackend, StorageBackendDriver, StorageBackendRole } from 
 import { BlobStore } from 'src/repositories/blob-store.js';
 import { LocalBlobStore } from 'src/repositories/local-blob-store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { S3BlobStore, createS3Client } from 'src/repositories/s3-blob-store.js';
 import { DB } from 'src/schema/index.js';
 
 /** A file as recorded in the database: its path, and its location once one has been recorded */
@@ -273,6 +274,10 @@ export class StorageBackendRepository {
     switch (backend.driver) {
       case StorageBackendDriver.Local: {
         return new LocalBlobStore(backend.root);
+      }
+
+      case StorageBackendDriver.S3: {
+        return new S3BlobStore(createS3Client(backend), backend.bucket, backend.prefix);
       }
     }
   }

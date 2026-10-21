@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
 # Runs every check of a change in one go and stops at the first failure:
-#   formatting, lint and types; database schema and generated SQL; unit, medium and end-to-end tests.
+#   formatting, lint and types; database schema and generated SQL; unit, medium, contract and end-to-end tests.
 #
-# Usage: misc/check.sh [--quick]     --quick skips the medium and end-to-end tests
+# Usage: misc/check.sh [--quick]     --quick skips the medium, contract and end-to-end tests
 #
 # Needs: Node and pnpm with dependencies installed (`pnpm install`), ffmpeg and redis-server on PATH, and
 # PostgreSQL with the vector extension at CHECK_POSTGRES_URL (a server URL without database name,
@@ -92,6 +92,9 @@ medium() {
   MEDIUM_TEST_POSTGRES_URL="$postgres" "$(bin "$server" vitest)" --config test/vitest.config.medium.postgres.mjs --run
 }
 
+# blob store contract against S3 services that are downloaded (pinned, verified) and started by the tests
+contract() { cd "$server" && "$(bin "$server" vitest)" --config test/vitest.config.contract.mjs --run; }
+
 end_to_end() {
   cd "$e2e"
   E2E_STORAGE_POSTGRES_URL="$postgres" "$(bin "$e2e" vitest)" --run --config vitest.storage-backends.config.ts
@@ -108,6 +111,7 @@ step 'server: generated SQL is up to date' generated_sql
 step 'server: unit tests' unit
 if [[ "$quick" == false ]]; then
   step 'server: medium tests' medium
+  step 'server: blob store contract tests' contract
   step 'e2e: storage backends' end_to_end
 fi
 

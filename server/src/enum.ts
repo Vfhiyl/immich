@@ -378,6 +378,7 @@ export enum BuiltinStorageBackend {
 
 export enum StorageBackendDriver {
   Local = 'local',
+  S3 = 's3',
 }
 
 /** What a configured storage backend holds; new files of each kind are written to its backend */
