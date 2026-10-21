@@ -28,7 +28,17 @@ step() {
   shift
   local started=$SECONDS
   printf '\n==> %s\n' "$name"
-  if "$@" >"$work/step.log" 2>&1; then
+  # a subshell run as a plain command: in a condition (`if`, `||`, `&&`) bash ignores `set -e`, so a step of several
+  # commands would only fail when its last command does
+  local status
+  set +e
+  (
+    set -e
+    "$@"
+  ) >"$work/step.log" 2>&1
+  status=$?
+  set -e
+  if [[ $status -eq 0 ]]; then
     results+=("ok    $name ($((SECONDS - started))s)")
   else
     tail -n 80 "$work/step.log"
