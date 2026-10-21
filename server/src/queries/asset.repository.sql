@@ -276,6 +276,7 @@ select
           "asset_file"."path",
           "asset_file"."backendId",
           "asset_file"."key",
+          "asset_file"."size",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -682,9 +683,13 @@ select
   "asset_file"."path" as "editedPath",
   "asset_file"."backendId" as "editedBackendId",
   "asset_file"."key" as "editedKey",
+  "asset_file"."size" as "editedSize",
+  "asset_file"."checksum" as "editedChecksum",
   "originalPath",
   "asset_original_file"."backendId" as "originalBackendId",
-  "asset_original_file"."key" as "originalKey"
+  "asset_original_file"."key" as "originalKey",
+  "asset_original_file"."size" as "originalSize",
+  "asset_original_file"."checksum" as "originalChecksum"
 from
   "asset"
   left join "asset_file" on "asset"."id" = "asset_file"."assetId"
@@ -701,9 +706,13 @@ select
   "asset_file"."path" as "editedPath",
   "asset_file"."backendId" as "editedBackendId",
   "asset_file"."key" as "editedKey",
+  "asset_file"."size" as "editedSize",
+  "asset_file"."checksum" as "editedChecksum",
   "originalPath",
   "asset_original_file"."backendId" as "originalBackendId",
-  "asset_original_file"."key" as "originalKey"
+  "asset_original_file"."key" as "originalKey",
+  "asset_original_file"."size" as "originalSize",
+  "asset_original_file"."checksum" as "originalChecksum"
 from
   "asset"
   left join "asset_file" on "asset"."id" = "asset_file"."assetId"
@@ -719,7 +728,9 @@ select
   "asset"."originalFileName",
   "asset_file"."path" as "path",
   "asset_file"."backendId" as "backendId",
-  "asset_file"."key" as "key"
+  "asset_file"."key" as "key",
+  "asset_file"."size" as "size",
+  "asset_file"."checksum" as "checksum"
 from
   "asset"
   left join "asset_file" on "asset"."id" = "asset_file"."assetId"
@@ -734,9 +745,13 @@ select
   "asset"."originalPath",
   "asset_original_file"."backendId" as "originalBackendId",
   "asset_original_file"."key" as "originalKey",
+  "asset_original_file"."size" as "originalSize",
+  "asset_original_file"."checksum" as "originalChecksum",
   "asset_file"."path" as "encodedVideoPath",
   "asset_file"."backendId" as "encodedVideoBackendId",
-  "asset_file"."key" as "encodedVideoKey"
+  "asset_file"."key" as "encodedVideoKey",
+  "asset_file"."size" as "encodedVideoSize",
+  "asset_file"."checksum" as "encodedVideoChecksum"
 from
   "asset"
   left join "asset_original_file" on "asset_original_file"."assetId" = "asset"."id"

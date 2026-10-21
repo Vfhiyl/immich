@@ -838,7 +838,8 @@ select
         select
           "asset_file"."path",
           "asset_file"."backendId",
-          "asset_file"."key"
+          "asset_file"."key",
+          "asset_file"."size"
         from
           "asset_file"
         where
@@ -950,7 +951,9 @@ select
         'backendId',
         "person_thumbnail_file"."backendId",
         'key',
-        "person_thumbnail_file"."key"
+        "person_thumbnail_file"."key",
+        'size',
+        "person_thumbnail_file"."size"
       ) as "file"
     from
       "person"
@@ -968,7 +971,9 @@ select
         'backendId',
         "person_thumbnail_file"."backendId",
         'key',
-        "person_thumbnail_file"."key"
+        "person_thumbnail_file"."key",
+        'size',
+        "person_thumbnail_file"."size"
       ) as "file"
     from
       "person"

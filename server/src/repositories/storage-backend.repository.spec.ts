@@ -3,10 +3,12 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { Mocked } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
-import { BlobStore } from 'src/repositories/blob-store.js';
+import { BlobNotFoundError, BlobStore } from 'src/repositories/blob-store.js';
+import { LocalBlobStore } from 'src/repositories/local-blob-store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { S3BlobStore } from 'src/repositories/s3-blob-store.js';
 import { StorageBackendRepository, toFileDeletion } from 'src/repositories/storage-backend.repository.js';
@@ -30,11 +32,11 @@ const s3 = (overrides: Record<string, unknown>) =>
 
 describe(StorageBackendRepository.name, () => {
   let sut: StorageBackendRepository;
-  let logger: Mocked<Pick<LoggingRepository, 'setContext' | 'warn'>>;
+  let logger: Mocked<Pick<LoggingRepository, 'setContext' | 'warn' | 'debug'>>;
 
   beforeEach(() => {
     StorageCore.setMediaLocation('/data');
-    logger = { setContext: vi.fn(), warn: vi.fn() };
+    logger = { setContext: vi.fn(), warn: vi.fn(), debug: vi.fn() };
     sut = new StorageBackendRepository(undefined as unknown as Kysely<DB>, logger as unknown as LoggingRepository);
   });
 
@@ -402,6 +404,106 @@ describe(StorageBackendRepository.name, () => {
           undefined,
         ]),
       ).toEqual({ files: ['/data/b.jpg'], locations: [{ backendId: 'media', key: 'a.jpg' }] });
+    });
+  });
+
+  describe('files on a backend that does not keep them locally', () => {
+    let directory: string;
+    let local: LocalBlobStore;
+    let remote: BlobStore;
+
+    beforeEach(async () => {
+      directory = await fs.mkdtemp(join(tmpdir(), 'immich-remote-'));
+      StorageCore.setMediaLocation(join(directory, 'media'));
+      local = new LocalBlobStore(join(directory, 'remote'));
+      // a local store without local paths behaves like a remote one
+      remote = {
+        limits: local.limits,
+        put: (key, body) => local.put(key, body),
+        get: vi.fn((key, options) => local.get(key, options)),
+        head: (key) => local.head(key),
+        deleteMany: (keys) => local.deleteMany(keys),
+        list: (prefix) => local.list(prefix),
+      };
+      vi.spyOn(sut, 'get').mockImplementation((backendId) => (backendId === 'remote' ? remote : local));
+      (sut as unknown as { readRetryDelays: number[] }).readRetryDelays = [1, 1];
+    });
+
+    afterEach(async () => {
+      await fs.rm(directory, { recursive: true, force: true });
+    });
+
+    const stagingFiles = () => fs.readdir(join(directory, 'media', '.immich-staging')).catch(() => []);
+
+    it('should resolve a file to its blob and what reads are verified against', () => {
+      const checksum = createHash('sha1').update('x').digest();
+      expect(sut.resolve({ path: '/data/a.jpg', backendId: 'remote', key: 'a', size: '1', checksum })).toEqual({
+        blob: { store: remote, key: 'a', expect: { size: 1, sha1: checksum } },
+      });
+      expect(
+        sut.resolve({
+          path: '/data/a.jpg',
+          backendId: 'remote',
+          key: 'a',
+          size: 1,
+          checksum: String.raw`\x${checksum.toString('hex')}`,
+        }),
+      ).toEqual({ blob: { store: remote, key: 'a', expect: { size: 1, sha1: checksum } } });
+      expect(sut.toFileSource({ path: '/data/a.jpg', backendId: 'remote', key: 'a' })).toEqual({
+        path: '/data/a.jpg',
+        blob: { store: remote, key: 'a', expect: undefined },
+      });
+    });
+
+    it('should lend a verified copy in the staging folder and remove it when the lease ends', async () => {
+      const { size, sha1 } = await local.put('original', Readable.from([Buffer.from('original')]));
+
+      {
+        await using lease = await sut.lease({
+          path: '/data/IMG_1.heic',
+          backendId: 'remote',
+          key: 'original',
+          size,
+          checksum: sha1,
+        });
+        expect(lease.path).toMatch(/\.immich-staging\/[0-9a-f-]{36}\.heic$/);
+        await expect(fs.readFile(lease.path, 'utf8')).resolves.toBe('original');
+      }
+
+      await expect(stagingFiles()).resolves.toEqual([]);
+    });
+
+    it('should not lend a copy that does not match what was recorded', async () => {
+      await local.put('original', Readable.from([Buffer.from('original')]));
+
+      await expect(
+        sut.lease({
+          path: '/data/a.jpg',
+          backendId: 'remote',
+          key: 'original',
+          size: 8,
+          checksum: createHash('sha1').update('other').digest(),
+        }),
+      ).rejects.toThrow('checksum mismatch');
+      await expect(stagingFiles()).resolves.toEqual([]);
+    });
+
+    it('should read a blob that is not readable yet again before giving up', async () => {
+      await local.put('fresh', Readable.from([Buffer.from('fresh')]));
+      vi.mocked(remote.get).mockRejectedValueOnce(new BlobNotFoundError('fresh'));
+
+      await using lease = await sut.lease({ path: '/data/a.jpg', backendId: 'remote', key: 'fresh' });
+
+      await expect(fs.readFile(lease.path, 'utf8')).resolves.toBe('fresh');
+      expect(remote.get).toHaveBeenCalledTimes(2);
+    });
+
+    it('should give up on a blob that stays missing', async () => {
+      await expect(sut.lease({ path: '/data/a.jpg', backendId: 'remote', key: 'missing' })).rejects.toThrow(
+        BlobNotFoundError,
+      );
+      expect(remote.get).toHaveBeenCalledTimes(3);
+      await expect(stagingFiles()).resolves.toEqual([]);
     });
   });
 });

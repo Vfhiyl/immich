@@ -601,11 +601,11 @@ describe(AssetService.name, () => {
       mocks.asset.getForCopy
         .mockResolvedValueOnce({
           ...source,
-          files: [{ ...sourceSidecar, backendId: 'originals', key: 'source-sidecar' }],
+          files: [{ ...sourceSidecar, backendId: 'originals', key: 'source-sidecar', size: null }],
         })
         .mockResolvedValueOnce({
           ...target,
-          files: [{ ...targetSidecar, backendId: 'originals', key: 'target-sidecar' }],
+          files: [{ ...targetSidecar, backendId: 'originals', key: 'target-sidecar', size: null }],
         });
 
       await sut.copy(authStub.admin, {

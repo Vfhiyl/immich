@@ -18,7 +18,13 @@ const downloadResponse: DownloadResponseDto = {
 };
 
 // assets whose original file has no recorded location yet
-const forOriginal = <T extends object>(asset: T) => ({ ...asset, originalBackendId: null, originalKey: null });
+const forOriginal = <T extends object>(asset: T) => ({
+  ...asset,
+  originalBackendId: null,
+  originalKey: null,
+  originalSize: null,
+  originalChecksum: null,
+});
 
 describe(DownloadService.name, () => {
   let sut: DownloadService;
@@ -36,6 +42,7 @@ describe(DownloadService.name, () => {
     it('should skip asset ids that could not be found', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addStream: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };
@@ -56,6 +63,7 @@ describe(DownloadService.name, () => {
     it('should log a warning if the original path could not be resolved', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addStream: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };
@@ -81,6 +89,7 @@ describe(DownloadService.name, () => {
     it('should download an archive', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addStream: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };
@@ -104,6 +113,7 @@ describe(DownloadService.name, () => {
     it('should handle duplicate file names', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addStream: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };
@@ -126,6 +136,7 @@ describe(DownloadService.name, () => {
     it('should be deterministic', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addStream: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };
@@ -156,6 +167,7 @@ describe(DownloadService.name, () => {
     ])('should sanitize unsafe originalFileName "$input" to "$expected"', async ({ input, expected }) => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addStream: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };
@@ -175,6 +187,7 @@ describe(DownloadService.name, () => {
     it('should dedupe sanitized duplicate unsafe filenames', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addStream: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };
@@ -203,6 +216,7 @@ describe(DownloadService.name, () => {
     it('should add originals and edited files from their recorded location', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addStream: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };
@@ -210,12 +224,20 @@ describe(DownloadService.name, () => {
       const edited = AssetFactory.create({ originalPath: '/data/library/IMG_2.jpg', originalFileName: 'IMG_2.jpg' });
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id, edited.id]));
       mocks.asset.getForOriginals.mockResolvedValue([
-        { ...asset, originalBackendId: 'media', originalKey: 'library/IMG_1.jpg' },
+        {
+          ...asset,
+          originalBackendId: 'media',
+          originalKey: 'library/IMG_1.jpg',
+          originalSize: null,
+          originalChecksum: null,
+        },
         {
           ...forOriginal(edited),
           editedPath: '/data/thumbs/IMG_2_edited.jpg',
           editedBackendId: 'media',
           editedKey: 'thumbs/IMG_2_edited.jpg',
+          editedSize: null,
+          editedChecksum: null,
         },
       ]);
       mocks.storage.realpath.mockImplementation((path) => Promise.resolve(path));
@@ -223,16 +245,20 @@ describe(DownloadService.name, () => {
 
       await sut.downloadArchive(authStub.admin, { assetIds: [asset.id, edited.id], edited: true });
 
-      expect(mocks.storageBackend.getLocalPath).toHaveBeenCalledWith({
-        path: '/data/library/IMG_1.jpg',
-        backendId: 'media',
-        key: 'library/IMG_1.jpg',
-      });
-      expect(mocks.storageBackend.getLocalPath).toHaveBeenCalledWith({
-        path: '/data/thumbs/IMG_2_edited.jpg',
-        backendId: 'media',
-        key: 'thumbs/IMG_2_edited.jpg',
-      });
+      expect(mocks.storageBackend.resolve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: '/data/library/IMG_1.jpg',
+          backendId: 'media',
+          key: 'library/IMG_1.jpg',
+        }),
+      );
+      expect(mocks.storageBackend.resolve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: '/data/thumbs/IMG_2_edited.jpg',
+          backendId: 'media',
+          key: 'thumbs/IMG_2_edited.jpg',
+        }),
+      );
       expect(archiveMock.addFile).toHaveBeenCalledWith('/data/library/IMG_1.jpg', 'IMG_1.jpg');
       expect(archiveMock.addFile).toHaveBeenCalledWith('/data/thumbs/IMG_2_edited.jpg', 'IMG_2.jpg');
     });
@@ -240,6 +266,7 @@ describe(DownloadService.name, () => {
     it('should resolve symlinks', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addStream: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };

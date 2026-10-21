@@ -3,9 +3,11 @@ import { load as loadYaml } from 'js-yaml';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import {
@@ -14,7 +16,7 @@ import {
   StorageBackendsConfigSchema,
 } from 'src/dtos/storage-backend-config.dto.js';
 import { BuiltinStorageBackend, StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
-import { BlobStore } from 'src/repositories/blob-store.js';
+import { BlobExpectation, BlobNotFoundError, BlobStore } from 'src/repositories/blob-store.js';
 import { LocalBlobStore } from 'src/repositories/local-blob-store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { S3BlobStore, createS3Client } from 'src/repositories/s3-blob-store.js';
@@ -25,7 +27,22 @@ export interface RecordedFile {
   path: string;
   backendId: string | null;
   key: string | null;
+  /** Size and SHA-1 as recorded when the file was stored, to verify reads with; null if not recorded */
+  size?: number | string | null;
+  /** A buffer, or hex encoded (as `\\x…`) when it comes from a JSON column */
+  checksum?: Buffer | string | null;
 }
+
+/** What a read of a recorded file is verified against, if anything was recorded */
+export const toBlobExpectation = ({ size, checksum }: RecordedFile): BlobExpectation | undefined => {
+  if (size === null || size === undefined) {
+    return undefined;
+  }
+
+  const sha1 =
+    typeof checksum === 'string' ? Buffer.from(checksum.replace(/^\\x/, ''), 'hex') : (checksum ?? undefined);
+  return { size: Number(size), sha1 };
+};
 
 /** A local copy of a file for tools that need one (exiftool, ffmpeg, sharp); release it with `await using` */
 export interface LocalFileLease extends AsyncDisposable {
@@ -43,6 +60,16 @@ export interface OutputFile extends AsyncDisposable {
 }
 
 export type StoredFile = StorageLocation & { size: number | null; checksum: Buffer | null };
+
+/** A blob on a backend that does not keep files on the local filesystem */
+export interface RemoteBlob {
+  store: BlobStore;
+  key: string;
+  expect?: BlobExpectation;
+}
+
+/** Pauses between reads of a blob that is not readable yet, about 15 seconds in all */
+const READ_RETRY_DELAYS = [500, 1000, 2000, 4000, 8000];
 
 /** Temporary files for tools that write to a path, kept below the media location */
 export const STAGING_FOLDER = '.immich-staging';
@@ -76,10 +103,15 @@ export const isSameStoredFile = (existing: RecordedFile, stored: StorageLocation
   return existing.backendId === stored.backendId && existing.key === stored.key;
 };
 
-export const toRecordedFile = (path: string, location: StorageLocation | null): RecordedFile => ({
+export const toRecordedFile = (
+  path: string,
+  location: (StorageLocation & Pick<RecordedFile, 'size' | 'checksum'>) | null,
+): RecordedFile => ({
   path,
   backendId: location?.backendId ?? null,
   key: location?.key ?? null,
+  size: location?.size ?? null,
+  checksum: location?.checksum ?? null,
 });
 
 /** Gives access to the blob store of each storage backend */
@@ -92,6 +124,7 @@ export class StorageBackendRepository {
   private host?: LocalBlobStore;
   private configured = new Map<string, BlobStore>();
   private roles = new Map<StorageBackendRole, string>();
+  protected readRetryDelays = READ_RETRY_DELAYS;
 
   constructor(
     @InjectKysely() private db: Kysely<DB>,
@@ -207,8 +240,70 @@ export class StorageBackendRepository {
   }
 
   /** Make a recorded file available on the local filesystem; files on local backends are used where they are */
-  lease(file: RecordedFile): Promise<LocalFileLease> {
-    return Promise.resolve({ path: this.getLocalPath(file), [Symbol.asyncDispose]: () => Promise.resolve() });
+  async lease(file: RecordedFile): Promise<LocalFileLease> {
+    const source = this.resolve(file);
+    if ('path' in source) {
+      return { path: source.path, [Symbol.asyncDispose]: () => Promise.resolve() };
+    }
+
+    // a copy in the staging folder, verified while it is downloaded and removed when the lease ends
+    const stagingFolder = join(StorageCore.getMediaLocation(), STAGING_FOLDER);
+    await mkdir(stagingFolder, { recursive: true });
+    const stagingPath = join(stagingFolder, `${randomUUID()}${extname(file.path)}`);
+    try {
+      await this.withReadRetries(file, async () => {
+        await pipeline(
+          await source.blob.store.get(source.blob.key, { expect: source.blob.expect }),
+          createWriteStream(stagingPath),
+        );
+      });
+    } catch (error) {
+      await rm(stagingPath, { force: true });
+      throw error;
+    }
+
+    return { path: stagingPath, [Symbol.asyncDispose]: () => rm(stagingPath, { force: true }) };
+  }
+
+  /** What a file response sends: a local file, or a blob together with its logical path */
+  toFileSource(file: RecordedFile): { path: string; blob?: RemoteBlob } {
+    const source = this.resolve(file);
+    return 'path' in source ? { path: source.path } : { path: file.path, blob: source.blob };
+  }
+
+  /**
+   * Where to read a recorded file from: a local path, or a blob on a backend that does not keep files locally, with
+   * what the read is verified against.
+   */
+  resolve(file: RecordedFile): { path: string } | { blob: RemoteBlob } {
+    if (file.backendId === null || file.key === null) {
+      return { path: file.path };
+    }
+
+    const store = this.get(file.backendId);
+    if (store.getLocalPath) {
+      return { path: this.getLocalPath(file) };
+    }
+
+    return { blob: { store, key: file.key, expect: toBlobExpectation(file) } };
+  }
+
+  /**
+   * A blob written moments ago may not be readable yet (services only promise eventual consistency), so a missing blob
+   * is read again a few times with growing pauses before giving up; never treat it as gone.
+   */
+  private async withReadRetries<T>(file: RecordedFile, read: () => Promise<T>): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await read();
+      } catch (error) {
+        if (!(error instanceof BlobNotFoundError) || attempt >= this.readRetryDelays.length) {
+          throw error;
+        }
+        this.logger.debug(`${file.backendId}:${file.key} is not readable yet, retrying`);
+        await sleep(this.readRetryDelays[attempt]);
+      }
+    }
   }
 
   /**

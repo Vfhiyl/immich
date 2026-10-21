@@ -172,7 +172,7 @@ export class UserService extends BaseService {
     }
 
     return new ImmichFileResponse({
-      path: this.storageBackendRepository.getLocalPath(file),
+      ...this.storageBackendRepository.toFileSource(file),
       contentType: mimeTypes.lookup(file.path),
       cacheControl: CacheControl.None,
     });

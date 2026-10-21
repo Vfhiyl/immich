@@ -113,9 +113,28 @@ export class DownloadService extends BaseService {
 
       const file =
         dto.edited && asset.editedPath
-          ? { path: asset.editedPath, backendId: asset.editedBackendId ?? null, key: asset.editedKey ?? null }
-          : { path: originalPath, backendId: asset.originalBackendId, key: asset.originalKey };
-      let realpath = this.storageBackendRepository.getLocalPath(file);
+          ? {
+              path: asset.editedPath,
+              backendId: asset.editedBackendId ?? null,
+              key: asset.editedKey ?? null,
+              size: asset.editedSize,
+              checksum: asset.editedChecksum,
+            }
+          : {
+              path: originalPath,
+              backendId: asset.originalBackendId,
+              key: asset.originalKey,
+              size: asset.originalSize,
+              checksum: asset.originalChecksum,
+            };
+      const source = this.storageBackendRepository.resolve(file);
+      if ('blob' in source) {
+        const { store, key, expect } = source.blob;
+        zip.addStream(() => store.get(key, { expect }), filename);
+        continue;
+      }
+
+      let realpath = source.path;
 
       try {
         realpath = await this.storageRepository.realpath(realpath);

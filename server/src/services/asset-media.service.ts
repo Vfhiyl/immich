@@ -271,12 +271,24 @@ export class AssetMediaService extends BaseService {
 
     const asset = await this.assetRepository.getForOriginal(id, dto.edited ?? false);
     const file = asset.editedPath
-      ? { path: asset.editedPath, backendId: asset.editedBackendId ?? null, key: asset.editedKey ?? null }
-      : { path: asset.originalPath, backendId: asset.originalBackendId, key: asset.originalKey };
+      ? {
+          path: asset.editedPath,
+          backendId: asset.editedBackendId ?? null,
+          key: asset.editedKey ?? null,
+          size: asset.editedSize,
+          checksum: asset.editedChecksum,
+        }
+      : {
+          path: asset.originalPath,
+          backendId: asset.originalBackendId,
+          key: asset.originalKey,
+          size: asset.originalSize,
+          checksum: asset.originalChecksum,
+        };
     const path = file.path;
 
     return new ImmichFileResponse({
-      path: this.storageBackendRepository.getLocalPath(file),
+      ...this.storageBackendRepository.toFileSource(file),
       fileName: getFileNameWithoutExtension(asset.originalFileName) + getFilenameExtension(path),
       contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithCache,
@@ -299,11 +311,15 @@ export class AssetMediaService extends BaseService {
     }
 
     const size = (dto.size ?? AssetMediaSize.THUMBNAIL) as unknown as AssetFileType;
-    const { originalPath, originalFileName, path, backendId, key } = await this.assetRepository.getForThumbnail(
-      id,
-      size,
-      dto.edited ?? false,
-    );
+    const {
+      originalPath,
+      originalFileName,
+      path,
+      backendId,
+      key,
+      size: fileSize,
+      checksum,
+    } = await this.assetRepository.getForThumbnail(id, size, dto.edited ?? false);
 
     if (size === AssetFileType.FullSize && mimeTypes.isWebSupportedImage(originalPath) && !dto.edited) {
       // use original file for web supported images
@@ -326,7 +342,7 @@ export class AssetMediaService extends BaseService {
 
     return new ImmichFileResponse({
       fileName,
-      path: this.storageBackendRepository.getLocalPath({ path, backendId, key }),
+      ...this.storageBackendRepository.toFileSource({ path, backendId, key, size: fileSize, checksum }),
       contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithCache,
     });
@@ -342,11 +358,23 @@ export class AssetMediaService extends BaseService {
     }
 
     const file = asset.encodedVideoPath
-      ? { path: asset.encodedVideoPath, backendId: asset.encodedVideoBackendId, key: asset.encodedVideoKey }
-      : { path: asset.originalPath, backendId: asset.originalBackendId, key: asset.originalKey };
+      ? {
+          path: asset.encodedVideoPath,
+          backendId: asset.encodedVideoBackendId,
+          key: asset.encodedVideoKey,
+          size: asset.encodedVideoSize,
+          checksum: asset.encodedVideoChecksum,
+        }
+      : {
+          path: asset.originalPath,
+          backendId: asset.originalBackendId,
+          key: asset.originalKey,
+          size: asset.originalSize,
+          checksum: asset.originalChecksum,
+        };
 
     return new ImmichFileResponse({
-      path: this.storageBackendRepository.getLocalPath(file),
+      ...this.storageBackendRepository.toFileSource(file),
       contentType: mimeTypes.lookup(file.path),
       cacheControl: CacheControl.PrivateWithCache,
     });

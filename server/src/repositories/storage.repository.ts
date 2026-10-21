@@ -40,6 +40,8 @@ export interface ImmichReadStream {
 
 export interface ImmichZipStream extends ImmichReadStream {
   addFile: (inputPath: string, filename: string) => void;
+  /** Add an entry whose content is only opened when the archive gets to it */
+  addStream: (open: () => Promise<NodeJS.ReadableStream>, filename: string) => void;
   finalize: () => Promise<void>;
 }
 
@@ -48,6 +50,33 @@ export interface DiskUsage {
   free: number;
   total: number;
 }
+
+/** A stream that only opens its source once it is read, so that many entries do not all open at once */
+export const lazyStream = (open: () => Promise<NodeJS.ReadableStream>) => {
+  let source: NodeJS.ReadableStream | undefined;
+  const stream: Readable = new Readable({
+    read() {
+      if (source) {
+        source.resume();
+        return;
+      }
+
+      open()
+        .then((opened) => {
+          source = opened;
+          opened.on('data', (chunk) => {
+            if (!stream.push(chunk)) {
+              opened.pause();
+            }
+          });
+          opened.once('end', () => stream.push(null));
+          opened.once('error', (error) => stream.destroy(error));
+        })
+        .catch((error) => stream.destroy(error));
+    },
+  });
+  return stream;
+};
 
 @Injectable()
 export class StorageRepository {
@@ -106,9 +135,13 @@ export class StorageRepository {
       archive.file(input, { name: filename, mode: 0o644 });
     };
 
+    const addStream = (open: () => Promise<NodeJS.ReadableStream>, filename: string) => {
+      archive.append(lazyStream(open), { name: filename, mode: 0o644 });
+    };
+
     const finalize = () => archive.finalize();
 
-    return { stream: archive, addFile, finalize };
+    return { stream: archive, addFile, addStream, finalize };
   }
 
   createGzip(): PassThrough {

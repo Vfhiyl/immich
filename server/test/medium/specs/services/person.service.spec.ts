@@ -299,12 +299,14 @@ describe(PersonService.name, () => {
         thumbnailFile: { backendId: 'media', key },
       });
 
-      const getLocalPath = vi.spyOn(ctx.get(StorageBackendRepository), 'getLocalPath');
+      const resolveFile = vi.spyOn(ctx.get(StorageBackendRepository), 'resolve');
 
       await expect(sut.getThumbnail(factory.auth({ user }), person.personGroupId)).resolves.toEqual(
         expect.objectContaining({ path: `/data/${key}` }),
       );
-      expect(getLocalPath).toHaveBeenCalledWith({ path: `/data/${key}`, backendId: 'media', key });
+      expect(resolveFile).toHaveBeenCalledWith(
+        expect.objectContaining({ path: `/data/${key}`, backendId: 'media', key }),
+      );
     });
 
     it('should fall back to shared thumbnail path', async () => {

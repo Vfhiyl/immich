@@ -27,7 +27,7 @@ export class AssetFileService extends BaseService {
     const file = await findOrFail(() => this.assetFileRepository.get(id), 'Asset file');
 
     return new ImmichFileResponse({
-      path: this.storageBackendRepository.getLocalPath(file),
+      ...this.storageBackendRepository.toFileSource(file),
       fileName: getFileNameWithoutExtension(file.path) + getFilenameExtension(file.path),
       contentType: mimeTypes.lookup(file.path),
       cacheControl: CacheControl.PrivateWithCache,

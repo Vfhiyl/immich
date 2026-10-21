@@ -414,14 +414,16 @@ describe(AssetService.name, () => {
         backendId: 'media',
         key,
       });
-      const getLocalPath = vi.spyOn(ctx.get(StorageBackendRepository), 'getLocalPath');
+      const resolveFile = vi.spyOn(ctx.get(StorageBackendRepository), 'resolve');
 
       const result = await sut.viewThumbnail(factory.auth({ user: { id: user.id } }), asset.id, {
         size: AssetMediaSize.THUMBNAIL,
       });
 
       expect((result as ImmichFileResponse).path).toBe(`/data/${key}`);
-      expect(getLocalPath).toHaveBeenCalledWith({ path: `/data/${key}`, backendId: 'media', key });
+      expect(resolveFile).toHaveBeenCalledWith(
+        expect.objectContaining({ path: `/data/${key}`, backendId: 'media', key }),
+      );
     });
 
     it('should download an original from its recorded location', async () => {
@@ -434,12 +436,14 @@ describe(AssetService.name, () => {
         originalFileName: 'IMG_1.jpg',
         originalFile: { backendId: 'media', key },
       });
-      const getLocalPath = vi.spyOn(ctx.get(StorageBackendRepository), 'getLocalPath');
+      const resolveFile = vi.spyOn(ctx.get(StorageBackendRepository), 'resolve');
 
       const result = await sut.downloadOriginal(factory.auth({ user: { id: user.id } }), asset.id, {});
 
       expect(result).toEqual(expect.objectContaining({ path: `/data/${key}`, fileName: 'IMG_1.jpg' }));
-      expect(getLocalPath).toHaveBeenCalledWith({ path: `/data/${key}`, backendId: 'media', key });
+      expect(resolveFile).toHaveBeenCalledWith(
+        expect.objectContaining({ path: `/data/${key}`, backendId: 'media', key }),
+      );
     });
 
     it('should work with thumbnail size', async () => {

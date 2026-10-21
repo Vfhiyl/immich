@@ -1322,6 +1322,8 @@ export class AssetRepository {
             'asset_file.path as editedPath',
             'asset_file.backendId as editedBackendId',
             'asset_file.key as editedKey',
+            'asset_file.size as editedSize',
+            'asset_file.checksum as editedChecksum',
           ]),
       )
       .leftJoin('asset_original_file', 'asset_original_file.assetId', 'asset.id')
@@ -1329,6 +1331,8 @@ export class AssetRepository {
         'originalPath',
         'asset_original_file.backendId as originalBackendId',
         'asset_original_file.key as originalKey',
+        'asset_original_file.size as originalSize',
+        'asset_original_file.checksum as originalChecksum',
       ]);
   }
 
@@ -1356,6 +1360,8 @@ export class AssetRepository {
         'asset_file.path as path',
         'asset_file.backendId as backendId',
         'asset_file.key as key',
+        'asset_file.size as size',
+        'asset_file.checksum as checksum',
       ])
       .orderBy('asset_file.isEdited', isEdited ? 'desc' : 'asc')
       .executeTakeFirstOrThrow();
@@ -1376,9 +1382,13 @@ export class AssetRepository {
         'asset.originalPath',
         'asset_original_file.backendId as originalBackendId',
         'asset_original_file.key as originalKey',
+        'asset_original_file.size as originalSize',
+        'asset_original_file.checksum as originalChecksum',
         'asset_file.path as encodedVideoPath',
         'asset_file.backendId as encodedVideoBackendId',
         'asset_file.key as encodedVideoKey',
+        'asset_file.size as encodedVideoSize',
+        'asset_file.checksum as encodedVideoChecksum',
       ])
       .where('asset.id', '=', id)
       .where('asset.type', '=', AssetType.Video)

@@ -41,6 +41,9 @@ export type AssetFile = {
   /** Where the file is stored; null until it has been recorded */
   backendId: string | null;
   key: string | null;
+  /** Recorded when the file was stored on a backend, to verify reads with */
+  size?: number | string | null;
+  checksum?: Buffer | string | null;
   isEdited: boolean;
 };
 
@@ -378,6 +381,7 @@ export const columns = {
     'asset_file.path',
     'asset_file.backendId',
     'asset_file.key',
+    'asset_file.size',
     'asset_file.type',
     'asset_file.isEdited',
   ],
@@ -386,6 +390,7 @@ export const columns = {
     'asset_file.path',
     'asset_file.backendId',
     'asset_file.key',
+    'asset_file.size',
     'asset_file.type',
     'asset_file.isEdited',
     'asset_file.isProgressive',

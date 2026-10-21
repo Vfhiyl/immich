@@ -105,6 +105,8 @@ describe(UserRepository.name, () => {
         path: `/data/profile/${user.id}/a.webp`,
         backendId: 'media',
         key: `profile/${user.id}/a.webp`,
+        size: null,
+        checksum: null,
       });
     });
 
@@ -116,6 +118,8 @@ describe(UserRepository.name, () => {
         path: '/data/profile/old.webp',
         backendId: null,
         key: null,
+        size: null,
+        checksum: null,
       });
     });
 

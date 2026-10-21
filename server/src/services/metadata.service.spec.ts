@@ -45,7 +45,7 @@ const forSidecarJob = (
     originalPath: '/path/to/IMG_123.jpg',
     originalFile: null,
     ...asset,
-    files: (asset.files ?? []).map((file) => ({ backendId: null, key: null, ...file })),
+    files: (asset.files ?? []).map((file) => ({ backendId: null, key: null, size: null, ...file })),
   };
 };
 
@@ -212,6 +212,8 @@ describe(MetadataService.name, () => {
         path: '/data/library/IMG_1.jpg',
         backendId: 'media',
         key: 'library/IMG_1.jpg',
+        size: null,
+        checksum: null,
       });
       expect(mocks.metadata.readTags).toHaveBeenCalledWith('/staging/IMG_1.jpg');
       expect(mocks.storage.stat).toHaveBeenCalledWith('/staging/IMG_1.jpg');

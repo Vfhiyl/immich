@@ -9,7 +9,7 @@ import { DB } from 'src/schema/index.js';
 export const newStorageBackendRepositoryMock = (): Mocked<RepositoryInterface<StorageBackendRepository>> => {
   const real = new StorageBackendRepository(
     undefined as unknown as Kysely<DB>,
-    { setContext: () => {}, warn: () => {} } as unknown as LoggingRepository,
+    { setContext: () => {}, warn: () => {}, debug: () => {} } as unknown as LoggingRepository,
   );
   return {
     readConfig: vitest.fn(),
@@ -17,6 +17,8 @@ export const newStorageBackendRepositoryMock = (): Mocked<RepositoryInterface<St
     get: vitest.fn((backendId: string) => real.get(backendId)),
     getLocalPath: vitest.fn((file) => real.getLocalPath(file)),
     lease: vitest.fn((file) => real.lease(file)),
+    resolve: vitest.fn((file) => real.resolve(file)),
+    toFileSource: vitest.fn((file) => real.toFileSource(file)),
     getBackendFor: vitest.fn((role) => real.getBackendFor(role)),
     hasConfiguredBackends: vitest.fn(() => real.hasConfiguredBackends()),
     createOutput: vitest.fn((role, path) => real.createOutput(role, path)),

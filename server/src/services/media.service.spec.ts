@@ -443,6 +443,7 @@ describe(MediaService.name, () => {
             path: '/p',
             backendId: 'derived',
             key: 'old-preview',
+            size: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -453,6 +454,7 @@ describe(MediaService.name, () => {
             path: '/data/t.webp',
             backendId: null,
             key: null,
+            size: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -614,6 +616,8 @@ describe(MediaService.name, () => {
         path: asset.originalPath,
         backendId: 'media',
         key: 'library/IMG_1.jpg',
+        size: null,
+        checksum: null,
       });
       expect(mocks.media.decodeImage).toHaveBeenCalledWith('/staging/IMG_1.jpg', expect.any(Object));
       expect(release).toHaveBeenCalledOnce();
@@ -1863,6 +1867,8 @@ describe(MediaService.name, () => {
         path: personThumbnailStub.newThumbnailMiddle.originalPath,
         backendId: 'host',
         key: personThumbnailStub.newThumbnailMiddle.originalPath.slice(1),
+        size: null,
+        checksum: null,
       });
       expect(mocks.media.decodeImage).toHaveBeenCalledWith('/staging/original.jpg', expect.any(Object));
       expect(release).toHaveBeenCalledOnce();
@@ -1943,7 +1949,7 @@ describe(MediaService.name, () => {
         ownerId: person.ownerId,
         personGroupId: person.personGroupId,
       });
-      mocks.person.updateThumbnail.mockResolvedValue({ path: thumbnailPath, backendId: null, key: null });
+      mocks.person.updateThumbnail.mockResolvedValue({ path: thumbnailPath, backendId: null, key: null, size: null });
 
       await sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId });
 
@@ -2396,6 +2402,8 @@ describe(MediaService.name, () => {
         path: '/original/path.ext',
         backendId: 'host',
         key: 'original/path.ext',
+        size: null,
+        checksum: null,
       });
       expect(mocks.media.transcode).toHaveBeenCalledWith('/staging/path.ext', expect.any(String), expect.any(Object));
       expect(release).toHaveBeenCalledOnce();
@@ -2442,6 +2450,7 @@ describe(MediaService.name, () => {
               path: '/data/v.mp4',
               backendId: 'derived',
               key: 'old',
+              size: null,
               isEdited: false,
             },
           ],
@@ -2496,6 +2505,7 @@ describe(MediaService.name, () => {
             path: StorageCore.getEncodedVideoPath(asset),
             backendId: null,
             key: null,
+            size: null,
             isEdited: false,
           },
         ],
@@ -4526,6 +4536,7 @@ describe(MediaService.name, () => {
             path: '/old/preview.jpg',
             backendId: null,
             key: null,
+            size: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4537,6 +4548,7 @@ describe(MediaService.name, () => {
             path: '/old/thumbnail.jpg',
             backendId: null,
             key: null,
+            size: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4609,6 +4621,7 @@ describe(MediaService.name, () => {
             path: '/old/preview.jpg',
             backendId: null,
             key: null,
+            size: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4620,6 +4633,7 @@ describe(MediaService.name, () => {
             path: '/old/thumbnail.jpg',
             backendId: null,
             key: null,
+            size: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4638,6 +4652,7 @@ describe(MediaService.name, () => {
           path: '/old/preview.jpg',
           backendId: null,
           key: null,
+          size: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4649,6 +4664,7 @@ describe(MediaService.name, () => {
           path: '/old/thumbnail.jpg',
           backendId: null,
           key: null,
+          size: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4671,6 +4687,7 @@ describe(MediaService.name, () => {
             path: '/same/preview.jpg',
             backendId: null,
             key: null,
+            size: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4682,6 +4699,7 @@ describe(MediaService.name, () => {
             path: '/same/thumbnail.jpg',
             backendId: null,
             key: null,
+            size: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4726,6 +4744,7 @@ describe(MediaService.name, () => {
             path: '/old/preview.jpg',
             backendId: null,
             key: null,
+            size: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4737,6 +4756,7 @@ describe(MediaService.name, () => {
             path: '/old/thumbnail.jpg',
             backendId: null,
             key: null,
+            size: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4799,6 +4819,7 @@ describe(MediaService.name, () => {
           path: '/old/thumbnail.jpg',
           backendId: null,
           key: null,
+          size: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4834,6 +4855,7 @@ describe(MediaService.name, () => {
             path: '/old/preview.jpg',
             backendId: null,
             key: null,
+            size: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4852,6 +4874,7 @@ describe(MediaService.name, () => {
           path: '/old/preview.jpg',
           backendId: null,
           key: null,
+          size: null,
           isEdited: false,
           isProgressive: false,
           isTransparent: false,
@@ -4874,6 +4897,7 @@ describe(MediaService.name, () => {
             path: '/old/preview.jpg',
             backendId: null,
             key: null,
+            size: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,
@@ -4885,6 +4909,7 @@ describe(MediaService.name, () => {
             path: '/old/thumbnail.jpg',
             backendId: null,
             key: null,
+            size: null,
             isEdited: false,
             isProgressive: false,
             isTransparent: false,

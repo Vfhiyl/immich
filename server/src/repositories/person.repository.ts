@@ -204,6 +204,8 @@ const thumbnailFile = (eb: ExpressionBuilder<DB, 'person' | 'person_thumbnail_fi
     path: eb.ref('person.thumbnailPath'),
     backendId: eb.ref('person_thumbnail_file.backendId'),
     key: eb.ref('person_thumbnail_file.key'),
+    // the checksum stays out of JSON, where it would turn into text; reads are verified by size
+    size: eb.ref('person_thumbnail_file.size'),
   })
     // the thumbnail file is left joined
     .$castTo<RecordedFile>()

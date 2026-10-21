@@ -31,6 +31,7 @@ select
           "asset_file"."path",
           "asset_file"."backendId",
           "asset_file"."key",
+          "asset_file"."size",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -78,6 +79,7 @@ select
           "asset_file"."path",
           "asset_file"."backendId",
           "asset_file"."key",
+          "asset_file"."size",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -205,6 +207,7 @@ select
           "asset_file"."path",
           "asset_file"."backendId",
           "asset_file"."key",
+          "asset_file"."size",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -252,6 +255,7 @@ select
           "asset_file"."path",
           "asset_file"."backendId",
           "asset_file"."key",
+          "asset_file"."size",
           "asset_file"."type",
           "asset_file"."isEdited",
           "asset_file"."isProgressive",
@@ -401,6 +405,7 @@ select
           "asset_file"."path",
           "asset_file"."backendId",
           "asset_file"."key",
+          "asset_file"."size",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -431,6 +436,7 @@ select
   "asset_file"."path",
   "asset_file"."backendId",
   "asset_file"."key",
+  "asset_file"."size",
   "asset_file"."type",
   "asset_file"."isEdited"
 from
@@ -490,6 +496,7 @@ select
           "asset_file"."path",
           "asset_file"."backendId",
           "asset_file"."key",
+          "asset_file"."size",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -532,6 +539,7 @@ select
           "asset_file"."path",
           "asset_file"."backendId",
           "asset_file"."key",
+          "asset_file"."size",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -562,7 +570,8 @@ select
         select
           "asset_file"."path",
           "asset_file"."backendId",
-          "asset_file"."key"
+          "asset_file"."key",
+          "asset_file"."size"
         from
           "asset_file"
         where
@@ -624,6 +633,7 @@ select
           "asset_file"."path",
           "asset_file"."backendId",
           "asset_file"."key",
+          "asset_file"."size",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -712,6 +722,7 @@ select
           "asset_file"."path",
           "asset_file"."backendId",
           "asset_file"."key",
+          "asset_file"."size",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -845,6 +856,7 @@ select
           "asset_file"."path",
           "asset_file"."backendId",
           "asset_file"."key",
+          "asset_file"."size",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
@@ -889,6 +901,7 @@ select
           "asset_file"."path",
           "asset_file"."backendId",
           "asset_file"."key",
+          "asset_file"."size",
           "asset_file"."type",
           "asset_file"."isEdited"
         from
