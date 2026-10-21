@@ -200,6 +200,43 @@ describe(DownloadService.name, () => {
       expect(archiveMock.addFile).toHaveBeenNthCalledWith(2, '/data/library/b.jpg', '......tmppwn+1.jpg');
     });
 
+    it('should add originals and edited files from their recorded location', async () => {
+      const archiveMock = {
+        addFile: vitest.fn(),
+        finalize: vitest.fn(),
+        stream: new Readable(),
+      };
+      const asset = AssetFactory.create({ originalPath: '/data/library/IMG_1.jpg', originalFileName: 'IMG_1.jpg' });
+      const edited = AssetFactory.create({ originalPath: '/data/library/IMG_2.jpg', originalFileName: 'IMG_2.jpg' });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id, edited.id]));
+      mocks.asset.getForOriginals.mockResolvedValue([
+        { ...asset, originalBackendId: 'media', originalKey: 'library/IMG_1.jpg' },
+        {
+          ...forOriginal(edited),
+          editedPath: '/data/thumbs/IMG_2_edited.jpg',
+          editedBackendId: 'media',
+          editedKey: 'thumbs/IMG_2_edited.jpg',
+        },
+      ]);
+      mocks.storage.realpath.mockImplementation((path) => Promise.resolve(path));
+      mocks.storage.createZipStream.mockReturnValue(archiveMock);
+
+      await sut.downloadArchive(authStub.admin, { assetIds: [asset.id, edited.id], edited: true });
+
+      expect(mocks.storageBackend.getLocalPath).toHaveBeenCalledWith({
+        path: '/data/library/IMG_1.jpg',
+        backendId: 'media',
+        key: 'library/IMG_1.jpg',
+      });
+      expect(mocks.storageBackend.getLocalPath).toHaveBeenCalledWith({
+        path: '/data/thumbs/IMG_2_edited.jpg',
+        backendId: 'media',
+        key: 'thumbs/IMG_2_edited.jpg',
+      });
+      expect(archiveMock.addFile).toHaveBeenCalledWith('/data/library/IMG_1.jpg', 'IMG_1.jpg');
+      expect(archiveMock.addFile).toHaveBeenCalledWith('/data/thumbs/IMG_2_edited.jpg', 'IMG_2.jpg');
+    });
+
     it('should resolve symlinks', async () => {
       const archiveMock = {
         addFile: vitest.fn(),

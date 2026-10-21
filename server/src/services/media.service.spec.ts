@@ -423,6 +423,50 @@ describe(MediaService.name, () => {
       });
     });
 
+    it('should read the original from a leased local file and release it afterwards', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        originalFile: { backendId: 'media', key: 'library/IMG_1.jpg' },
+      });
+      const release = vi.fn().mockResolvedValue(undefined);
+      mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/IMG_1.jpg', [Symbol.asyncDispose]: release });
+      mocks.media.generateThumbhash.mockResolvedValue(Buffer.from('a thumbhash', 'utf8'));
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.storageBackend.lease).toHaveBeenCalledWith({
+        path: asset.originalPath,
+        backendId: 'media',
+        key: 'library/IMG_1.jpg',
+      });
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith('/staging/IMG_1.jpg', expect.any(Object));
+      expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('should release the leased original when thumbnail generation fails', async () => {
+      const asset = AssetFactory.from().exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      const release = vi.fn().mockResolvedValue(undefined);
+      mocks.storageBackend.lease.mockResolvedValue({ path: asset.originalPath, [Symbol.asyncDispose]: release });
+      mocks.media.decodeImage.mockRejectedValue(new Error('corrupt image'));
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('corrupt image');
+
+      expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('should not lease the original of an asset that is skipped', async () => {
+      const asset = AssetFactory.from({ type: 'foo' as AssetType })
+        .exif()
+        .build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.storageBackend.lease).not.toHaveBeenCalled();
+    });
+
     it('should generate P3 thumbnails for a wide gamut image', async () => {
       const asset = AssetFactory.from()
         .exif({ profileDescription: 'Adobe RGB', bitsPerSample: 14 })
@@ -1994,6 +2038,7 @@ describe(MediaService.name, () => {
 
   describe('handleVideoConversion', () => {
     let asset: ReturnType<typeof AssetFactory.create> & {
+      originalFile: { backendId: string; key: string } | null;
       videoStream: VideoStreamInfo & { timeBase: number };
       audioStream: AudioStreamInfo | null;
       format: VideoFormat;
@@ -2001,6 +2046,7 @@ describe(MediaService.name, () => {
     beforeEach(() => {
       asset = {
         ...AssetFactory.create({ id: 'video-id', type: AssetType.Video, originalPath: '/original/path.ext' }),
+        originalFile: { backendId: 'host', key: 'original/path.ext' },
         videoStream: probeStub.videoStreamH264.videoStream,
         audioStream: null,
         format: probeStub.videoStreamH264.format,
@@ -2012,6 +2058,41 @@ describe(MediaService.name, () => {
     it('should skip transcoding if asset not found', async () => {
       await sut.handleVideoConversion({ id: 'video-id' });
       expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('should transcode from a leased local copy of the original and release it afterwards', async () => {
+      const release = vi.fn().mockResolvedValue(undefined);
+      mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/path.ext', [Symbol.asyncDispose]: release });
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.multipleVideoStreams });
+
+      await sut.handleVideoConversion({ id: 'video-id' });
+
+      expect(mocks.storageBackend.lease).toHaveBeenCalledWith({
+        path: '/original/path.ext',
+        backendId: 'host',
+        key: 'original/path.ext',
+      });
+      expect(mocks.media.transcode).toHaveBeenCalledWith('/staging/path.ext', expect.any(String), expect.any(Object));
+      expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('should release the leased original when transcoding fails', async () => {
+      const release = vi.fn().mockResolvedValue(undefined);
+      mocks.storageBackend.lease.mockResolvedValue({ path: '/original/path.ext', [Symbol.asyncDispose]: release });
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.multipleVideoStreams });
+      mocks.media.transcode.mockRejectedValue(new Error('ffmpeg failed'));
+
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
+
+      expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('should not lease the original of a video that does not need transcoding', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.Disabled } });
+
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.storageBackend.lease).not.toHaveBeenCalled();
     });
 
     it('should transcode the highest bitrate video stream', async () => {
@@ -2411,7 +2492,11 @@ describe(MediaService.name, () => {
         .file({ type: AssetFileType.EncodedVideo, path: '/encoded/video/path.mp4' })
         .build();
       mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.Disabled } });
-      mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...localAsset, ...probeStub.videoStream2160p });
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...localAsset,
+        originalFile: null,
+        ...probeStub.videoStream2160p,
+      });
 
       await sut.handleVideoConversion({ id: localAsset.id });
 

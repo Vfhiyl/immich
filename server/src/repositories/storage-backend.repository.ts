@@ -13,6 +13,18 @@ export interface RecordedFile {
   key: string | null;
 }
 
+/** A local copy of a file for tools that need one (exiftool, ffmpeg, sharp); release it with `await using` */
+export interface LocalFileLease extends AsyncDisposable {
+  /** Has the same file extension as the recorded path, since tools and file type checks rely on it */
+  path: string;
+}
+
+export const toRecordedFile = (path: string, location: StorageLocation | null): RecordedFile => ({
+  path,
+  backendId: location?.backendId ?? null,
+  key: location?.key ?? null,
+});
+
 const isBuiltinBackend = (backendId: string): backendId is BuiltinStorageBackend =>
   (Object.values(BuiltinStorageBackend) as string[]).includes(backendId);
 
@@ -46,6 +58,11 @@ export class StorageBackendRepository {
         throw new Error(`Unknown storage backend: ${backendId}`);
       }
     }
+  }
+
+  /** Make a recorded file available on the local filesystem; files on local backends are used where they are */
+  lease(file: RecordedFile): Promise<LocalFileLease> {
+    return Promise.resolve({ path: this.getLocalPath(file), [Symbol.asyncDispose]: () => Promise.resolve() });
   }
 
   /**

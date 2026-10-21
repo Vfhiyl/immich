@@ -101,7 +101,7 @@ export class DownloadService extends BaseService {
         continue;
       }
 
-      const { originalPath, editedPath, originalFileName } = asset;
+      const { originalPath, originalFileName } = asset;
 
       let filename = sanitize(originalFileName) || 'unnamed';
       const count = paths[filename] || 0;
@@ -111,7 +111,11 @@ export class DownloadService extends BaseService {
         filename = `${parsedFilename.name}+${count}${parsedFilename.ext}`;
       }
 
-      let realpath = dto.edited && editedPath ? editedPath : originalPath;
+      const file =
+        dto.edited && asset.editedPath
+          ? { path: asset.editedPath, backendId: asset.editedBackendId ?? null, key: asset.editedKey ?? null }
+          : { path: originalPath, backendId: asset.originalBackendId, key: asset.originalKey };
+      let realpath = this.storageBackendRepository.getLocalPath(file);
 
       try {
         realpath = await this.storageRepository.realpath(realpath);

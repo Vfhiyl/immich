@@ -168,6 +168,8 @@ export const getForGenerateThumbnail = (asset: ReturnType<AssetFactory['build']>
   visibility: asset.visibility,
   originalFileName: asset.originalFileName,
   originalPath: asset.originalPath,
+  // not recorded yet, so the original is read from its path
+  originalFile: null as { backendId: string; key: string } | null,
   ownerId: asset.ownerId,
   thumbhash: asset.thumbhash,
   type: asset.type,

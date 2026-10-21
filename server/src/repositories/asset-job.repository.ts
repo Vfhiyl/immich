@@ -17,6 +17,7 @@ import {
   withFaces,
   withFilePath,
   withFiles,
+  withOriginalFile,
   withVideoFormat,
   withVideoStream,
 } from 'src/utils/database.js';
@@ -126,6 +127,7 @@ export class AssetJobRepository {
         'asset.thumbhash',
         'asset.type',
       ])
+      .select(withOriginalFile)
       .select((eb) =>
         jsonArrayFrom(
           eb
@@ -353,6 +355,7 @@ export class AssetJobRepository {
       .innerJoin('asset_video', 'asset_video.assetId', 'asset.id')
       .leftJoin('asset_audio', 'asset_audio.assetId', 'asset.id')
       .select(['asset.id', 'asset.ownerId', 'asset.originalPath'])
+      .select(withOriginalFile)
       .select(withFiles)
       .select((eb) => withAudioStream(eb).as('audioStream'))
       .select((eb) => withVideoStream(eb).$notNull().as('videoStream'))

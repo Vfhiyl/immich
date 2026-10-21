@@ -9,5 +9,6 @@ export const newStorageBackendRepositoryMock = (): Mocked<RepositoryInterface<St
   return {
     get: vitest.fn((backendId: string) => real.get(backendId)),
     getLocalPath: vitest.fn((file) => real.getLocalPath(file)),
+    lease: vitest.fn((file) => real.lease(file)),
   };
 };

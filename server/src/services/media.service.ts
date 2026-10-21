@@ -37,6 +37,7 @@ import {
 } from 'src/enum.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { BoundingBox } from 'src/repositories/machine-learning.repository.js';
+import { toRecordedFile } from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
@@ -203,19 +204,28 @@ export class MediaService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    let generated: Awaited<ReturnType<MediaService['generateImageThumbnails']>>;
-    if (asset.type === AssetType.Video || asset.originalFileName.toLowerCase().endsWith('.gif')) {
-      this.logger.verbose(`Thumbnail generation for video ${id} ${asset.originalPath}`);
-      generated = await this.generateVideoThumbnails(asset, config);
-    } else if (asset.type === AssetType.Image) {
-      this.logger.verbose(`Thumbnail generation for image ${id} ${asset.originalPath}`);
-      generated = await this.generateImageThumbnails(asset, config);
-    } else {
+    const isVideo = asset.type === AssetType.Video || asset.originalFileName.toLowerCase().endsWith('.gif');
+    if (!isVideo && asset.type !== AssetType.Image) {
       this.logger.warn(`Skipping thumbnail generation for asset ${id}: ${asset.type} is not an image or video`);
       return JobStatus.Skipped;
     }
 
-    const editedGenerated = await this.generateEditedThumbnails(asset, config);
+    // read the original once from a local file, wherever it is stored
+    await using original = await this.storageBackendRepository.lease(
+      toRecordedFile(asset.originalPath, asset.originalFile),
+    );
+    const source = { ...asset, originalPath: original.path };
+
+    let generated: Awaited<ReturnType<MediaService['generateImageThumbnails']>>;
+    if (isVideo) {
+      this.logger.verbose(`Thumbnail generation for video ${id} ${asset.originalPath}`);
+      generated = await this.generateVideoThumbnails(source, config);
+    } else {
+      this.logger.verbose(`Thumbnail generation for image ${id} ${asset.originalPath}`);
+      generated = await this.generateImageThumbnails(source, config);
+    }
+
+    const editedGenerated = await this.generateEditedThumbnails(source, config);
     if (editedGenerated) {
       generated.files.push(...editedGenerated.files);
     }
@@ -562,7 +572,6 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
-    const input = asset.originalPath;
     const output = StorageCore.getEncodedVideoPath(asset);
     this.storageCore.ensureFolders(output);
 
@@ -591,6 +600,12 @@ export class MediaService extends BaseService {
 
       return JobStatus.Skipped;
     }
+
+    // only fetch the original once it is certain to be transcoded
+    await using original = await this.storageBackendRepository.lease(
+      toRecordedFile(asset.originalPath, asset.originalFile),
+    );
+    const input = original.path;
 
     const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
     if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {

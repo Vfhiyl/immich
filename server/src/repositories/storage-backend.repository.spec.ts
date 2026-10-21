@@ -83,4 +83,19 @@ describe(StorageBackendRepository.name, () => {
       );
     });
   });
+
+  describe('lease', () => {
+    it('should lend a file on a local backend where it is', async () => {
+      await using lease = await sut.lease({ path: '/data/upload/a.jpg', backendId: 'media', key: 'upload/a.jpg' });
+
+      expect(lease.path).toBe('/data/upload/a.jpg');
+    });
+
+    it('should lend a file without a recorded location by its path', async () => {
+      const lease = await sut.lease({ path: '/mnt/a.jpg', backendId: null, key: null });
+
+      expect(lease.path).toBe('/mnt/a.jpg');
+      await expect(lease[Symbol.asyncDispose]()).resolves.toBeUndefined();
+    });
+  });
 });
