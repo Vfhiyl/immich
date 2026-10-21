@@ -83,8 +83,64 @@ describe(LocalCopies.name, () => {
     now += LOCAL_COPY_LIMITS.maxAgeMs + 1000;
     await sut.keep(location('new'), await writeUpload('new.jpg', 'new'));
 
-    // keeping the new copy swept the old one
+    await sut.sweep();
+
     await expect(copies()).resolves.toEqual(['new']);
+  });
+
+  it('should sweep by itself once enough was added since the last sweep', async () => {
+    const sut = create({ maxBytes: 1000 });
+    await sut.keep(location('old'), await writeUpload('old.jpg', 'old'));
+    now += LOCAL_COPY_LIMITS.maxAgeMs + 1000;
+
+    // 5% of the space, i.e. 50 bytes, triggers a sweep
+    await sut.keep(location('small'), await writeUpload('small.jpg', Buffer.alloc(10)));
+    await expect(copies()).resolves.toEqual(['old', 'small']);
+    await sut.keep(location('large'), await writeUpload('large.jpg', Buffer.alloc(100)));
+    await expect(copies()).resolves.toEqual(['large', 'small']);
+  });
+
+  it('should find a copy, refreshing it when reads count as use', async () => {
+    const cache = create({ refreshOnRead: true });
+    await cache.keep(location('a'), await writeUpload('a.jpg', 'a'));
+    now += 60_000;
+
+    expect(cache.find(location('a'))).toBe(join(root, 'originals', 'a'));
+    expect(cache.find(location('missing'))).toBeUndefined();
+
+    await vi.waitFor(async () => {
+      const { mtimeMs } = await fs.stat(join(root, 'originals', 'a'));
+      expect(Math.round(mtimeMs / 1000)).toBe(Math.round(now / 1000));
+    });
+  });
+
+  it('should keep the copies that were read recently when making space', async () => {
+    const cache = create({ refreshOnRead: true, maxBytes: 250 });
+    await cache.keep(location('a'), await writeUpload('a.jpg', Buffer.alloc(100)));
+    now += 1000;
+    await cache.keep(location('b'), await writeUpload('b.jpg', Buffer.alloc(100)));
+    now += 1000;
+    // a is the oldest, but is read now
+    await cache.linkTo(location('a'), join(folder, 'lease.jpg'));
+    now += 1000;
+
+    // adding c makes space by removing the least recently used copy
+    await cache.keep(location('c'), await writeUpload('c.jpg', Buffer.alloc(100)));
+
+    await expect(copies()).resolves.toEqual(['a', 'c']);
+  });
+
+  it('should not refresh copies that are only kept for a while', async () => {
+    const sut = create();
+    await sut.keep(location('a'), await writeUpload('a.jpg', 'a'));
+    const before = await fs.stat(join(root, 'originals', 'a'));
+    now += 60_000;
+
+    await sut.linkTo(location('a'), join(folder, 'lease.jpg'));
+    expect(sut.find(location('a'))).toBeDefined();
+
+    const after = await fs.stat(join(root, 'originals', 'a'));
+    expect(after.mtimeMs).toBe(before.mtimeMs);
   });
 
   it('should remove the oldest copies when they take more than their space', async () => {

@@ -37,6 +37,14 @@ describe(StorageBackendRepository.name, () => {
   let sut: StorageBackendRepository;
   let logger: Mocked<Pick<LoggingRepository, 'setContext' | 'warn' | 'debug'>>;
 
+  const writeDerived = async (content: string, cache = true) => {
+    const output = await sut.createOutput(StorageBackendRole.Derived, '/data/thumbs/a_preview.webp', { cache });
+    await fs.writeFile(output.path, content);
+    const stored = await output.commit();
+    await output[Symbol.asyncDispose]();
+    return { path: '/data/thumbs/a_preview.webp', ...stored };
+  };
+
   beforeEach(() => {
     StorageCore.setMediaLocation('/data');
     logger = { setContext: vi.fn(), warn: vi.fn(), debug: vi.fn() };
@@ -578,6 +586,9 @@ describe(StorageBackendRepository.name, () => {
       return { path: '/data/upload/a.jpg', ...(await sut.storeFile(StorageBackendRole.Originals, path)) };
     };
 
+    const configureDerived = () =>
+      sut.configure([{ ...encryptedBackend(), id: 'derived', role: StorageBackendRole.Derived }], keys);
+    const cached = (key: string) => join(directory, 'media', '.immich-cache', 'derived', key);
     beforeEach(async () => {
       directory = await fs.mkdtemp(join(tmpdir(), 'immich-storage-encryption-'));
       StorageCore.setMediaLocation(join(directory, 'media'));
@@ -750,6 +761,62 @@ describe(StorageBackendRepository.name, () => {
         fs.readFile(join(directory, 'media', '.immich-copies', 'originals', stored.key), 'utf8'),
       ).resolves.toBe('motion video');
       await expect(fs.readdir(join(directory, 'media', '.immich-staging'))).resolves.toEqual([]);
+    });
+
+    describe('derived cache', () => {
+      it('should cache an output and serve and lease it from the cache', async () => {
+        configureDerived();
+        const stored = await writeDerived('preview');
+        const get = vi.spyOn(EncryptedBlobStore.prototype, 'get');
+
+        await expect(fs.readFile(cached(stored.key), 'utf8')).resolves.toBe('preview');
+        expect(sut.toFileSource(stored)).toEqual({ path: cached(stored.key) });
+        await using lease = await sut.lease(stored);
+        await expect(fs.readFile(lease.path, 'utf8')).resolves.toBe('preview');
+        expect(get).not.toHaveBeenCalled();
+      });
+
+      it('should not cache an output unless asked to', async () => {
+        configureDerived();
+        const stored = await writeDerived('encoded video', false);
+
+        await expect(fs.access(cached(stored.key))).rejects.toThrow('ENOENT');
+        expect(sut.toFileSource(stored)).toEqual({ path: stored.path, blob: expect.anything() });
+      });
+
+      it('should cache a small derived file once it was downloaded', async () => {
+        configureDerived();
+        const stored = await writeDerived('preview', false);
+
+        {
+          await using lease = await sut.lease(stored);
+          await expect(fs.readFile(lease.path, 'utf8')).resolves.toBe('preview');
+        }
+
+        await expect(fs.readFile(cached(stored.key), 'utf8')).resolves.toBe('preview');
+        await expect(fs.readdir(join(directory, 'media', '.immich-staging'))).resolves.toEqual([]);
+      });
+
+      it('should not cache originals that were downloaded', async () => {
+        sut.configure([encryptedBackend()], keys);
+        const upload = join(directory, 'upload.jpg');
+        await fs.writeFile(upload, 'original');
+        const stored = { path: '/data/upload/a.jpg', ...(await sut.storeFile(StorageBackendRole.Originals, upload)) };
+
+        const lease = await sut.lease(stored);
+        await lease[Symbol.asyncDispose]();
+
+        await expect(fs.readdir(join(directory, 'media', '.immich-cache'))).rejects.toThrow('ENOENT');
+      });
+
+      it('should remove the cached file when the file is dropped', async () => {
+        configureDerived();
+        const stored = await writeDerived('preview');
+
+        await sut.dropLocalCopy(stored);
+
+        await expect(fs.access(cached(stored.key))).rejects.toThrow('ENOENT');
+      });
     });
 
     it('should not touch copies when dropping a file on a built-in backend', async () => {

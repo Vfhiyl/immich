@@ -212,9 +212,9 @@ export class TestEnvironment {
     return readdirIfExists(join(this.mediaLocation, '.immich-staging'));
   }
 
-  /** Local copies of stored files kept for processing, of every backend */
-  async listLocalCopies() {
-    const root = join(this.mediaLocation, '.immich-copies');
+  /** Local copies of stored files kept for processing, or with `cache` cached derived files, of every backend */
+  async listLocalCopies({ cache = false } = {}) {
+    const root = join(this.mediaLocation, cache ? '.immich-cache' : '.immich-copies');
     const backends = await readdirIfExists(root);
     const copies = await Promise.all(backends.map((backend) => readdirIfExists(join(root, backend))));
     return copies.flat();

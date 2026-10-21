@@ -637,6 +637,10 @@ describe(MediaService.name, () => {
       });
       expect(mocks.media.decodeImage).toHaveBeenCalledWith('/staging/IMG_1.jpg', expect.any(Object));
       expect(release).toHaveBeenCalledOnce();
+      // thumbnails and previews are cached, since they are read right after and often
+      expect(mocks.storageBackend.createOutput).toHaveBeenCalledWith(StorageBackendRole.Derived, expect.any(String), {
+        cache: true,
+      });
       // thumbnails are the last step that reads the original of an image
       expect(mocks.storageBackend.dropLocalCopy).toHaveBeenCalledWith({
         backendId: 'media',
@@ -2462,6 +2466,10 @@ describe(MediaService.name, () => {
       expect(release).toHaveBeenCalledOnce();
       // transcoding is the last step that reads the original of a video
       expect(mocks.storageBackend.dropLocalCopy).toHaveBeenCalledWith(asset.originalFile);
+      // encoded videos are too large for the cache of derived files
+      expect(mocks.storageBackend.createOutput).toHaveBeenCalledWith(StorageBackendRole.Derived, expect.any(String), {
+        cache: false,
+      });
     });
 
     it('should release the leased original when transcoding fails', async () => {

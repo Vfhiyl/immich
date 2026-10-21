@@ -670,7 +670,8 @@ export class MediaService extends BaseService {
       toRecordedFile(asset.originalPath, asset.originalFile),
     );
     const input = original.path;
-    await using encoded = await this.createDerivedOutput(output);
+    // read in ranges while it is played, and too large for the cache
+    await using encoded = await this.createDerivedOutput(output, { cache: false });
 
     const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
     if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
@@ -919,8 +920,9 @@ export class MediaService extends BaseService {
     }
   }
 
-  private createDerivedOutput(path: string) {
-    return this.storageBackendRepository.createOutput(StorageBackendRole.Derived, path);
+  /** Thumbnails and previews are cached locally, since they are read right after (by ML jobs) and served often */
+  private createDerivedOutput(path: string, { cache = true } = {}) {
+    return this.storageBackendRepository.createOutput(StorageBackendRole.Derived, path, { cache });
   }
 
   private async generateEditedThumbnails(asset: ThumbnailAsset, config: SystemConfig) {

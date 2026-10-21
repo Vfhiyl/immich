@@ -1,4 +1,4 @@
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   Api,
@@ -325,6 +325,17 @@ describe('storage backends on an S3 service', () => {
     expect(sha1(body)).toBe(thumbnail.checksum);
   });
 
+  it('should serve thumbnails from the local cache', async () => {
+    const [, thumbnail] = await getFiles(environment, assetId);
+    await expect(environment.listLocalCopies({ cache: true })).resolves.toContain(thumbnail.key);
+
+    // without the object, the thumbnail can only come from the cache
+    await rm(join(environment.backendRoot('derived'), thumbnail.key));
+    const { status, body } = await api.download(`/assets/${assetId}/thumbnail?size=thumbnail`);
+    expect(status).toBe(200);
+    expect(sha1(body)).toBe(thumbnail.checksum);
+  });
+
   it('should answer a conditional request for an unchanged blob without the content', async () => {
     const original = await getOriginal(environment, assetId);
     await expect(
@@ -436,6 +447,7 @@ describe('storage backends on an S3 service', () => {
         await expect(environment.listBackend('originals')).resolves.toEqual([]);
         await expect(environment.listBackend('derived')).resolves.toEqual([]);
         await expect(environment.listLocalCopies()).resolves.toEqual([]);
+        await expect(environment.listLocalCopies({ cache: true })).resolves.toEqual([]);
       },
       { timeout: 60_000 },
     );

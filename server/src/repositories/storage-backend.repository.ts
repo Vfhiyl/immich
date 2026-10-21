@@ -4,7 +4,7 @@ import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { link, mkdir, readFile, rm } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -20,7 +20,7 @@ import { BlobExpectation, BlobNotFoundError, BlobRange, BlobStore } from 'src/re
 import { EncryptedBlobStore } from 'src/repositories/encrypted-blob-store.js';
 import { KeyProvider, MasterKeys } from 'src/repositories/key-provider.js';
 import { LocalBlobStore } from 'src/repositories/local-blob-store.js';
-import { LocalCopies } from 'src/repositories/local-copies.js';
+import { DERIVED_CACHE_LIMITS, LOCAL_COPY_LIMITS, LocalCopies } from 'src/repositories/local-copies.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { S3BlobStore, createS3Client } from 'src/repositories/s3-blob-store.js';
 import { DB } from 'src/schema/index.js';
@@ -90,6 +90,12 @@ export const STAGING_FOLDER = '.immich-staging';
 /** Local copies of stored files for processing, on the same filesystem as the staging folder so they can be linked */
 export const LOCAL_COPIES_FOLDER = '.immich-copies';
 
+/** Cached derived files, like local copies but kept while they are used */
+export const DERIVED_CACHE_FOLDER = '.immich-cache';
+
+/** Derived files read from a backend are cached up to this size; encoded videos are larger and read in ranges */
+const DERIVED_CACHE_MAX_FILE_SIZE = 16 * 1024 * 1024;
+
 export interface StoreOptions {
   /** Describes the file in an encrypted object, besides its path */
   manifest?: Record<string, unknown>;
@@ -143,7 +149,7 @@ export const isBuiltinStorageBackend = (backendId: string): backendId is Builtin
 @Injectable()
 export class StorageBackendRepository {
   private media?: { root: string; store: LocalBlobStore };
-  private copies?: { root: string; copies: LocalCopies };
+  private copies?: { root: string; copies: LocalCopies; cache: LocalCopies };
   private host?: LocalBlobStore;
   private configured = new Map<string, BlobStore>();
   /** Backends whose new files are encrypted */
@@ -230,12 +236,17 @@ export class StorageBackendRepository {
   /**
    * Prepare a new file that will be stored at `path`, or in the backend configured for its role. On a backend the file
    * gets a new random key, and `path` only serves as its logical name (its extension is kept for tools and type checks).
-   * With `keepLocalCopy`, the written file is kept as a local copy for processing that follows.
+   * With `keepLocalCopy`, the written file is kept as a local copy for processing that follows; with `cache`, in the
+   * cache of derived files, for small files that are read often.
    */
   async createOutput(
     role: StorageBackendRole,
     path: string,
-    { manifest, keepLocalCopy = false }: StoreOptions & { keepLocalCopy?: boolean } = {},
+    {
+      manifest,
+      keepLocalCopy = false,
+      cache = false,
+    }: StoreOptions & { keepLocalCopy?: boolean; cache?: boolean } = {},
   ): Promise<OutputFile> {
     const backendId = this.getBackendFor(role);
     if (!backendId) {
@@ -260,7 +271,10 @@ export class StorageBackendRepository {
           manifest: { path, ...manifest },
         });
         const stored = { backendId, key, size, checksum: sha1, encryption: encryption ?? null };
-        if (!keepLocalCopy || !(await this.keepLocalCopy(stored, stagingPath))) {
+        const isKept =
+          (keepLocalCopy && (await this.keepLocalCopy(stored, stagingPath))) ||
+          (cache && this.isReadThroughStore(stored) && (await this.getDerivedCache().keep(stored, stagingPath)));
+        if (!isKept) {
           await rm(stagingPath, { force: true });
         }
         return stored;
@@ -316,23 +330,40 @@ export class StorageBackendRepository {
 
   /** Remove the local copy of a stored file once nothing is going to read it soon, if there is one */
   async dropLocalCopy(file: Pick<RecordedFile, 'backendId' | 'key'> | null | undefined) {
-    if (file?.backendId && file.key && !isBuiltinStorageBackend(file.backendId)) {
-      await this.getLocalCopies().drop({ backendId: file.backendId, key: file.key });
+    if (!(file?.backendId && file.key) || isBuiltinStorageBackend(file.backendId)) {
+      return;
     }
+
+    const location = { backendId: file.backendId, key: file.key };
+    await this.getLocalCopies().drop(location);
+    await this.getDerivedCache().drop(location);
   }
 
-  /** Remove local copies that are too old or take too much space */
-  sweepLocalCopies() {
-    return this.getLocalCopies().sweep();
+  /** Remove local copies and cached files that are too old or take too much space */
+  async sweepLocalCopies() {
+    await this.getLocalCopies().sweep();
+    await this.getDerivedCache().sweep();
   }
 
-  // a method rather than a getter: tools that inspect repositories read every property
+  // methods rather than getters: tools that inspect repositories read every property
   private getLocalCopies() {
-    const root = join(StorageCore.getMediaLocation(), LOCAL_COPIES_FOLDER);
+    return this.getCopyFolders().copies;
+  }
+
+  private getDerivedCache() {
+    return this.getCopyFolders().cache;
+  }
+
+  private getCopyFolders() {
+    const root = StorageCore.getMediaLocation();
     if (this.copies?.root !== root) {
-      this.copies = { root, copies: new LocalCopies(root) };
+      this.copies = {
+        root,
+        copies: new LocalCopies(join(root, LOCAL_COPIES_FOLDER), LOCAL_COPY_LIMITS),
+        cache: new LocalCopies(join(root, DERIVED_CACHE_FOLDER), DERIVED_CACHE_LIMITS),
+      };
     }
-    return this.copies.copies;
+    return this.copies;
   }
 
   private isReadThroughStore(file: StoredFile) {
@@ -351,8 +382,13 @@ export class StorageBackendRepository {
     const stagingFolder = join(StorageCore.getMediaLocation(), STAGING_FOLDER);
     await mkdir(stagingFolder, { recursive: true });
     const stagingPath = join(stagingFolder, `${randomUUID()}${extname(file.path)}`);
-    if (await this.getLocalCopies().linkTo({ backendId: file.backendId!, key: file.key! }, stagingPath)) {
-      return { path: stagingPath, [Symbol.asyncDispose]: () => rm(stagingPath, { force: true }) };
+    const location = { backendId: file.backendId!, key: file.key! };
+    const release = () => rm(stagingPath, { force: true });
+    if (
+      (await this.getLocalCopies().linkTo(location, stagingPath)) ||
+      (await this.getDerivedCache().linkTo(location, stagingPath))
+    ) {
+      return { path: stagingPath, [Symbol.asyncDispose]: release };
     }
 
     try {
@@ -364,13 +400,36 @@ export class StorageBackendRepository {
       throw error;
     }
 
+    // small derived files are read again (by several jobs, and when served), so a verified download is cached
+    if (this.isCachedDerivedFile(file)) {
+      const cached = join(stagingFolder, `${randomUUID()}${extname(file.path)}`);
+      await link(stagingPath, cached);
+      if (!(await this.getDerivedCache().keep(location, cached))) {
+        await rm(cached, { force: true });
+      }
+    }
+
     return { path: stagingPath, [Symbol.asyncDispose]: () => rm(stagingPath, { force: true }) };
   }
 
-  /** What a file response sends: a local file, or a blob together with its logical path */
+  /** What a file response sends: a local file (also a cached one), or a blob together with its logical path */
   toFileSource(file: RecordedFile): { path: string; blob?: RemoteBlob } {
     const source = this.resolve(file);
-    return 'path' in source ? { path: source.path } : { path: file.path, blob: source.blob };
+    if ('path' in source) {
+      return { path: source.path };
+    }
+
+    const cached = this.getDerivedCache().find({ backendId: file.backendId!, key: file.key! });
+    return cached ? { path: cached } : { path: file.path, blob: source.blob };
+  }
+
+  private isCachedDerivedFile(file: RecordedFile) {
+    const size = toBlobExpectation(file)?.size;
+    return (
+      file.backendId === this.getBackendFor(StorageBackendRole.Derived) &&
+      size !== undefined &&
+      size <= DERIVED_CACHE_MAX_FILE_SIZE
+    );
   }
 
   /**

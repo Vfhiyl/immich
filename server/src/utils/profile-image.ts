@@ -25,7 +25,8 @@ export const generateProfileImage = async (
     `${crypto.randomUUID()}.${image.thumbnail.format}`,
   );
   storageCore.ensureFolders(outputPath);
-  await using output = await storageBackend.createOutput(StorageBackendRole.Derived, outputPath);
+  // shown next to everything the user did, so it is read often
+  await using output = await storageBackend.createOutput(StorageBackendRole.Derived, outputPath, { cache: true });
 
   const decoded = await media.decodeImage(input, { colorspace: image.colorspace, processInvalidImages: false });
   await media.generateThumbnail(
