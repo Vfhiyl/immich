@@ -105,7 +105,10 @@ export type GetFacesOptions = WithPersonOptions & { isVisible?: boolean };
 /** a person is identified by its owner and the group it belongs to */
 export type PersonId = { ownerId: string; personGroupId: string };
 
-export type PersonThumbnailUpdate = PersonId & { thumbnailPath: string; thumbnailFile: StorageLocation };
+export type PersonThumbnailUpdate = PersonId & {
+  thumbnailPath: string;
+  thumbnailFile: StorageLocation & { size?: number | null; checksum?: Buffer | null };
+};
 
 export type ReassignCluster = { userId: string; newClusterId: string };
 
@@ -898,9 +901,27 @@ export class PersonRepository {
       .execute();
   }
 
-  /** Point a person at a new thumbnail, recording where it is stored */
-  async updateThumbnail({ ownerId, personGroupId, thumbnailPath, thumbnailFile }: PersonThumbnailUpdate) {
-    await this.db.transaction().execute(async (tx) => {
+  /** Point a person at a new thumbnail, recording where it is stored, and return the thumbnail it replaces */
+  async updateThumbnail({
+    ownerId,
+    personGroupId,
+    thumbnailPath,
+    thumbnailFile,
+  }: PersonThumbnailUpdate): Promise<RecordedFile | undefined> {
+    return this.db.transaction().execute(async (tx) => {
+      const previous = await tx
+        .selectFrom('person')
+        .leftJoin('person_thumbnail_file', (join) =>
+          join
+            .onRef('person_thumbnail_file.ownerId', '=', 'person.ownerId')
+            .onRef('person_thumbnail_file.personGroupId', '=', 'person.personGroupId'),
+        )
+        .select(['person.thumbnailPath as path', 'person_thumbnail_file.backendId', 'person_thumbnail_file.key'])
+        .where('person.ownerId', '=', ownerId)
+        .where('person.personGroupId', '=', personGroupId)
+        .forUpdate('person')
+        .executeTakeFirst();
+
       await tx
         .updateTable('person')
         .set({ thumbnailPath })
@@ -914,9 +935,13 @@ export class PersonRepository {
           oc.columns(['ownerId', 'personGroupId']).doUpdateSet((eb) => ({
             backendId: eb.ref('excluded.backendId'),
             key: eb.ref('excluded.key'),
+            size: eb.ref('excluded.size'),
+            checksum: eb.ref('excluded.checksum'),
           })),
         )
         .execute();
+
+      return previous?.path ? previous : undefined;
     });
   }
 

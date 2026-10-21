@@ -1801,7 +1801,12 @@ describe(MediaService.name, () => {
         ownerId: person.ownerId,
         personGroupId: person.personGroupId,
         thumbnailPath: expect.stringContaining(`/data/thumbs/${person.ownerId}/`),
-        thumbnailFile: { backendId: 'media', key: expect.stringContaining(`thumbs/${person.ownerId}/`) },
+        thumbnailFile: {
+          backendId: 'media',
+          key: expect.stringContaining(`thumbs/${person.ownerId}/`),
+          size: null,
+          checksum: null,
+        },
       });
     });
 
@@ -1848,6 +1853,69 @@ describe(MediaService.name, () => {
       expect(mocks.storageBackend.lease).toHaveBeenCalledWith(personThumbnailStub.videoThumbnail.previewFile);
       expect(mocks.media.decodeImage).toHaveBeenCalledWith('/staging/preview.jpeg', expect.any(Object));
       expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('should store the thumbnail on the backend for derived files and delete the one it replaces', async () => {
+      const root = await fs.mkdtemp(join(tmpdir(), 'immich-person-'));
+      try {
+        StorageCore.setMediaLocation(join(root, 'media'));
+        mocks.storageBackend.configure([
+          {
+            id: 'derived',
+            driver: StorageBackendDriver.Local,
+            role: StorageBackendRole.Derived,
+            root: join(root, 'derived'),
+          },
+        ]);
+        const person = PersonFactory.create();
+        mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue(personThumbnailStub.newThumbnailMiddle);
+        mocks.media.decodeImage.mockResolvedValue({
+          data: Buffer.from(''),
+          info: { width: 1000, height: 1000 } as OutputInfo,
+        });
+        mocks.media.generateThumbnail.mockImplementation((_, __, path) => fs.writeFile(path, 'face'));
+        mocks.person.updateThumbnail.mockResolvedValue({
+          path: '/data/thumbs/old.jpeg',
+          backendId: 'media',
+          key: 'thumbs/old.jpeg',
+        });
+
+        await expect(
+          sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId }),
+        ).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.person.updateThumbnail).toHaveBeenCalledWith({
+          ownerId: person.ownerId,
+          personGroupId: person.personGroupId,
+          thumbnailPath: expect.stringContaining(`${person.personGroupId}.jpeg`),
+          thumbnailFile: { backendId: 'derived', key: expect.any(String), size: 4, checksum: sha1('face') },
+        });
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: [], locations: [{ backendId: 'media', key: 'thumbs/old.jpeg' }] },
+        });
+      } finally {
+        StorageCore.setMediaLocation('/data');
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('should keep a person thumbnail that was written over in place', async () => {
+      const person = PersonFactory.create();
+      mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue(personThumbnailStub.newThumbnailMiddle);
+      mocks.media.decodeImage.mockResolvedValue({
+        data: Buffer.from(''),
+        info: { width: 1000, height: 1000 } as OutputInfo,
+      });
+      const thumbnailPath = StorageCore.getPersonThumbnailPath({
+        ownerId: person.ownerId,
+        personGroupId: person.personGroupId,
+      });
+      mocks.person.updateThumbnail.mockResolvedValue({ path: thumbnailPath, backendId: null, key: null });
+
+      await sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId });
+
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
     });
 
     it('should fail for a video without a preview, without leasing anything', async () => {
@@ -1914,7 +1982,12 @@ describe(MediaService.name, () => {
         ownerId: person.ownerId,
         personGroupId: person.personGroupId,
         thumbnailPath: expect.stringContaining(`/data/thumbs/${person.ownerId}/`),
-        thumbnailFile: { backendId: 'media', key: expect.stringContaining(`thumbs/${person.ownerId}/`) },
+        thumbnailFile: {
+          backendId: 'media',
+          key: expect.stringContaining(`thumbs/${person.ownerId}/`),
+          size: null,
+          checksum: null,
+        },
       });
     });
 
@@ -2313,6 +2386,83 @@ describe(MediaService.name, () => {
       await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
 
       expect(mocks.storageBackend.lease).not.toHaveBeenCalled();
+    });
+
+    it('should store the encoded video on the backend for derived files and delete the previous one', async () => {
+      const root = await fs.mkdtemp(join(tmpdir(), 'immich-encoded-'));
+      try {
+        StorageCore.setMediaLocation(join(root, 'media'));
+        mocks.storageBackend.configure([
+          {
+            id: 'derived',
+            driver: StorageBackendDriver.Local,
+            role: StorageBackendRole.Derived,
+            root: join(root, 'derived'),
+          },
+        ]);
+        mocks.assetJob.getForVideoConversion.mockResolvedValue({
+          ...asset,
+          ...probeStub.multipleVideoStreams,
+          files: [
+            {
+              id: 'f1',
+              type: AssetFileType.EncodedVideo,
+              path: '/data/v.mp4',
+              backendId: 'derived',
+              key: 'old',
+              isEdited: false,
+            },
+          ],
+        });
+        mocks.media.transcode.mockImplementation((_, output) => fs.writeFile(output as string, 'video'));
+
+        await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.media.transcode).toHaveBeenCalledWith(
+          '/original/path.ext',
+          expect.stringMatching(/\.immich-staging\/[0-9a-f-]{36}\.mp4$/),
+          expect.any(Object),
+        );
+        expect(mocks.asset.upsertFile).toHaveBeenCalledWith({
+          assetId: 'video-id',
+          type: AssetFileType.EncodedVideo,
+          path: expect.stringContaining('video-id.mp4'),
+          backendId: 'derived',
+          key: expect.stringMatching(/^[0-9a-f-]{36}$/),
+          size: 5,
+          checksum: sha1('video'),
+          isEdited: false,
+        });
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: [], locations: [{ backendId: 'derived', key: 'old' }] },
+        });
+        await expect(fs.readdir(join(root, 'media', '.immich-staging'))).resolves.toEqual([]);
+      } finally {
+        StorageCore.setMediaLocation('/data');
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('should keep an encoded video that was written over in place', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({
+        ...asset,
+        ...probeStub.multipleVideoStreams,
+        files: [
+          {
+            id: 'f1',
+            type: AssetFileType.EncodedVideo,
+            path: StorageCore.getEncodedVideoPath(asset),
+            backendId: null,
+            key: null,
+            isEdited: false,
+          },
+        ],
+      });
+
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
     });
 
     it('should transcode the highest bitrate video stream', async () => {
@@ -2723,7 +2873,7 @@ describe(MediaService.name, () => {
       expect(mocks.media.transcode).not.toHaveBeenCalled();
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: ['/encoded/video/path.mp4'] },
+        data: { files: ['/encoded/video/path.mp4'], locations: [] },
       });
     });
 

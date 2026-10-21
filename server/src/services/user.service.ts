@@ -14,6 +14,7 @@ import { UserPreferencesResponseDto, UserPreferencesUpdateDto, mapPreferences } 
 import { CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
 import { UserAdminResponseDto, UserResponseDto, UserUpdateMeDto, mapUser, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { CacheControl, JobName, JobStatus, QueueName, StorageFolder, UserMetadataKey } from 'src/enum.js';
+import { toFileDeletion } from 'src/repositories/storage-backend.repository.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -102,13 +103,19 @@ export class UserService extends BaseService {
   }
 
   async createProfileImage(auth: AuthDto, file: Express.Multer.File): Promise<CreateProfileImageResponseDto> {
-    const { profileImagePath: oldPath } = await this.findOrFail(auth.user.id, { withDeleted: false });
+    await this.findOrFail(auth.user.id, { withDeleted: false });
+    const previous = await this.userRepository.getProfileImageFile(auth.user.id);
 
-    let profileImagePath: string;
+    let profileImage: Awaited<ReturnType<typeof generateProfileImage>>;
     try {
       const config = await this.getConfig({ withCache: true });
-      profileImagePath = await generateProfileImage(
-        { media: this.mediaRepository, crypto: this.cryptoRepository, storageCore: this.storageCore },
+      profileImage = await generateProfileImage(
+        {
+          media: this.mediaRepository,
+          crypto: this.cryptoRepository,
+          storageCore: this.storageCore,
+          storageBackend: this.storageBackendRepository,
+        },
         config,
         auth.user.id,
         file.path,
@@ -119,13 +126,17 @@ export class UserService extends BaseService {
     }
 
     const user = await this.userRepository.updateProfileImage(auth.user.id, {
-      profileImagePath,
-      profileImageFile: StorageCore.getStorageLocation(profileImagePath),
+      profileImagePath: profileImage.path,
+      profileImageFile: profileImage.file,
       profileChangedAt: new Date(),
     });
 
-    const toDelete = [file.path, ...(oldPath ? [oldPath] : [])];
-    await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: toDelete } });
+    // the raw upload, and the previous profile image
+    const replaced = toFileDeletion([previous]);
+    await this.jobRepository.queue({
+      name: JobName.FileDelete,
+      data: { files: [file.path, ...replaced.files], locations: replaced.locations },
+    });
 
     return {
       userId: user.id,
@@ -139,12 +150,16 @@ export class UserService extends BaseService {
     if (user.profileImagePath === '') {
       throw new BadRequestException("Can't delete a missing profile Image");
     }
+    const previous = await this.userRepository.getProfileImageFile(auth.user.id);
     await this.userRepository.updateProfileImage(auth.user.id, {
       profileImagePath: '',
       profileImageFile: null,
       profileChangedAt: new Date(),
     });
-    await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [user.profileImagePath] } });
+    await this.jobRepository.queue({
+      name: JobName.FileDelete,
+      data: toFileDeletion([previous ?? { path: user.profileImagePath, backendId: null, key: null }]),
+    });
   }
 
   async getProfileImage(id: string): Promise<ImmichFileResponse> {

@@ -22,6 +22,8 @@ import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
+const hostLocation = (path: string) => ({ backendId: 'host', key: path.slice(1) });
+
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
@@ -261,7 +263,11 @@ describe(AssetService.name, () => {
 
       expect(ctx.getMock(JobRepository).queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: [thumbnailPath, previewPath, sidecarPath, asset.originalPath] },
+        // test files have a host location matching their path
+        data: {
+          files: [],
+          locations: [thumbnailPath, previewPath, sidecarPath, asset.originalPath].map((path) => hostLocation(path)),
+        },
       });
     });
 
@@ -343,7 +349,7 @@ describe(AssetService.name, () => {
 
       expect(ctx.getMock(JobRepository).queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: [thumbnailPath, previewPath] },
+        data: { files: [], locations: [thumbnailPath, previewPath].map((path) => hostLocation(path)) },
       });
     });
   });

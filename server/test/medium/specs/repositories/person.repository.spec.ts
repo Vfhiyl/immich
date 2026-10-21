@@ -830,6 +830,40 @@ describe('person thumbnail files', () => {
     ).resolves.toEqual({ thumbnailPath: `/data/thumbs/${user.id}/b.jpeg` });
   });
 
+  it('should return the thumbnail that a new thumbnail replaces', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { person } = await ctx.newPerson({ ownerId: user.id, thumbnailPath: '' });
+    const id = { ownerId: user.id, personGroupId: person.personGroupId };
+    await ctx.database
+      .updateTable('person')
+      .set({ thumbnailPath: '' })
+      .where('personGroupId', '=', id.personGroupId)
+      .execute();
+
+    await expect(
+      sut.updateThumbnail({
+        ...id,
+        thumbnailPath: '/data/a.jpeg',
+        thumbnailFile: { backendId: 'media', key: 'a.jpeg' },
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      sut.updateThumbnail({
+        ...id,
+        thumbnailPath: '/data/b.jpeg',
+        thumbnailFile: { backendId: 'media', key: 'b.jpeg', size: 4, checksum: Buffer.from('sha1') },
+      }),
+    ).resolves.toEqual({ path: '/data/a.jpeg', backendId: 'media', key: 'a.jpeg' });
+    await expect(
+      ctx.database
+        .selectFrom('person_thumbnail_file')
+        .select(['key', 'size', 'checksum'])
+        .where('personGroupId', '=', id.personGroupId)
+        .executeTakeFirst(),
+    ).resolves.toEqual({ key: 'b.jpeg', size: 4, checksum: Buffer.from('sha1') });
+  });
+
   it('should keep the thumbnail file when the person moves to another group', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

@@ -131,17 +131,23 @@ describe(UserService.name, () => {
       const file = { path: '/profile/path' } as Express.Multer.File;
 
       mocks.user.get.mockResolvedValue(user);
+      mocks.user.getProfileImageFile.mockResolvedValue({ path: user.profileImagePath, backendId: null, key: null });
       mocks.user.updateProfileImage.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
 
       await sut.createProfileImage(authStub.admin, file);
 
       expect(mocks.user.updateProfileImage).toHaveBeenCalledWith(authStub.admin.user.id, {
         profileImagePath: expect.stringContaining(`/data/profile/${authStub.admin.user.id}/`),
-        profileImageFile: { backendId: 'media', key: expect.stringContaining(`profile/${authStub.admin.user.id}/`) },
+        profileImageFile: {
+          backendId: 'media',
+          key: expect.stringContaining(`profile/${authStub.admin.user.id}/`),
+          size: null,
+          checksum: null,
+        },
         profileChangedAt: expect.any(Date),
       });
       expect(mocks.job.queue.mock.calls).toEqual([
-        [{ name: JobName.FileDelete, data: { files: [file.path, user.profileImagePath] } }],
+        [{ name: JobName.FileDelete, data: { files: [file.path, user.profileImagePath], locations: [] } }],
       ]);
     });
 
@@ -153,8 +159,48 @@ describe(UserService.name, () => {
 
       await sut.createProfileImage(authStub.admin, file);
 
-      expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
+      expect(mocks.job.queue.mock.calls).toEqual([
+        [{ name: JobName.FileDelete, data: { files: [file.path], locations: [] } }],
+      ]);
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('profile images on a storage backend', () => {
+    it('should delete a replaced profile image by its location', async () => {
+      const user = UserFactory.create({ profileImagePath: '/data/profile/old.webp' });
+      const file = { path: '/profile/upload' } as Express.Multer.File;
+      mocks.user.get.mockResolvedValue(user);
+      mocks.user.getProfileImageFile.mockResolvedValue({
+        path: user.profileImagePath,
+        backendId: 'derived',
+        key: 'old',
+      });
+      mocks.user.updateProfileImage.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
+
+      await sut.createProfileImage(authStub.admin, file);
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [file.path], locations: [{ backendId: 'derived', key: 'old' }] },
+      });
+    });
+
+    it('should delete a removed profile image by its location', async () => {
+      const user = UserFactory.create({ profileImagePath: '/data/profile/old.webp' });
+      mocks.user.get.mockResolvedValue(user);
+      mocks.user.getProfileImageFile.mockResolvedValue({
+        path: user.profileImagePath,
+        backendId: 'derived',
+        key: 'old',
+      });
+
+      await sut.deleteProfileImage(authStub.admin);
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [], locations: [{ backendId: 'derived', key: 'old' }] },
+      });
     });
   });
 
@@ -181,7 +227,7 @@ describe(UserService.name, () => {
         profileImageFile: null,
         profileChangedAt: expect.any(Date),
       });
-      expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files } }]]);
+      expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files, locations: [] } }]]);
     });
   });
 

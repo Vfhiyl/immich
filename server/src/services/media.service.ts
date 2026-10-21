@@ -11,7 +11,7 @@ import type {
   VideoStreamInfo,
 } from 'src/types.js';
 import { FACE_THUMBNAIL_SIZE } from 'src/constants.js';
-import { ImagePathOptions, StorageCore, StorageLocation, ThumbnailPathEntity } from 'src/cores/storage.core.js';
+import { ImagePathOptions, StorageCore, ThumbnailPathEntity } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { ConfigFFmpegDto, SystemConfig } from 'src/dtos/config.dto.js';
@@ -41,7 +41,7 @@ import { BoundingBox } from 'src/repositories/machine-learning.repository.js';
 import {
   OutputFile,
   StoredFile,
-  isBuiltinStorageBackend,
+  isSameStoredFile,
   toFileDeletion,
   toRecordedFile,
 } from 'src/repositories/storage-backend.repository.js';
@@ -465,6 +465,7 @@ export class MediaService extends BaseService {
 
     const thumbnailPath = StorageCore.getPersonThumbnailPath({ ownerId, personGroupId });
     this.storageCore.ensureFolders(thumbnailPath);
+    await using thumbnail = await this.createDerivedOutput(thumbnailPath);
 
     const thumbnailOptions: GenerateThumbnailOptions = {
       colorspace: image.colorspace,
@@ -487,13 +488,17 @@ export class MediaService extends BaseService {
       ],
     };
 
-    await this.mediaRepository.generateThumbnail(decoded, thumbnailOptions, thumbnailPath);
-    await this.personRepository.updateThumbnail({
+    await this.mediaRepository.generateThumbnail(decoded, thumbnailOptions, thumbnail.path);
+    const stored = await thumbnail.commit();
+    const previous = await this.personRepository.updateThumbnail({
       ownerId,
       personGroupId,
       thumbnailPath,
-      thumbnailFile: StorageCore.getStorageLocation(thumbnailPath),
+      thumbnailFile: stored,
     });
+    if (previous && !isSameStoredFile(previous, { path: thumbnailPath, ...stored })) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: toFileDeletion([previous]) });
+    }
 
     return JobStatus.Success;
   }
@@ -628,7 +633,7 @@ export class MediaService extends BaseService {
       const encodedVideo = getAssetFile(asset.files, AssetFileType.EncodedVideo, { isEdited: false });
       if (encodedVideo) {
         this.logger.log(`Transcoded video exists for asset ${asset.id}, but is no longer required. Deleting...`);
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [encodedVideo.path] } });
+        await this.jobRepository.queue({ name: JobName.FileDelete, data: toFileDeletion([encodedVideo]) });
         await this.assetRepository.deleteFiles([encodedVideo]);
       } else {
         this.logger.verbose(`Asset ${asset.id} does not require transcoding based on current policy, skipping`);
@@ -642,6 +647,7 @@ export class MediaService extends BaseService {
       toRecordedFile(asset.originalPath, asset.originalFile),
     );
     const input = original.path;
+    await using encoded = await this.createDerivedOutput(output);
 
     const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
     if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
@@ -653,7 +659,7 @@ export class MediaService extends BaseService {
     }
 
     try {
-      await this.mediaRepository.transcode(input, output, command);
+      await this.mediaRepository.transcode(input, encoded.path, command);
     } catch (error: any) {
       this.logger.error(`Error occurred during transcoding: ${error.message}`);
       if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
@@ -666,7 +672,7 @@ export class MediaService extends BaseService {
           this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()}-accelerated encoding and software decoding`);
           ffmpeg = { ...ffmpeg, accelDecode: false };
           const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
-          await this.mediaRepository.transcode(input, output, command);
+          await this.mediaRepository.transcode(input, encoded.path, command);
           isPartialFallbackSuccess = true;
         } catch (error: any) {
           this.logger.error(`Error occurred during transcoding: ${error.message}`);
@@ -677,19 +683,26 @@ export class MediaService extends BaseService {
         this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()} acceleration disabled`);
         ffmpeg = { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled };
         const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
-        await this.mediaRepository.transcode(input, output, command);
+        await this.mediaRepository.transcode(input, encoded.path, command);
       }
     }
 
     this.logger.log(`Successfully encoded ${asset.id}`);
 
+    const stored = await encoded.commit();
     await this.assetRepository.upsertFile({
       assetId: asset.id,
       type: AssetFileType.EncodedVideo,
       path: output,
-      ...StorageCore.getStorageLocation(output),
+      ...stored,
       isEdited: false,
     });
+
+    // a video encoded again on a backend gets a new key, so the previous one is no longer used
+    const previous = getAssetFile(asset.files, AssetFileType.EncodedVideo, { isEdited: false });
+    if (previous && !isSameStoredFile(previous, { path: output, ...stored })) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: toFileDeletion([previous]) });
+    }
 
     return JobStatus.Success;
   }
@@ -844,7 +857,7 @@ export class MediaService extends BaseService {
         toDelete.delete(existingFile);
       }
 
-      const isSameFile = existingFile !== undefined && this.isSameFile(existingFile, newFile);
+      const isSameFile = existingFile !== undefined && isSameStoredFile(existingFile, newFile);
 
       // upsert new file path
       // eslint-disable-next-line unicorn/prefer-continue
@@ -879,16 +892,6 @@ export class MediaService extends BaseService {
     if (replaced.length > 0) {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: toFileDeletion(replaced) });
     }
-  }
-
-  /** Whether a regenerated file was written over the existing one, which must then be kept */
-  private isSameFile(existing: AssetFile, generated: StorageLocation & { path: string }) {
-    if (existing.backendId === null || existing.key === null) {
-      // only a file written to its path can replace a file that is only known by its path
-      return isBuiltinStorageBackend(generated.backendId) && existing.path === generated.path;
-    }
-
-    return existing.backendId === generated.backendId && existing.key === generated.key;
   }
 
   private createDerivedOutput(path: string) {

@@ -4,7 +4,6 @@ import { DateTime } from 'luxon';
 import { IncomingHttpHeaders } from 'node:http';
 import sanitize from 'sanitize-filename';
 import { LOGIN_DUMMY_HASH, LOGIN_URL, MOBILE_REDIRECT, SALT_ROUNDS } from 'src/constants.js';
-import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
 import {
   AuthDto,
@@ -26,6 +25,7 @@ import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { AuthType, ImmichCookie, ImmichHeader, ImmichQuery, JobName, Permission } from 'src/enum.js';
 import { OAuthProfile } from 'src/repositories/oauth.repository.js';
+import { toFileDeletion } from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
@@ -384,25 +384,30 @@ export class AuthService extends BaseService {
 
   private async syncProfilePicture(user: UserAdmin, url: string) {
     try {
-      const oldPath = user.profileImagePath;
+      const previous = user.profileImagePath ? await this.userRepository.getProfileImageFile(user.id) : undefined;
       const data = await this.oauthRepository.getProfilePicture(url);
 
       const config = await this.getConfig({ withCache: true });
-      const profileImagePath = await generateProfileImage(
-        { media: this.mediaRepository, crypto: this.cryptoRepository, storageCore: this.storageCore },
+      const profileImage = await generateProfileImage(
+        {
+          media: this.mediaRepository,
+          crypto: this.cryptoRepository,
+          storageCore: this.storageCore,
+          storageBackend: this.storageBackendRepository,
+        },
         config,
         user.id,
         Buffer.from(data),
       );
 
       await this.userRepository.updateProfileImage(user.id, {
-        profileImagePath,
-        profileImageFile: StorageCore.getStorageLocation(profileImagePath),
+        profileImagePath: profileImage.path,
+        profileImageFile: profileImage.file,
         profileChangedAt: new Date(),
       });
 
-      if (oldPath) {
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [oldPath] } });
+      if (previous?.path) {
+        await this.jobRepository.queue({ name: JobName.FileDelete, data: toFileDeletion([previous]) });
       }
     } catch (error: Error | any) {
       this.logger.warn(`Unable to sync oauth profile picture: ${error}\n${error?.stack}`);

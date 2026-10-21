@@ -63,6 +63,18 @@ export const toFileDeletion = (files: Array<RecordedFile | null | undefined>) =>
   return deletion;
 };
 
+/**
+ * Whether a newly stored file was written over a recorded file, which must then be kept rather than deleted. Only a
+ * file written to its path can replace a file that is only known by its path.
+ */
+export const isSameStoredFile = (existing: RecordedFile, stored: StorageLocation & { path: string }) => {
+  if (existing.backendId === null || existing.key === null) {
+    return isBuiltinStorageBackend(stored.backendId) && existing.path === stored.path;
+  }
+
+  return existing.backendId === stored.backendId && existing.key === stored.key;
+};
+
 export const toRecordedFile = (path: string, location: StorageLocation | null): RecordedFile => ({
   path,
   backendId: location?.backendId ?? null,

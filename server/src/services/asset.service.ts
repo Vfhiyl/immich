@@ -39,6 +39,7 @@ import {
   Permission,
   QueueName,
 } from 'src/enum.js';
+import { RecordedFile, toFileDeletion, toRecordedFile } from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import {
@@ -365,21 +366,21 @@ export class AssetService extends BaseService {
     }
 
     const assetFiles = getAssetFiles(asset.files ?? []);
-    const files = [
-      assetFiles.thumbnailFile?.path,
-      assetFiles.previewFile?.path,
-      assetFiles.fullsizeFile?.path,
-      assetFiles.editedFullsizeFile?.path,
-      assetFiles.editedPreviewFile?.path,
-      assetFiles.editedThumbnailFile?.path,
-      assetFiles.encodedVideoFile?.path,
+    const files: Array<RecordedFile | undefined> = [
+      assetFiles.thumbnailFile,
+      assetFiles.previewFile,
+      assetFiles.fullsizeFile,
+      assetFiles.editedFullsizeFile,
+      assetFiles.editedPreviewFile,
+      assetFiles.editedThumbnailFile,
+      assetFiles.encodedVideoFile,
     ];
 
     if (deleteOnDisk && !asset.isOffline) {
-      files.push(assetFiles.sidecarFile?.path, asset.originalPath);
+      files.push(assetFiles.sidecarFile, toRecordedFile(asset.originalPath, asset.originalFile));
     }
 
-    await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: files.filter(Boolean) } });
+    await this.jobRepository.queue({ name: JobName.FileDelete, data: toFileDeletion(files) });
 
     return JobStatus.Success;
   }

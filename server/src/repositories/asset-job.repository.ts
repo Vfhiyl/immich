@@ -292,6 +292,7 @@ export class AssetJobRepository {
         'asset.originalPath',
         'asset.isOffline',
       ])
+      .select(withOriginalFile)
       .$call(withExif)
       .select(withFiles)
       .leftJoinLateral(

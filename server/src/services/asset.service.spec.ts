@@ -581,6 +581,7 @@ describe(AssetService.name, () => {
             name: JobName.FileDelete,
             data: {
               files: [...asset.files.map(({ path }) => path), asset.originalPath],
+              locations: [],
             },
           },
         ],
@@ -641,8 +642,48 @@ describe(AssetService.name, () => {
 
       expect(mocks.job.queue.mock.calls).toEqual([
         [{ name: JobName.AssetDelete, data: { id: motionAsset.id, deleteOnDisk: true } }],
-        [{ name: JobName.FileDelete, data: { files: [asset.originalPath] } }],
+        [{ name: JobName.FileDelete, data: { files: [asset.originalPath], locations: [] } }],
       ]);
+    });
+
+    it('should delete files on a storage backend by their location', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Preview })
+        .file({ type: AssetFileType.Sidecar })
+        .build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue({
+        ...getForAssetDeletion(asset),
+        originalFile: { backendId: 'originals', key: 'original-key' },
+        files: [
+          { ...asset.files[0], backendId: 'derived', key: 'preview-key' },
+          { ...asset.files[1], backendId: null, key: null },
+        ],
+      });
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: {
+          files: [asset.files[1].path],
+          locations: [
+            { backendId: 'derived', key: 'preview-key' },
+            { backendId: 'originals', key: 'original-key' },
+          ],
+        },
+      });
+    });
+
+    it('should keep the original and sidecar on a storage backend when not deleting from disk', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue({
+        ...getForAssetDeletion(asset),
+        originalFile: { backendId: 'originals', key: 'original-key' },
+      });
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: false });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: [], locations: [] } });
     });
 
     it('should not delete a live motion part if it is being used by another asset', async () => {
@@ -653,7 +694,7 @@ describe(AssetService.name, () => {
       await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
 
       expect(mocks.job.queue.mock.calls).toEqual([
-        [{ name: JobName.FileDelete, data: { files: [`/data/library/IMG_${asset.id}.jpg`] } }],
+        [{ name: JobName.FileDelete, data: { files: [`/data/library/IMG_${asset.id}.jpg`], locations: [] } }],
       ]);
     });
 

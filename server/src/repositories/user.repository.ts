@@ -215,7 +215,11 @@ export class UserRepository {
       profileImagePath,
       profileImageFile,
       profileChangedAt,
-    }: { profileImagePath: string; profileImageFile: StorageLocation | null; profileChangedAt: Date },
+    }: {
+      profileImagePath: string;
+      profileImageFile: (StorageLocation & { size?: number | null; checksum?: Buffer | null }) | null;
+      profileChangedAt: Date;
+    },
   ) {
     return this.db.transaction().execute(async (tx) => {
       const user = await tx
@@ -235,6 +239,8 @@ export class UserRepository {
             oc.column('userId').doUpdateSet((eb) => ({
               backendId: eb.ref('excluded.backendId'),
               key: eb.ref('excluded.key'),
+              size: eb.ref('excluded.size'),
+              checksum: eb.ref('excluded.checksum'),
             })),
           )
           .execute();
