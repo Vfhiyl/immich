@@ -5,7 +5,8 @@
 #
 # Usage: misc/check.sh [--quick]     --quick skips the medium, contract and end-to-end tests
 #
-# Needs: Node and pnpm with dependencies installed (`pnpm install`), ffmpeg and redis-server on PATH, and
+# Needs: Node and pnpm with dependencies installed (`pnpm install`), ffmpeg, redis-server and oazapfts (the version
+# pinned in mise.toml) on PATH, and
 # PostgreSQL with the vector extension at CHECK_POSTGRES_URL (a server URL without database name,
 # default postgres://postgres:postgres@localhost:5432). Nothing here needs Docker.
 
@@ -91,6 +92,16 @@ generated_sql() {
   test -z "$(git ls-files --others --exclude-standard -- src/queries)"
 }
 
+# the API description and the TypeScript SDK generated from it; the Dart SDK of the app is not tracked
+open_api() {
+  cd "$server"
+  node ./dist/bin/sync-open-api.js
+  cd "$repo"
+  oazapfts --optimistic --argumentStyle=object --useEnumType --allSchemas open-api/immich-openapi-specs.json \
+    packages/sdk/src/fetch-client.ts
+  git diff --exit-code -- open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
+}
+
 # --- tests ---
 
 # run from outside the repository: some tests resolve relative paths against the working directory, which must not
@@ -118,6 +129,7 @@ step 'e2e: lint' e2e_lint
 step 'server: build' server_build
 step 'schema: migrations and drift' schema
 step 'server: generated SQL is up to date' generated_sql
+step 'open-api: specification and SDK are up to date' open_api
 step 'server: unit tests' unit
 if [[ "$quick" == false ]]; then
   step 'server: medium tests' medium
