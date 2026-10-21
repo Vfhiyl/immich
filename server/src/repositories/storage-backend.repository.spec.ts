@@ -8,7 +8,7 @@ import { Mocked } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
 import { BlobNotFoundError, BlobStore } from 'src/repositories/blob-store.js';
-import { openTrailer } from 'src/repositories/encrypted-blob-store.js';
+import { EncryptedBlobStore, openTrailer } from 'src/repositories/encrypted-blob-store.js';
 import { MasterKeys } from 'src/repositories/key-provider.js';
 import { LocalBlobStore } from 'src/repositories/local-blob-store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -615,7 +615,9 @@ describe(StorageBackendRepository.name, () => {
       sut.configure([encryptedBackend()], keys);
       const path = join(directory, 'upload.jpg');
       await fs.writeFile(path, 'original content');
-      const stored = await sut.storeFile(StorageBackendRole.Originals, path, { originalFileName: 'IMG_1.jpg' });
+      const stored = await sut.storeFile(StorageBackendRole.Originals, path, {
+        manifest: { originalFileName: 'IMG_1.jpg' },
+      });
 
       const blob = await fs.readFile(join(directory, 'originals', stored.key));
       const trailerLength = blob.readUInt32BE(blob.length - 4);
@@ -700,6 +702,59 @@ describe(StorageBackendRepository.name, () => {
       expect(stored.encryption).toEqual(expect.any(Buffer));
       await using lease = await sut.lease({ path: '/data/thumbs/a_preview.webp', ...stored });
       await expect(fs.readFile(lease.path, 'utf8')).resolves.toBe('preview');
+    });
+
+    it('should lease the local copy of an upload instead of reading the backend', async () => {
+      sut.configure([encryptedBackend()], keys);
+      const upload = join(directory, 'upload.jpg');
+      await fs.writeFile(upload, 'original content');
+      const stored = { path: '/data/upload/a.jpg', ...(await sut.storeFile(StorageBackendRole.Originals, upload)) };
+      const get = vi.spyOn(EncryptedBlobStore.prototype, 'get');
+
+      await expect(sut.keepLocalCopy(stored, upload)).resolves.toBe(true);
+      await expect(fs.access(upload)).rejects.toThrow('ENOENT');
+      {
+        await using lease = await sut.lease(stored);
+        expect(lease.path).toMatch(/\.jpg$/);
+        await expect(fs.readFile(lease.path, 'utf8')).resolves.toBe('original content');
+      }
+      expect(get).not.toHaveBeenCalled();
+
+      await sut.dropLocalCopy(stored);
+      await using lease = await sut.lease(stored);
+      await expect(fs.readFile(lease.path, 'utf8')).resolves.toBe('original content');
+      expect(get).toHaveBeenCalledOnce();
+      await expect(fs.readdir(join(directory, 'media', '.immich-copies', 'originals'))).resolves.toEqual([]);
+    });
+
+    it('should not keep a copy of a file that can be read where it is', async () => {
+      sut.configure([encryptedBackend(false)], keys);
+      const upload = join(directory, 'upload.jpg');
+      await fs.writeFile(upload, 'original content');
+      const stored = await sut.storeFile(StorageBackendRole.Originals, upload);
+
+      await expect(sut.keepLocalCopy(stored, upload)).resolves.toBe(false);
+      await expect(fs.readFile(upload, 'utf8')).resolves.toBe('original content');
+    });
+
+    it('should keep the local copy of an output when asked to', async () => {
+      sut.configure([encryptedBackend()], keys);
+      const output = await sut.createOutput(StorageBackendRole.Originals, '/data/upload/a-MP.mp4', {
+        keepLocalCopy: true,
+      });
+      await fs.writeFile(output.path, 'motion video');
+      const stored = await output.commit();
+      await output[Symbol.asyncDispose]();
+
+      await expect(
+        fs.readFile(join(directory, 'media', '.immich-copies', 'originals', stored.key), 'utf8'),
+      ).resolves.toBe('motion video');
+      await expect(fs.readdir(join(directory, 'media', '.immich-staging'))).resolves.toEqual([]);
+    });
+
+    it('should not touch copies when dropping a file on a built-in backend', async () => {
+      await expect(sut.dropLocalCopy({ backendId: 'media', key: 'upload/a.jpg' })).resolves.toBeUndefined();
+      await expect(sut.dropLocalCopy(null)).resolves.toBeUndefined();
     });
 
     it('should read master keys from a key file', async () => {

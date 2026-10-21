@@ -393,6 +393,16 @@ describe(StorageService.name, () => {
     });
   });
 
+  describe('handleLocalCopyCleanup', () => {
+    it('should remove local copies that are too old or too many', async () => {
+      mocks.storageBackend.sweepLocalCopies.mockResolvedValue();
+
+      await expect(sut.handleLocalCopyCleanup()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.storageBackend.sweepLocalCopies).toHaveBeenCalledOnce();
+    });
+  });
+
   describe('handleDeleteFiles with locations', () => {
     let root: string;
 
@@ -423,6 +433,12 @@ describe(StorageService.name, () => {
 
       await expect(fs.readdir(root)).resolves.toEqual([]);
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('should also remove the local copies of deleted files', async () => {
+      await sut.handleDeleteFiles({ files: [], locations: [{ backendId: 'derived', key: 'a' }] });
+
+      expect(mocks.storageBackend.dropLocalCopy).toHaveBeenCalledWith({ backendId: 'derived', key: 'a' });
     });
 
     it('should delete by path and by location in one job', async () => {

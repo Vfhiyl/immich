@@ -66,6 +66,7 @@ interface UpsertFileOptions {
 type GeneratedFile = UpsertFileOptions & StoredFile;
 
 type ThumbnailAsset = NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>;
+type VideoConversionAsset = NonNullable<Awaited<ReturnType<AssetJobRepository['getForVideoConversion']>>>;
 
 @Injectable()
 export class MediaService extends BaseService {
@@ -225,6 +226,17 @@ export class MediaService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    try {
+      return await this.generateThumbnails(asset, isVideo, config);
+    } finally {
+      // the last step that reads the original of an image; videos are transcoded next
+      if (asset.type !== AssetType.Video) {
+        await this.storageBackendRepository.dropLocalCopy(asset.originalFile);
+      }
+    }
+  }
+
+  private async generateThumbnails(asset: ThumbnailAsset, isVideo: boolean, config: SystemConfig): Promise<JobStatus> {
     // read the original once from a local file, wherever it is stored
     await using original = await this.storageBackendRepository.lease(
       toRecordedFile(asset.originalPath, asset.originalFile),
@@ -233,10 +245,10 @@ export class MediaService extends BaseService {
 
     let generated: Awaited<ReturnType<MediaService['generateImageThumbnails']>>;
     if (isVideo) {
-      this.logger.verbose(`Thumbnail generation for video ${id} ${asset.originalPath}`);
+      this.logger.verbose(`Thumbnail generation for video ${asset.id} ${asset.originalPath}`);
       generated = await this.generateVideoThumbnails(source, config);
     } else {
-      this.logger.verbose(`Thumbnail generation for image ${id} ${asset.originalPath}`);
+      this.logger.verbose(`Thumbnail generation for image ${asset.id} ${asset.originalPath}`);
       generated = await this.generateImageThumbnails(source, config);
     }
 
@@ -615,6 +627,15 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
+    try {
+      return await this.convertVideo(asset);
+    } finally {
+      // the last step that reads the original of a video
+      await this.storageBackendRepository.dropLocalCopy(asset.originalFile);
+    }
+  }
+
+  private async convertVideo(asset: VideoConversionAsset): Promise<JobStatus> {
     const output = StorageCore.getEncodedVideoPath(asset);
     this.storageCore.ensureFolders(output);
 

@@ -260,6 +260,12 @@ export class StorageService extends BaseService {
   }
 
   /** Give files recorded before storage backends existed a backend and key, derived from their path */
+  @OnJob({ name: JobName.LocalCopyCleanup, queue: QueueName.BackgroundTask })
+  async handleLocalCopyCleanup(): Promise<JobStatus> {
+    await this.storageBackendRepository.sweepLocalCopies();
+    return JobStatus.Success;
+  }
+
   @OnJob({ name: JobName.FileLocationBackfill, queue: QueueName.BackgroundTask })
   async handleFileLocationBackfill(): Promise<JobStatus> {
     await this.backfillLocations<FileWithPath>('asset file', {
@@ -367,6 +373,10 @@ export class StorageService extends BaseService {
       } catch (error: any) {
         this.logger.warn('Unable to remove file from disk', error);
       }
+    }
+
+    for (const location of locations) {
+      await this.storageBackendRepository.dropLocalCopy(location);
     }
 
     for (const [backendId, keys] of Map.groupBy(locations, ({ backendId }) => backendId)) {

@@ -20,6 +20,7 @@ import {
   StorageBackendDriver,
   StorageBackendRole,
 } from 'src/enum.js';
+import { MasterKeys } from 'src/repositories/key-provider.js';
 import { ImmichTags } from 'src/repositories/metadata.repository.js';
 import { MetadataService, firstDateTime } from 'src/services/metadata.service.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
@@ -954,6 +955,35 @@ describe(MetadataService.name, () => {
         expect(mocks.storage.checkFileExists).not.toHaveBeenCalled();
         expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetEncodeVideo, data: { id: motionAsset.id } });
         await expect(fs.readdir(join(root, 'originals'))).resolves.toHaveLength(1);
+        await expect(fs.readdir(join(root, 'media', '.immich-staging'))).resolves.toEqual([]);
+      });
+
+      it('should keep an extracted motion video on an encrypted backend as a local copy for processing', async () => {
+        mocks.storageBackend.configure(
+          [
+            {
+              id: 'originals',
+              driver: StorageBackendDriver.Local,
+              role: StorageBackendRole.Originals,
+              root: join(root, 'originals'),
+              encrypted: true,
+            },
+          ],
+          new MasterKeys([randomBytes(32)]),
+        );
+        const asset = AssetFactory.create();
+        const motionAsset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Hidden });
+        const video = randomBytes(512);
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags(motionTags);
+        mocks.asset.create.mockResolvedValue(motionAsset);
+        mocks.crypto.randomUUID.mockReturnValue(motionAsset.id);
+        mocks.metadata.extractBinaryTag.mockResolvedValue(video);
+
+        await sut.handleMetadataExtraction({ id: asset.id });
+
+        const [key] = await fs.readdir(join(root, 'originals'));
+        await expect(fs.readFile(join(root, 'media', '.immich-copies', 'originals', key))).resolves.toEqual(video);
         await expect(fs.readdir(join(root, 'media', '.immich-staging'))).resolves.toEqual([]);
       });
 

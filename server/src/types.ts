@@ -353,6 +353,7 @@ export type JobItem =
   // Audit
   | { name: JobName.AuditTableCleanup; data?: IBaseJob }
   | { name: JobName.FileLocationBackfill; data?: IBaseJob }
+  | { name: JobName.LocalCopyCleanup; data?: IBaseJob }
 
   // Backups
   | { name: JobName.DatabaseBackup; data?: IBaseJob }

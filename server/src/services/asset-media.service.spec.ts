@@ -388,6 +388,36 @@ describe(AssetMediaService.name, () => {
       await expect(listOriginals()).resolves.toHaveLength(2);
     });
 
+    it('should keep the upload as a local copy for processing when the backend cannot be read in place', async () => {
+      const file = await upload('IMG_1.jpg', 'original');
+      const sidecar = await upload('IMG_1.jpg.xmp', 'sidecar');
+      mocks.asset.create.mockResolvedValue(assetEntity);
+      mocks.storageBackend.keepLocalCopy.mockResolvedValue(true);
+
+      await sut.uploadAsset(authStub.user1, createDto, file, sidecar);
+
+      expect(mocks.storageBackend.keepLocalCopy).toHaveBeenCalledWith(
+        expect.objectContaining({ backendId: 'originals', size: 8 }),
+        file.originalPath,
+      );
+      // only the sidecar is removed; the copy of the upload is removed once it was processed
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [undefined, sidecar.originalPath] },
+      });
+    });
+
+    it('should describe the stored files with their owner and original name', async () => {
+      const file = await upload('IMG_1.jpg', 'original');
+      mocks.asset.create.mockResolvedValue(assetEntity);
+
+      await sut.uploadAsset(authStub.user1, createDto, file);
+
+      expect(mocks.storageBackend.storeFile).toHaveBeenCalledWith(StorageBackendRole.Originals, file.originalPath, {
+        manifest: { ownerId: authStub.user1.user.id, originalFileName: file.originalName },
+      });
+    });
+
     it('should remove the copies on the backend when the upload is a duplicate', async () => {
       const file = await upload('IMG_1.jpg', 'original');
       const error = new Error('unique key violation');

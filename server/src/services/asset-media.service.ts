@@ -153,11 +153,9 @@ export class AssetMediaService extends BaseService {
       // recorded one by one, so that copies already made are removed if a later step fails
       // described in the object itself, so that it can be told apart when recovered without the database
       const manifest = { ownerId: auth.user.id, originalFileName: file.originalName };
-      stored.original = await this.storageBackendRepository.storeFile(
-        StorageBackendRole.Originals,
-        file.originalPath,
+      stored.original = await this.storageBackendRepository.storeFile(StorageBackendRole.Originals, file.originalPath, {
         manifest,
-      );
+      });
       if (stored.original.checksum && !stored.original.checksum.equals(file.checksum)) {
         throw new Error(`The stored original of ${file.originalPath} does not match the uploaded file`);
       }
@@ -165,7 +163,7 @@ export class AssetMediaService extends BaseService {
         stored.sidecar = await this.storageBackendRepository.storeFile(
           StorageBackendRole.Originals,
           sidecarFile.originalPath,
-          manifest,
+          { manifest },
         );
       }
 
@@ -210,10 +208,12 @@ export class AssetMediaService extends BaseService {
       if (isUploadKept) {
         await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
       } else {
-        // the files were copied to the originals backend
+        // the files were copied to the originals backend; the upload is read again right away for processing, so it
+        // is kept as a local copy instead of being downloaded again, where possible
+        const isCopyKept = await this.storageBackendRepository.keepLocalCopy(stored.original, file.originalPath);
         await this.jobRepository.queue({
           name: JobName.FileDelete,
-          data: { files: [file.originalPath, sidecarFile?.originalPath] },
+          data: { files: [isCopyKept ? undefined : file.originalPath, sidecarFile?.originalPath] },
         });
       }
       await this.assetRepository.upsertExif({

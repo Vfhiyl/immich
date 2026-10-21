@@ -20,6 +20,7 @@ import { BlobExpectation, BlobNotFoundError, BlobRange, BlobStore } from 'src/re
 import { EncryptedBlobStore } from 'src/repositories/encrypted-blob-store.js';
 import { KeyProvider, MasterKeys } from 'src/repositories/key-provider.js';
 import { LocalBlobStore } from 'src/repositories/local-blob-store.js';
+import { LocalCopies } from 'src/repositories/local-copies.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { S3BlobStore, createS3Client } from 'src/repositories/s3-blob-store.js';
 import { DB } from 'src/schema/index.js';
@@ -86,6 +87,14 @@ const READ_RETRY_DELAYS = [500, 1000, 2000, 4000, 8000];
 /** Temporary files for tools that write to a path, kept below the media location */
 export const STAGING_FOLDER = '.immich-staging';
 
+/** Local copies of stored files for processing, on the same filesystem as the staging folder so they can be linked */
+export const LOCAL_COPIES_FOLDER = '.immich-copies';
+
+export interface StoreOptions {
+  /** Describes the file in an encrypted object, besides its path */
+  manifest?: Record<string, unknown>;
+}
+
 /** Delete recorded files by location, and those recorded before storage backends existed by path */
 export const toFileDeletion = (files: Array<RecordedFile | null | undefined>) => {
   const deletion = { files: [] as string[], locations: [] as StorageLocation[] };
@@ -134,6 +143,7 @@ export const isBuiltinStorageBackend = (backendId: string): backendId is Builtin
 @Injectable()
 export class StorageBackendRepository {
   private media?: { root: string; store: LocalBlobStore };
+  private copies?: { root: string; copies: LocalCopies };
   private host?: LocalBlobStore;
   private configured = new Map<string, BlobStore>();
   /** Backends whose new files are encrypted */
@@ -204,7 +214,7 @@ export class StorageBackendRepository {
    * otherwise it is copied to the backend under a new key, and the caller removes the local file. An encrypted copy
    * describes itself with its path and `manifest`, for when it has to be recovered without the database.
    */
-  async storeFile(role: StorageBackendRole, path: string, manifest: Record<string, unknown> = {}): Promise<StoredFile> {
+  async storeFile(role: StorageBackendRole, path: string, { manifest }: StoreOptions = {}): Promise<StoredFile> {
     const backendId = this.getBackendFor(role);
     if (!backendId) {
       return { ...StorageCore.getStorageLocation(path), size: null, checksum: null, encryption: null };
@@ -220,11 +230,12 @@ export class StorageBackendRepository {
   /**
    * Prepare a new file that will be stored at `path`, or in the backend configured for its role. On a backend the file
    * gets a new random key, and `path` only serves as its logical name (its extension is kept for tools and type checks).
+   * With `keepLocalCopy`, the written file is kept as a local copy for processing that follows.
    */
   async createOutput(
     role: StorageBackendRole,
     path: string,
-    manifest: Record<string, unknown> = {},
+    { manifest, keepLocalCopy = false }: StoreOptions & { keepLocalCopy?: boolean } = {},
   ): Promise<OutputFile> {
     const backendId = this.getBackendFor(role);
     if (!backendId) {
@@ -248,8 +259,11 @@ export class StorageBackendRepository {
         const { size, sha1, encryption } = await store.put(key, createReadStream(stagingPath), {
           manifest: { path, ...manifest },
         });
-        await rm(stagingPath, { force: true });
-        return { backendId, key, size, checksum: sha1, encryption: encryption ?? null };
+        const stored = { backendId, key, size, checksum: sha1, encryption: encryption ?? null };
+        if (!keepLocalCopy || !(await this.keepLocalCopy(stored, stagingPath))) {
+          await rm(stagingPath, { force: true });
+        }
+        return stored;
       },
       [Symbol.asyncDispose]: () => rm(stagingPath, { force: true }),
     };
@@ -288,6 +302,43 @@ export class StorageBackendRepository {
     }
   }
 
+  /**
+   * Keep a local file as a copy of a stored file, for the processing that follows; the caller must not use or remove
+   * it afterwards. Resolves false, leaving the file to the caller, when no copy is needed (the stored file can be read
+   * where it is) or none can be kept.
+   */
+  async keepLocalCopy(stored: StoredFile, path: string): Promise<boolean> {
+    if (!this.isReadThroughStore(stored)) {
+      return false;
+    }
+    return this.getLocalCopies().keep(stored, path);
+  }
+
+  /** Remove the local copy of a stored file once nothing is going to read it soon, if there is one */
+  async dropLocalCopy(file: Pick<RecordedFile, 'backendId' | 'key'> | null | undefined) {
+    if (file?.backendId && file.key && !isBuiltinStorageBackend(file.backendId)) {
+      await this.getLocalCopies().drop({ backendId: file.backendId, key: file.key });
+    }
+  }
+
+  /** Remove local copies that are too old or take too much space */
+  sweepLocalCopies() {
+    return this.getLocalCopies().sweep();
+  }
+
+  // a method rather than a getter: tools that inspect repositories read every property
+  private getLocalCopies() {
+    const root = join(StorageCore.getMediaLocation(), LOCAL_COPIES_FOLDER);
+    if (this.copies?.root !== root) {
+      this.copies = { root, copies: new LocalCopies(root) };
+    }
+    return this.copies.copies;
+  }
+
+  private isReadThroughStore(file: StoredFile) {
+    return file.backendId !== null && file.key !== null && 'blob' in this.resolve({ path: '', ...file });
+  }
+
   /** Make a recorded file available on the local filesystem; files on local backends are used where they are */
   async lease(file: RecordedFile): Promise<LocalFileLease> {
     const source = this.resolve(file);
@@ -295,10 +346,15 @@ export class StorageBackendRepository {
       return { path: source.path, [Symbol.asyncDispose]: () => Promise.resolve() };
     }
 
-    // a copy in the staging folder, verified while it is downloaded and removed when the lease ends
+    // a file in the staging folder, removed when the lease ends: a link to the local copy if there is one, otherwise
+    // downloaded and verified while it is
     const stagingFolder = join(StorageCore.getMediaLocation(), STAGING_FOLDER);
     await mkdir(stagingFolder, { recursive: true });
     const stagingPath = join(stagingFolder, `${randomUUID()}${extname(file.path)}`);
+    if (await this.getLocalCopies().linkTo({ backendId: file.backendId!, key: file.key! }, stagingPath)) {
+      return { path: stagingPath, [Symbol.asyncDispose]: () => rm(stagingPath, { force: true }) };
+    }
+
     try {
       await this.withReadRetries(file, async () => {
         await pipeline(await readBlob(source.blob), createWriteStream(stagingPath));

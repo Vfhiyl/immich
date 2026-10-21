@@ -36,6 +36,7 @@ describe(QueueService.name, () => {
       await sut.handleNightlyJobs();
 
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.LocalCopyCleanup },
         { name: JobName.AssetDeleteCheck },
         { name: JobName.UserDeleteCheck },
         { name: JobName.PersonCleanup },

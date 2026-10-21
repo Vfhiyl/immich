@@ -212,6 +212,14 @@ export class TestEnvironment {
     return readdirIfExists(join(this.mediaLocation, '.immich-staging'));
   }
 
+  /** Local copies of stored files kept for processing, of every backend */
+  async listLocalCopies() {
+    const root = join(this.mediaLocation, '.immich-copies');
+    const backends = await readdirIfExists(root);
+    const copies = await Promise.all(backends.map((backend) => readdirIfExists(join(root, backend))));
+    return copies.flat();
+  }
+
   query<T extends pg.QueryResultRow>(text: string, values?: unknown[]) {
     return withDatabase(this.database, async (client) => {
       const { rows } = await client.query<T>(text, values);

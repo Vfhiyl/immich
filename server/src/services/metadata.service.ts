@@ -895,7 +895,10 @@ export class MetadataService extends BaseService {
 
   private async storeMotionVideo(path: string, video: Buffer) {
     this.storageCore.ensureFolders(path);
-    await using output = await this.storageBackendRepository.createOutput(StorageBackendRole.Originals, path);
+    // processed right after, like an upload
+    await using output = await this.storageBackendRepository.createOutput(StorageBackendRole.Originals, path, {
+      keepLocalCopy: true,
+    });
     await this.storageRepository.createFile(output.path, video);
     // awaited here: the output is disposed when this function returns
     return await output.commit();

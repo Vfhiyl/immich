@@ -637,6 +637,25 @@ describe(MediaService.name, () => {
       });
       expect(mocks.media.decodeImage).toHaveBeenCalledWith('/staging/IMG_1.jpg', expect.any(Object));
       expect(release).toHaveBeenCalledOnce();
+      // thumbnails are the last step that reads the original of an image
+      expect(mocks.storageBackend.dropLocalCopy).toHaveBeenCalledWith({
+        backendId: 'media',
+        key: 'library/IMG_1.jpg',
+        size: null,
+        encryption: null,
+      });
+    });
+
+    it('should keep the local copy of a video for transcoding after generating its thumbnails', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStream2160p,
+      });
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.storageBackend.dropLocalCopy).not.toHaveBeenCalled();
     });
 
     it('should release the leased original when thumbnail generation fails', async () => {
@@ -2441,6 +2460,8 @@ describe(MediaService.name, () => {
       });
       expect(mocks.media.transcode).toHaveBeenCalledWith('/staging/path.ext', expect.any(String), expect.any(Object));
       expect(release).toHaveBeenCalledOnce();
+      // transcoding is the last step that reads the original of a video
+      expect(mocks.storageBackend.dropLocalCopy).toHaveBeenCalledWith(asset.originalFile);
     });
 
     it('should release the leased original when transcoding fails', async () => {
@@ -2460,6 +2481,7 @@ describe(MediaService.name, () => {
       await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
 
       expect(mocks.storageBackend.lease).not.toHaveBeenCalled();
+      expect(mocks.storageBackend.dropLocalCopy).toHaveBeenCalledWith(asset.originalFile);
     });
 
     it('should store the encoded video on the backend for derived files and delete the previous one', async () => {

@@ -10,7 +10,7 @@ import {
   sha1,
   testAssetDir,
 } from 'src/storage-backends.js';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 const photoPath = join(testAssetDir, 'formats/jpg/el_torcal_rocks.jpg');
 const motionPhotoPath = join(testAssetDir, 'formats/motionphoto/pixel-6-pro.jpg');
@@ -45,6 +45,12 @@ const getOriginal = async (environment: TestEnvironment, assetId: string) => {
   return row;
 };
 
+/** What the server logged lately, so that a failed test shows why */
+const printServerLogs = (test: string, server?: ImmichServer) => {
+  const lines = server?.logs.split('\n') ?? [];
+  console.log(`Server output for "${test}" (last 80 lines):\n${lines.slice(-80).join('\n')}`);
+};
+
 /** The id of the master key that wrapped the key of a file, from its recorded header (bytes 18 to 26) */
 const masterKeyIdOf = ({ encryption }: { encryption: string | null }) => encryption?.slice(36, 52);
 
@@ -74,6 +80,12 @@ describe('storage backends for originals and derived files', () => {
 
     photo = await readFile(photoPath);
     ({ id: assetId } = await api.upload(photoPath, photo));
+  });
+
+  afterEach(({ task }) => {
+    if (task.result?.state === 'fail') {
+      printServerLogs(task.name, server);
+    }
   });
 
   afterAll(async () => {
@@ -234,6 +246,12 @@ describe('storage backends on an S3 service', () => {
     ({ id: assetId } = await api.upload(photoPath, photo));
   });
 
+  afterEach(({ task }) => {
+    if (task.result?.state === 'fail') {
+      printServerLogs(task.name, server);
+    }
+  });
+
   afterAll(async () => {
     await server?.stop();
     s3?.stop();
@@ -272,6 +290,8 @@ describe('storage backends on an S3 service', () => {
       expect(stored.size).toBeGreaterThan(Number(file.size));
     }
     await eventually(() => expect(environment.listStaging()).resolves.toEqual([]));
+    // the upload was kept for processing, and removed once its thumbnails were made
+    await eventually(() => expect(environment.listLocalCopies()).resolves.toEqual([]));
   });
 
   it('should extract metadata from the stored original', async () => {
@@ -415,6 +435,7 @@ describe('storage backends on an S3 service', () => {
         await expect(environment.query(`select id from asset`)).resolves.toEqual([]);
         await expect(environment.listBackend('originals')).resolves.toEqual([]);
         await expect(environment.listBackend('derived')).resolves.toEqual([]);
+        await expect(environment.listLocalCopies()).resolves.toEqual([]);
       },
       { timeout: 60_000 },
     );
@@ -430,6 +451,12 @@ describe('without storage backends', () => {
     environment = await TestEnvironment.create();
     server = await ImmichServer.start(environment, { backends: false });
     api = await Api.signUpAdmin();
+  });
+
+  afterEach(({ task }) => {
+    if (task.result?.state === 'fail') {
+      printServerLogs(task.name, server);
+    }
   });
 
   afterAll(async () => {
