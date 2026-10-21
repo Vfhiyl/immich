@@ -50,6 +50,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { TelemetryRepository } from 'src/repositories/telemetry.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
+import { UploadSessionRepository } from 'src/repositories/upload-session.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
 import { VideoStreamRepository } from 'src/repositories/video-stream.repository.js';
@@ -110,6 +111,7 @@ export const repositories = [
   TagRepository,
   TelemetryRepository,
   TrashRepository,
+  UploadSessionRepository,
   UserRepository,
   ViewRepository,
   VersionHistoryRepository,

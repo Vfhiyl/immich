@@ -22,6 +22,7 @@ export const redisPort = Number(process.env.E2E_STORAGE_REDIS_PORT ?? 6391);
 const port = Number(process.env.E2E_STORAGE_PORT ?? 2290);
 const execFileAsync = promisify(execFile);
 export const baseUrl = `http://localhost:${port}/api`;
+export const serverPort = port;
 
 export interface LocalBackend {
   id: string;
@@ -392,6 +393,16 @@ export class Api {
       ...init,
       headers: { ...init.headers, Authorization: `Bearer ${this.accessToken}` },
     });
+  }
+
+  /** The access token, for requests that fetch cannot make (like ones that are cut off on purpose) */
+  get token() {
+    return this.accessToken;
+  }
+
+  /** A request as it is, with authentication */
+  raw(path: string, init: RequestInit = {}) {
+    return this.request(path, init);
   }
   async upload(path: string, content: Buffer, { fileModifiedAt = '2020-01-02T03:04:05.000Z' } = {}) {
     const form = new FormData();

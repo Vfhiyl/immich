@@ -667,6 +667,13 @@ export enum RouteKey {
   User = 'users',
 }
 
+export enum UploadSessionStatus {
+  /** Receiving the file */
+  Receiving = 'receiving',
+  /** The file was received and an asset created (or found to be a duplicate) */
+  Completed = 'completed',
+}
+
 export enum CacheControl {
   PrivateWithCache = 'private_with_cache',
   PrivateWithoutCache = 'private_without_cache',
@@ -911,6 +918,7 @@ export enum JobName {
   FileLocationBackfill = 'FileLocationBackfill',
   LocalCopyCleanup = 'LocalCopyCleanup',
   StorageDeletionRun = 'StorageDeletionRun',
+  UploadSessionCleanup = 'UploadSessionCleanup',
   AssetGenerateThumbnailsQueueAll = 'AssetGenerateThumbnailsQueueAll',
   AssetGenerateThumbnails = 'AssetGenerateThumbnails',
 

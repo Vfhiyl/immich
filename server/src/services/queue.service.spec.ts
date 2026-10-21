@@ -38,6 +38,7 @@ describe(QueueService.name, () => {
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
         { name: JobName.LocalCopyCleanup },
         { name: JobName.StorageDeletionRun },
+        { name: JobName.UploadSessionCleanup },
         { name: JobName.AssetDeleteCheck },
         { name: JobName.UserDeleteCheck },
         { name: JobName.PersonCleanup },

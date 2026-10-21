@@ -23146,6 +23146,7 @@
           "FileLocationBackfill",
           "LocalCopyCleanup",
           "StorageDeletionRun",
+          "UploadSessionCleanup",
           "AssetGenerateThumbnailsQueueAll",
           "AssetGenerateThumbnails",
           "AuditTableCleanup",

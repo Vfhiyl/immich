@@ -29,6 +29,7 @@ import { PartnerService } from 'src/services/partner.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
 import { QueueService } from 'src/services/queue.service.js';
+import { ResumableUploadService } from 'src/services/resumable-upload.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { ServerService } from 'src/services/server.service.js';
 import { SessionService } from 'src/services/session.service.js';
@@ -85,6 +86,7 @@ export const services = [
   PersonService,
   PluginService,
   QueueService,
+  ResumableUploadService,
   SearchService,
   ServerService,
   SessionService,

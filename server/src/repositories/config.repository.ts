@@ -117,6 +117,11 @@ export interface EnvData {
     mediaLocation?: string;
     /** File that configures storage backends; without it files are stored in the media location as before */
     backendsFile?: string;
+    /**
+     * The largest request body a resumable upload should send, for proxies that limit it (e.g. 100 MB with Cloudflare);
+     * clients split their upload accordingly
+     */
+    uploadMaxAppendSize?: number;
   };
 
   workers: ImmichWorker[];
@@ -359,6 +364,7 @@ const getEnv = (): EnvData => {
       ignoreMountCheckErrors: !!dto.IMMICH_IGNORE_MOUNT_CHECK_ERRORS,
       mediaLocation: dto.IMMICH_MEDIA_LOCATION,
       backendsFile: dto.IMMICH_STORAGE_BACKENDS,
+      uploadMaxAppendSize: dto.IMMICH_UPLOAD_MAX_APPEND_SIZE,
     },
 
     telemetry: {

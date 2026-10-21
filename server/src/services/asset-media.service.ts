@@ -178,11 +178,16 @@ export class AssetMediaService extends BaseService {
     );
   }
 
+  /**
+   * Create an asset from an upload. A resumable upload stored the original on its backend already (`stored`); its
+   * `file` then only names it, without a local file.
+   */
   async uploadAsset(
     auth: AuthDto,
     dto: AssetMediaCreateDto,
     file: UploadFile,
     sidecarFile?: UploadFile,
+    { stored: storedOriginal }: { stored?: StoredFile } = {},
   ): Promise<AssetMediaResponseDto> {
     let asset: Asset | undefined;
     // where the original and sidecar were stored: the uploaded files themselves, or copies on the originals backend
@@ -207,9 +212,9 @@ export class AssetMediaService extends BaseService {
       // recorded one by one, so that copies already made are removed if a later step fails
       // described in the object itself, so that it can be told apart when recovered without the database
       const manifest = { ownerId: auth.user.id, originalFileName: file.originalName };
-      stored.original = await this.storageBackendRepository.storeFile(StorageBackendRole.Originals, file.originalPath, {
-        manifest,
-      });
+      stored.original =
+        storedOriginal ??
+        (await this.storageBackendRepository.storeFile(StorageBackendRole.Originals, file.originalPath, { manifest }));
       if (stored.original.checksum && !stored.original.checksum.equals(file.checksum)) {
         throw new Error(`The stored original of ${file.originalPath} does not match the uploaded file`);
       }
@@ -261,7 +266,7 @@ export class AssetMediaService extends BaseService {
 
       if (isUploadKept) {
         await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
-      } else {
+      } else if (!storedOriginal) {
         // the files were copied to the originals backend; the upload is read again right away for processing, so it
         // is kept as a local copy instead of being downloaded again, where possible
         const isCopyKept = await this.storageBackendRepository.keepLocalCopy(stored.original, file.originalPath);
@@ -292,7 +297,7 @@ export class AssetMediaService extends BaseService {
       await this.jobRepository.queue({
         name: JobName.FileDelete,
         data: {
-          files: [file.originalPath, sidecarFile?.originalPath],
+          files: [storedOriginal ? undefined : file.originalPath, sidecarFile?.originalPath],
           locations: copies.map(({ backendId, key }) => ({ backendId, key })),
           // the copies were never recorded
           immediate: true,

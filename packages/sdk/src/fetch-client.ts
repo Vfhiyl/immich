@@ -8563,6 +8563,7 @@ export enum JobName {
     FileLocationBackfill = "FileLocationBackfill",
     LocalCopyCleanup = "LocalCopyCleanup",
     StorageDeletionRun = "StorageDeletionRun",
+    UploadSessionCleanup = "UploadSessionCleanup",
     AssetGenerateThumbnailsQueueAll = "AssetGenerateThumbnailsQueueAll",
     AssetGenerateThumbnails = "AssetGenerateThumbnails",
     AuditTableCleanup = "AuditTableCleanup",

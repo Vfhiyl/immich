@@ -360,6 +360,7 @@ export type JobItem =
   | { name: JobName.FileLocationBackfill; data?: IBaseJob }
   | { name: JobName.LocalCopyCleanup; data?: IBaseJob }
   | { name: JobName.StorageDeletionRun; data?: IBaseJob }
+  | { name: JobName.UploadSessionCleanup; data?: IBaseJob }
 
   // Backups
   | { name: JobName.DatabaseBackup; data?: IBaseJob }
