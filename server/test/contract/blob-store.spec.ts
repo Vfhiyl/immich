@@ -1,13 +1,10 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { buffer } from 'node:stream/consumers';
 import { BlobIntegrityError, BlobNotFoundError, BlobRangeError, BlobStore } from 'src/repositories/blob-store.js';
-import { LocalBlobStore } from 'src/repositories/local-blob-store.js';
 import { S3BlobStore, S3_PART_SIZE } from 'src/repositories/s3-blob-store.js';
-import { S3Target, toClient } from 'test/contract/servers.js';
+import { toClient } from 'test/contract/servers.js';
+import { stores, targets } from 'test/contract/stores.js';
 
 /**
  * The behavior every blob store must have, whatever stores the blobs. These tests are what lets the rest of the
@@ -23,27 +20,6 @@ const chunked = (value: Buffer, size: number) =>
       }
     })(),
   );
-
-const targets: S3Target[] = JSON.parse(process.env.CONTRACT_S3_TARGETS ?? '[]');
-
-const stores: Array<{ name: string; create: () => Promise<{ store: BlobStore; cleanup: () => Promise<void> }> }> = [
-  {
-    name: 'local',
-    create: async () => {
-      const root = await mkdtemp(join(tmpdir(), 'immich-contract-local-'));
-      return { store: new LocalBlobStore(root), cleanup: () => rm(root, { recursive: true, force: true }) };
-    },
-  },
-  ...targets.map((target) => ({
-    name: target.name,
-    create: () =>
-      Promise.resolve({
-        // a prefix of its own, so that every run starts empty
-        store: new S3BlobStore(toClient(target), target.bucket, `contract-${randomUUID()}/`),
-        cleanup: () => Promise.resolve(),
-      }),
-  })),
-];
 
 describe.each(stores)('blob store contract: $name', ({ create }) => {
   let store: BlobStore;

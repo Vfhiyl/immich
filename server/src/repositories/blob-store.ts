@@ -43,11 +43,16 @@ export interface BlobStoreLimits {
 export interface BlobPutOptions {
   contentType?: string;
   sizeHint?: number;
+  /** Describes the blob inside an encrypted blob, so that it can be recovered without the database */
+  manifest?: Record<string, unknown>;
 }
 
 export interface BlobPutResult {
+  /** Size and SHA-1 of the content, which for an encrypted blob is the plaintext */
   size: number;
   sha1: Buffer;
+  /** For an encrypted blob, what reading it needs: to be recorded with the blob */
+  encryption?: Buffer;
 }
 
 /** Inclusive byte range, like an HTTP `Range` header. `end` defaults to the last byte. */
@@ -66,6 +71,8 @@ export interface BlobExpectation {
 export interface BlobGetOptions {
   range?: BlobRange;
   expect?: BlobExpectation;
+  /** What was recorded when an encrypted blob was written */
+  encryption?: Buffer;
 }
 
 export interface BlobStat {
