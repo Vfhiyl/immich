@@ -200,14 +200,15 @@ export class IntegrityService extends BaseService {
 
   /**
    * These checks compare files on the local filesystem with their paths; files on a storage backend only have a logical
-   * path and would be reported as missing, so the checks are not run once storage backends are configured
+   * path and would be reported as missing, so once storage backends are configured the checks of storage backends run
+   * instead (see StorageCheckService), on the same schedule
    */
-  private isUnavailableForStorageBackends() {
+  private async isReplacedByStorageChecks(job: JobName.StorageReconcile | JobName.StorageVerify) {
     if (!this.storageBackendRepository.hasConfiguredBackends()) {
       return false;
     }
 
-    this.logger.warn('Skipping the integrity check, which does not support files on storage backends yet');
+    await this.jobRepository.queue({ name: job });
     return true;
   }
 
@@ -232,7 +233,7 @@ export class IntegrityService extends BaseService {
 
   @OnJob({ name: JobName.IntegrityUntrackedFilesQueueAll, queue: QueueName.IntegrityCheck })
   async handleUntrackedFilesQueueAll({ refreshOnly }: IIntegrityJob = {}): Promise<JobStatus> {
-    if (this.isUnavailableForStorageBackends()) {
+    if (await this.isReplacedByStorageChecks(JobName.StorageReconcile)) {
       return JobStatus.Skipped;
     }
 
@@ -388,7 +389,7 @@ export class IntegrityService extends BaseService {
 
   @OnJob({ name: JobName.IntegrityMissingFilesQueueAll, queue: QueueName.IntegrityCheck })
   async handleMissingFilesQueueAll({ refreshOnly }: IIntegrityJob = {}): Promise<JobStatus> {
-    if (this.isUnavailableForStorageBackends()) {
+    if (await this.isReplacedByStorageChecks(JobName.StorageReconcile)) {
       return JobStatus.Skipped;
     }
 
@@ -553,7 +554,7 @@ export class IntegrityService extends BaseService {
 
   @OnJob({ name: JobName.IntegrityChecksumFiles, queue: QueueName.IntegrityCheck })
   async handleChecksumFiles({ refreshOnly }: IIntegrityJob = {}): Promise<JobStatus> {
-    if (this.isUnavailableForStorageBackends()) {
+    if (await this.isReplacedByStorageChecks(JobName.StorageVerify)) {
       return JobStatus.Skipped;
     }
 

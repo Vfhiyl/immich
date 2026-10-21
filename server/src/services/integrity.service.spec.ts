@@ -1,4 +1,4 @@
-import { JobStatus, StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
+import { JobName, JobStatus, StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -27,19 +27,22 @@ describe(IntegrityService.name, () => {
       ]);
     });
 
-    it('should not look for untracked files', async () => {
+    it('should reconcile the storage backends instead of looking for untracked files', async () => {
       await expect(sut.handleUntrackedFilesQueueAll()).resolves.toBe(JobStatus.Skipped);
       expect(mocks.storage.walk).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.StorageReconcile });
     });
 
-    it('should not look for missing files', async () => {
+    it('should reconcile the storage backends instead of looking for missing files', async () => {
       await expect(sut.handleMissingFilesQueueAll()).resolves.toBe(JobStatus.Skipped);
       expect(mocks.storage.stat).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.StorageReconcile });
     });
 
-    it('should not check checksums', async () => {
+    it('should read stored files back instead of checking checksums', async () => {
       await expect(sut.handleChecksumFiles()).resolves.toBe(JobStatus.Skipped);
       expect(mocks.storage.createPlainReadStream).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.StorageVerify });
     });
   });
 

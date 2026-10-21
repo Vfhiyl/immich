@@ -537,7 +537,9 @@ describe(EncryptedBlobStore.name, () => {
       const size = (await inner.head('a/one'))!.size;
 
       await expect(sut.head('a/one')).resolves.toEqual({ size });
-      await expect(Array.fromAsync(sut.list('a/'))).resolves.toEqual([{ key: 'a/one', size }]);
+      await expect(Array.fromAsync(sut.list('a/'))).resolves.toEqual([
+        { key: 'a/one', size, lastModified: expect.any(Date) },
+      ]);
       await expect(sut.deleteMany(['a/one'])).resolves.toEqual({ failed: [] });
       await expect(sut.head('a/one')).resolves.toBeNull();
     });

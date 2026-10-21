@@ -87,6 +87,9 @@ const READ_RETRY_DELAYS = [500, 1000, 2000, 4000, 8000];
 /** Temporary files for tools that write to a path, kept below the media location */
 export const STAGING_FOLDER = '.immich-staging';
 
+/** Where the startup check writes its probe, on every backend */
+export const STORAGE_PROBE_PREFIX = '.immich-probe';
+
 export const DEFAULT_DELETION_DELAY_DAYS = 360;
 export const DEFAULT_DATABASE_BACKUPS_KEEP_LAST = 14;
 
@@ -257,6 +260,14 @@ export class StorageBackendRepository {
       this.deletionStores.set(backendId, store);
     }
     return store;
+  }
+
+  /** The configured backends, with their role */
+  getConfiguredBackends(): Array<{ id: string; role: StorageBackendRole }> {
+    return this.configs
+      .values()
+      .map(({ id, role }) => ({ id, role }))
+      .toArray();
   }
 
   hasConfiguredBackends(): boolean {

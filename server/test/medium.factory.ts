@@ -60,6 +60,7 @@ import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.re
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
+import { StorageCheckRepository } from 'src/repositories/storage-check.repository.js';
 import { StorageDeletionRepository } from 'src/repositories/storage-deletion.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
@@ -520,6 +521,7 @@ const newRealRepository = <T extends BaseServiceDeps[number]>(key: T, db: Kysely
     case SharedLinkRepository:
     case SharedLinkAssetRepository:
     case StackRepository:
+    case StorageCheckRepository:
     case StorageDeletionRepository:
     case SyncRepository:
     case SyncCheckpointRepository:
@@ -593,6 +595,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
     case SessionRepository:
     case SyncRepository:
     case SyncCheckpointRepository:
+    case StorageCheckRepository:
     case StorageDeletionRepository:
     case SystemMetadataRepository:
     case UploadSessionRepository:

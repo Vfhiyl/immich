@@ -82,6 +82,12 @@ import { SmartSearchTable } from 'src/schema/tables/smart-search.table.js';
 import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
 import { StorageBackendTable } from 'src/schema/tables/storage-backend.table.js';
+import {
+  StorageCheckRunTable,
+  StorageIssueTable,
+  StorageListingTable,
+  StorageVerificationTable,
+} from 'src/schema/tables/storage-check.table.js';
 import { StorageDeletionTable } from 'src/schema/tables/storage-deletion.table.js';
 import { StorageMasterKeyTable } from 'src/schema/tables/storage-master-key.table.js';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
@@ -161,6 +167,10 @@ export class ImmichDatabase {
     StackTable,
     StackAuditTable,
     StorageBackendTable,
+    StorageCheckRunTable,
+    StorageIssueTable,
+    StorageListingTable,
+    StorageVerificationTable,
     StorageDeletionTable,
     UploadSessionTable,
     StorageMasterKeyTable,
@@ -301,6 +311,10 @@ export interface DB {
   stack_audit: StackAuditTable;
 
   storage_backend: StorageBackendTable;
+  storage_check_run: StorageCheckRunTable;
+  storage_issue: StorageIssueTable;
+  storage_listing: StorageListingTable;
+  storage_verification: StorageVerificationTable;
   storage_deletion: StorageDeletionTable;
   upload_session: UploadSessionTable;
   storage_master_key: StorageMasterKeyTable;

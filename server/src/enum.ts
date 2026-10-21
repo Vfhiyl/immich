@@ -667,6 +667,35 @@ export enum RouteKey {
   User = 'users',
 }
 
+export enum StorageCheckKind {
+  /** Listing each backend and comparing it with what is recorded */
+  Reconcile = 'reconcile',
+  /** Reading files back, decrypting them and comparing their checksum */
+  Verify = 'verify',
+}
+
+export enum StorageCheckStatus {
+  Running = 'running',
+  Ok = 'ok',
+  Issues = 'issues',
+  /** Stopped before it covered everything, e.g. at its time limit */
+  Incomplete = 'incomplete',
+  Failed = 'failed',
+}
+
+export enum StorageIssueKind {
+  /** Recorded, but the backend does not have it */
+  Missing = 'missing',
+  /** On the backend, but nothing records it */
+  Untracked = 'untracked',
+  /** Its size on the backend is not the recorded one */
+  SizeMismatch = 'size_mismatch',
+  /** Read back, it does not match its checksum or fails to decrypt */
+  Corrupt = 'corrupt',
+  /** It could not be read back */
+  Unreadable = 'unreadable',
+}
+
 export enum UploadSessionStatus {
   /** Receiving the file */
   Receiving = 'receiving',
@@ -920,6 +949,8 @@ export enum JobName {
   StorageDeletionRun = 'StorageDeletionRun',
   UploadSessionCleanup = 'UploadSessionCleanup',
   DatabaseBackupStore = 'DatabaseBackupStore',
+  StorageReconcile = 'StorageReconcile',
+  StorageVerify = 'StorageVerify',
   AssetGenerateThumbnailsQueueAll = 'AssetGenerateThumbnailsQueueAll',
   AssetGenerateThumbnails = 'AssetGenerateThumbnails',
 

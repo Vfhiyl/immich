@@ -227,24 +227,24 @@ describe(LocalBlobStore.name, () => {
 
     it('should list every blob', async () => {
       await expect(listAll(sut)).resolves.toEqual([
-        { key: 'thumbs/u1/four', size: 4 },
-        { key: 'upload/u1/aa/one', size: 1 },
-        { key: 'upload/u1/ab/two', size: 2 },
-        { key: 'upload/u2/aa/three', size: 3 },
+        { key: 'thumbs/u1/four', size: 4, lastModified: expect.any(Date) },
+        { key: 'upload/u1/aa/one', size: 1, lastModified: expect.any(Date) },
+        { key: 'upload/u1/ab/two', size: 2, lastModified: expect.any(Date) },
+        { key: 'upload/u2/aa/three', size: 3, lastModified: expect.any(Date) },
       ]);
     });
 
     it('should list blobs below a directory prefix', async () => {
       await expect(listAll(sut, 'upload/u1/')).resolves.toEqual([
-        { key: 'upload/u1/aa/one', size: 1 },
-        { key: 'upload/u1/ab/two', size: 2 },
+        { key: 'upload/u1/aa/one', size: 1, lastModified: expect.any(Date) },
+        { key: 'upload/u1/ab/two', size: 2, lastModified: expect.any(Date) },
       ]);
     });
 
     it('should match a partial name prefix', async () => {
       await expect(listAll(sut, 'upload/u1/a')).resolves.toEqual([
-        { key: 'upload/u1/aa/one', size: 1 },
-        { key: 'upload/u1/ab/two', size: 2 },
+        { key: 'upload/u1/aa/one', size: 1, lastModified: expect.any(Date) },
+        { key: 'upload/u1/ab/two', size: 2, lastModified: expect.any(Date) },
       ]);
       await expect(listAll(sut, 'upload/u')).resolves.toHaveLength(3);
     });
@@ -255,7 +255,9 @@ describe(LocalBlobStore.name, () => {
 
     it('should skip in-progress writes', async () => {
       await fs.writeFile(join(root, 'upload', 'u1', 'aa', `one.partial${LOCAL_BLOB_TEMP_SUFFIX}`), 'partial');
-      await expect(listAll(sut, 'upload/u1/aa/')).resolves.toEqual([{ key: 'upload/u1/aa/one', size: 1 }]);
+      await expect(listAll(sut, 'upload/u1/aa/')).resolves.toEqual([
+        { key: 'upload/u1/aa/one', size: 1, lastModified: expect.any(Date) },
+      ]);
     });
 
     it('should reject an invalid prefix', async () => {

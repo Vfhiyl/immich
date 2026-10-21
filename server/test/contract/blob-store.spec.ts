@@ -150,8 +150,8 @@ describe.each(stores)('blob store contract: $name', ({ create }) => {
       await store.put('list/u2/c', toStream(Buffer.from('333')));
 
       await expect(listAll('list/u1/')).resolves.toEqual([
-        { key: 'list/u1/a', size: 1 },
-        { key: 'list/u1/b', size: 2 },
+        { key: 'list/u1/a', size: 1, lastModified: expect.any(Date) },
+        { key: 'list/u1/b', size: 2, lastModified: expect.any(Date) },
       ]);
       await expect(listAll('list/u')).resolves.toHaveLength(3);
       await expect(listAll('list/none/')).resolves.toEqual([]);
@@ -185,7 +185,9 @@ describe.each(stores)('blob store contract: $name', ({ create }) => {
 
       const read = await buffer(await store.get('parts/a', { expect: { size: content.length, sha1: sha1(content) } }));
       expect(read.equals(content)).toBe(true);
-      await expect(listAll('parts/')).resolves.toEqual([{ key: 'parts/a', size: content.length }]);
+      await expect(listAll('parts/')).resolves.toEqual([
+        { key: 'parts/a', size: content.length, lastModified: expect.any(Date) },
+      ]);
     });
 
     it('should continue an upload with what the caller kept of it', async () => {
@@ -260,7 +262,9 @@ describe.each(targets)('S3 key prefixes: $name', (target) => {
     await second.put('same-key', toStream(Buffer.from('second')));
 
     await expect(buffer(await first.get('same-key'))).resolves.toEqual(Buffer.from('first'));
-    await expect(Array.fromAsync(second.list())).resolves.toEqual([{ key: 'same-key', size: 6 }]);
+    await expect(Array.fromAsync(second.list())).resolves.toEqual([
+      { key: 'same-key', size: 6, lastModified: expect.any(Date) },
+    ]);
     await first.deleteMany(['same-key']);
     await expect(second.head('same-key')).resolves.toEqual({ size: 6 });
   });

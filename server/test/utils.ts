@@ -63,6 +63,7 @@ import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.re
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
+import { StorageCheckRepository } from 'src/repositories/storage-check.repository.js';
 import { StorageDeletionRepository } from 'src/repositories/storage-deletion.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
@@ -285,6 +286,7 @@ export type ServiceOverrides = {
   sharedLinkAsset: SharedLinkAssetRepository;
   stack: StackRepository;
   storageBackend: StorageBackendRepository;
+  storageCheck: StorageCheckRepository;
   storageDeletion: StorageDeletionRepository;
   storage: StorageRepository;
   sync: SyncRepository;
@@ -376,6 +378,7 @@ export const getMocks = () => {
     sharedLinkAsset: automock(SharedLinkAssetRepository),
     stack: automock(StackRepository),
     storageBackend: newStorageBackendRepositoryMock(),
+    storageCheck: automock(StorageCheckRepository),
     storageDeletion: newStorageDeletionRepositoryMock(),
     storage: newStorageRepositoryMock(),
     sync: automock(SyncRepository),
@@ -453,6 +456,7 @@ export const newTestService = <T extends BaseService>(
     overrides.sharedLinkAsset || (mocks.sharedLinkAsset as As<SharedLinkAssetRepository>),
     overrides.stack || (mocks.stack as As<StackRepository>),
     overrides.storageBackend || (mocks.storageBackend as As<StorageBackendRepository>),
+    overrides.storageCheck || (mocks.storageCheck as As<StorageCheckRepository>),
     overrides.storageDeletion || (mocks.storageDeletion as As<StorageDeletionRepository>),
     overrides.storage || (mocks.storage as As<StorageRepository>),
     overrides.sync || (mocks.sync as As<SyncRepository>),

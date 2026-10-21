@@ -216,7 +216,7 @@ export class LocalBlobStore implements BlobStore {
 
       const stat = await this.stat(join(directory, entry.name));
       if (stat) {
-        yield { key, size: stat.size };
+        yield { key, size: stat.size, lastModified: stat.mtime };
       }
     }
   }

@@ -1369,6 +1369,373 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/storage/checks": {
+      "get": {
+        "description": "Open problems by kind, the last runs of each check and the last 12 months",
+        "operationId": "getStorageCheckSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageCheckSummaryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the data health summary",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Reconcile the storage backends with what is recorded, or read files back to verify them, now",
+        "operationId": "startStorageCheck",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageCheckStartDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Run a storage check",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage/checks/issues": {
+      "get": {
+        "description": "Problems with stored files that checks reported, the most recently seen first",
+        "operationId": "getStorageIssues",
+        "parameters": [
+          {
+            "name": "backendId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "Cursor for pagination",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/StorageIssueKind"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 1000,
+              "exclusiveMinimum": true,
+              "default": 100,
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "open",
+              "type": "string",
+              "enum": [
+                "open",
+                "resolved",
+                "all"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageIssuesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List storage issues",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage/checks/issues/csv": {
+      "get": {
+        "description": "All reported problems with stored files, open and resolved",
+        "operationId": "getStorageIssuesCsv",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Export storage issues as CSV",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage/checks/issues/{id}/acknowledge": {
+      "post": {
+        "description": "Note that an administrator saw the problem; it stays open until a check no longer finds it",
+        "operationId": "acknowledgeStorageIssue",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Acknowledge a storage issue",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage/checks/runs": {
+      "get": {
+        "description": "Every run of a check is a report, the newest first",
+        "operationId": "getStorageCheckRuns",
+        "parameters": [
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Runs started before this time",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/StorageCheckKind"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 500,
+              "exclusiveMinimum": true,
+              "default": 50,
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StorageCheckRunDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List storage check runs",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/storage/database-backups": {
       "get": {
         "description": "Database backups on the storage backend for backups, the newest first",
@@ -23254,6 +23621,8 @@
           "StorageDeletionRun",
           "UploadSessionCleanup",
           "DatabaseBackupStore",
+          "StorageReconcile",
+          "StorageVerify",
           "AssetGenerateThumbnailsQueueAll",
           "AssetGenerateThumbnails",
           "AuditTableCleanup",
@@ -30418,6 +30787,188 @@
         },
         "type": "object"
       },
+      "StorageCheckKind": {
+        "description": "Kind of storage check",
+        "enum": [
+          "reconcile",
+          "verify"
+        ],
+        "type": "string"
+      },
+      "StorageCheckRunDto": {
+        "properties": {
+          "backends": {
+            "description": "Storage backends the run checked",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "bytes": {
+            "description": "Bytes listed, or read back",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "checked": {
+            "description": "Objects listed, or files read back",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "finishedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StorageCheckKind"
+          },
+          "newIssues": {
+            "description": "Problems the run reported",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "openIssues": {
+            "description": "Problems open after the run",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StorageCheckStatus"
+          },
+          "stoppedBecause": {
+            "description": "Why the run did not cover everything",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backends",
+          "bytes",
+          "checked",
+          "finishedAt",
+          "id",
+          "kind",
+          "newIssues",
+          "openIssues",
+          "startedAt",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StorageCheckStartDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/StorageCheckKind"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "StorageCheckStatus": {
+        "description": "Outcome of the run",
+        "enum": [
+          "running",
+          "ok",
+          "issues",
+          "incomplete",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "StorageCheckSummaryResponseDto": {
+        "properties": {
+          "lastReconcile": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageCheckRunDto"
+              }
+            ],
+            "nullable": true
+          },
+          "lastVerify": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageCheckRunDto"
+              }
+            ],
+            "nullable": true
+          },
+          "months": {
+            "description": "The last 12 months, the oldest first",
+            "items": {
+              "properties": {
+                "bytesVerified": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "issuesReported": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "issuesResolved": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "month": {
+                  "description": "As YYYY-MM",
+                  "type": "string"
+                },
+                "runs": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "runsWithProblems": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "month",
+                "runs",
+                "runsWithProblems",
+                "bytesVerified",
+                "issuesReported",
+                "issuesResolved"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "openIssues": {
+            "additionalProperties": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "description": "Open problems by kind",
+            "type": "object"
+          }
+        },
+        "required": [
+          "lastReconcile",
+          "lastVerify",
+          "months",
+          "openIssues"
+        ],
+        "type": "object"
+      },
       "StorageDeletionImportDto": {
         "properties": {
           "userId": {
@@ -30568,6 +31119,86 @@
           "backups"
         ],
         "type": "string"
+      },
+      "StorageIssueDto": {
+        "properties": {
+          "acknowledgedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "backendId": {
+            "type": "string"
+          },
+          "confirmedAt": {
+            "type": "string"
+          },
+          "detail": {
+            "nullable": true,
+            "type": "string"
+          },
+          "firstSeenAt": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StorageIssueKind"
+          },
+          "lastSeenAt": {
+            "type": "string"
+          },
+          "resolvedAt": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "acknowledgedAt",
+          "backendId",
+          "confirmedAt",
+          "detail",
+          "firstSeenAt",
+          "id",
+          "key",
+          "kind",
+          "lastSeenAt",
+          "resolvedAt"
+        ],
+        "type": "object"
+      },
+      "StorageIssueKind": {
+        "description": "Kind of problem with a stored file",
+        "enum": [
+          "missing",
+          "untracked",
+          "size_mismatch",
+          "corrupt",
+          "unreadable"
+        ],
+        "type": "string"
+      },
+      "StorageIssuesResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StorageIssueDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
       },
       "StoredDatabaseBackupFetchResponseDto": {
         "properties": {

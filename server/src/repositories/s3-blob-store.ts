@@ -227,7 +227,11 @@ export class S3BlobStore implements BlobStore {
       );
       for (const object of response.Contents ?? []) {
         if (object.Key?.startsWith(this.prefix)) {
-          yield { key: object.Key.slice(this.prefix.length), size: object.Size ?? 0 };
+          yield {
+            key: object.Key.slice(this.prefix.length),
+            size: object.Size ?? 0,
+            lastModified: object.LastModified ?? new Date(0),
+          };
         }
       }
       continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;

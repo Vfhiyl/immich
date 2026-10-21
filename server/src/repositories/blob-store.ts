@@ -129,6 +129,8 @@ export interface BlobDeleteResult {
 export interface BlobListEntry {
   key: string;
   size: number;
+  /** When the blob was written, which tells a blob still being recorded from one that nothing records */
+  lastModified: Date;
 }
 
 export class BlobNotFoundError extends Error {

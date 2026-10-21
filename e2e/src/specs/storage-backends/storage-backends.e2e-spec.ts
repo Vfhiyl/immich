@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
@@ -536,6 +537,64 @@ describe('storage backends on an S3 service', () => {
 
     await writeFile(environment.masterKeyFile, keyFile);
     server = await ImmichServer.start(environment);
+  });
+
+  it('should report stored files that were damaged or lost, after two checks', async () => {
+    type Issues = { items: Array<{ backendId: string; key: string; kind: string }> };
+    type Run = { kind: string; status: string; finishedAt: string | null };
+    const content = Buffer.concat([await readFile(photoPath), randomBytes(1000)]);
+    const { id } = await api.upload(photoPath, content);
+    const files = await eventually(async () => {
+      const files = await getFiles(environment, id);
+      expect(files).toHaveLength(2);
+      return files;
+    });
+    const original = await getOriginal(environment, id);
+    // old enough to be checked: new files are left alone for a while
+    await environment.query(
+      `update asset_original_file set "createdAt" = now() - interval '10 days' where "assetId" = $1`,
+      [id],
+    );
+    await environment.query(`update asset_file set "createdAt" = now() - interval '10 days' where "assetId" = $1`, [
+      id,
+    ]);
+
+    const stored = join(environment.backendRoot('originals'), original.key);
+    const damaged = await readFile(stored);
+    damaged[200] ^= 1;
+    await writeFile(stored, damaged);
+    const [, thumbnail] = files;
+    await rm(join(environment.backendRoot('derived'), thumbnail.key));
+
+    const runCheck = async (kind: string) => {
+      const before = await api.json<Run[]>(`/admin/storage/checks/runs?kind=${kind}`);
+      await expect(api.json('/admin/storage/checks', { method: 'POST', body: { kind } })).resolves.toMatchObject({
+        status: 204,
+      });
+      await eventually(
+        async () => {
+          const { body } = await api.json<Run[]>(`/admin/storage/checks/runs?kind=${kind}`);
+          expect(body.length).toBe(before.body.length + 1);
+          expect(body[0].finishedAt).not.toBeNull();
+        },
+        { timeout: 60_000 },
+      );
+    };
+    for (const kind of ['verify', 'verify', 'reconcile', 'reconcile']) {
+      await runCheck(kind);
+    }
+
+    const { body } = await api.json<Issues>('/admin/storage/checks/issues');
+    expect(body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ backendId: 'originals', key: original.key, kind: 'corrupt' }),
+        expect.objectContaining({ backendId: 'derived', key: thumbnail.key, kind: 'missing' }),
+      ]),
+    );
+    const { body: summary } = await api.json<{ openIssues: Record<string, number> }>('/admin/storage/checks');
+    expect(summary.openIssues).toMatchObject({ corrupt: 1, missing: 1 });
+    // the checks only report
+    await expect(readFile(stored)).resolves.toEqual(damaged);
   });
 
   it('should remove every object of permanently deleted assets', async () => {

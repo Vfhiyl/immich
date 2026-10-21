@@ -21,14 +21,13 @@ import {
 } from 'src/enum.js';
 import { KeyProvider } from 'src/repositories/key-provider.js';
 import { PersonId } from 'src/repositories/person.repository.js';
-import { isBuiltinStorageBackend } from 'src/repositories/storage-backend.repository.js';
+import { STORAGE_PROBE_PREFIX, isBuiltinStorageBackend } from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 
 /** Number of asset files given a storage location per database round trip */
 const FILE_LOCATION_BATCH_SIZE = 5000;
 /** Where startup checks write their probes in each configured storage backend */
-const STORAGE_PROBE_PREFIX = '.immich-probe';
 
 type FileWithPath = { id: string; path: string };
 

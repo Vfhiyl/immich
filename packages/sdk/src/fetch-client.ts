@@ -545,6 +545,62 @@ export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
 };
+export type StorageCheckRunDto = {
+    /** Storage backends the run checked */
+    backends: string[];
+    /** Bytes listed, or read back */
+    bytes: number;
+    /** Objects listed, or files read back */
+    checked: number;
+    finishedAt: string | null;
+    id: string;
+    kind: StorageCheckKind;
+    /** Problems the run reported */
+    newIssues: number;
+    /** Problems open after the run */
+    openIssues: number;
+    startedAt: string;
+    status: StorageCheckStatus;
+    /** Why the run did not cover everything */
+    stoppedBecause?: string;
+};
+export type StorageCheckSummaryResponseDto = {
+    lastReconcile: (StorageCheckRunDto) | null;
+    lastVerify: (StorageCheckRunDto) | null;
+    /** The last 12 months, the oldest first */
+    months: {
+        bytesVerified: number;
+        issuesReported: number;
+        issuesResolved: number;
+        /** As YYYY-MM */
+        month: string;
+        runs: number;
+        runsWithProblems: number;
+    }[];
+    /** Open problems by kind */
+    openIssues: {
+        [key: string]: number;
+    };
+};
+export type StorageCheckStartDto = {
+    kind: StorageCheckKind;
+};
+export type StorageIssueDto = {
+    acknowledgedAt: string | null;
+    backendId: string;
+    confirmedAt: string;
+    detail: string | null;
+    firstSeenAt: string;
+    id: string;
+    key: string;
+    kind: StorageIssueKind;
+    lastSeenAt: string;
+    resolvedAt: string | null;
+};
+export type StorageIssuesResponseDto = {
+    items: StorageIssueDto[];
+    nextCursor?: string;
+};
 export type StoredDatabaseBackupListResponseDto = {
     backups: {
         /** When the backup was stored */
@@ -4250,6 +4306,90 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
         method: "POST",
         body: adminConfigSmtpDto
     })));
+}
+/**
+ * Get the data health summary
+ */
+export function getStorageCheckSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageCheckSummaryResponseDto;
+    }>("/admin/storage/checks", {
+        ...opts
+    }));
+}
+/**
+ * Run a storage check
+ */
+export function startStorageCheck({ storageCheckStartDto }: {
+    storageCheckStartDto: StorageCheckStartDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/storage/checks", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: storageCheckStartDto
+    })));
+}
+/**
+ * List storage issues
+ */
+export function getStorageIssues({ backendId, cursor, kind, limit, status }: {
+    backendId?: string;
+    cursor?: string;
+    kind?: StorageIssueKind;
+    limit?: number;
+    status?: "open" | "resolved" | "all";
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageIssuesResponseDto;
+    }>(`/admin/storage/checks/issues${QS.query(QS.explode({
+        backendId,
+        cursor,
+        kind,
+        limit,
+        status
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Export storage issues as CSV
+ */
+export function getStorageIssuesCsv(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/storage/checks/issues/csv", {
+        ...opts
+    }));
+}
+/**
+ * Acknowledge a storage issue
+ */
+export function acknowledgeStorageIssue({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/storage/checks/issues/${encodeURIComponent(id)}/acknowledge`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * List storage check runs
+ */
+export function getStorageCheckRuns({ before, kind, limit }: {
+    before?: string;
+    kind?: StorageCheckKind;
+    limit?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageCheckRunDto[];
+    }>(`/admin/storage/checks/runs${QS.query(QS.explode({
+        before,
+        kind,
+        limit
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * List stored database backups
@@ -8245,6 +8385,24 @@ export enum NotificationType {
     ClusterGroupRequest = "ClusterGroupRequest",
     Custom = "Custom"
 }
+export enum StorageCheckKind {
+    Reconcile = "reconcile",
+    Verify = "verify"
+}
+export enum StorageCheckStatus {
+    Running = "running",
+    Ok = "ok",
+    Issues = "issues",
+    Incomplete = "incomplete",
+    Failed = "failed"
+}
+export enum StorageIssueKind {
+    Missing = "missing",
+    Untracked = "untracked",
+    SizeMismatch = "size_mismatch",
+    Corrupt = "corrupt",
+    Unreadable = "unreadable"
+}
 export enum AssetMediaStatus {
     Created = "created",
     Duplicate = "duplicate"
@@ -8606,6 +8764,8 @@ export enum JobName {
     StorageDeletionRun = "StorageDeletionRun",
     UploadSessionCleanup = "UploadSessionCleanup",
     DatabaseBackupStore = "DatabaseBackupStore",
+    StorageReconcile = "StorageReconcile",
+    StorageVerify = "StorageVerify",
     AssetGenerateThumbnailsQueueAll = "AssetGenerateThumbnailsQueueAll",
     AssetGenerateThumbnails = "AssetGenerateThumbnails",
     AuditTableCleanup = "AuditTableCleanup",

@@ -258,6 +258,11 @@ export interface ILibraryBulkIdsJob {
   totalAssets: number;
 }
 
+export interface IStorageCheckJob extends IBaseJob {
+  /** Run although it is not due, e.g. when an administrator asks for it */
+  force?: boolean;
+}
+
 export interface IDeleteFilesJob extends IBaseJob {
   /** Local paths, for temporary files and files recorded before storage backends existed */
   files: Array<string | null | undefined>;
@@ -362,6 +367,8 @@ export type JobItem =
   | { name: JobName.StorageDeletionRun; data?: IBaseJob }
   | { name: JobName.UploadSessionCleanup; data?: IBaseJob }
   | { name: JobName.DatabaseBackupStore; data?: IBaseJob }
+  | { name: JobName.StorageReconcile; data?: IStorageCheckJob }
+  | { name: JobName.StorageVerify; data?: IStorageCheckJob }
 
   // Backups
   | { name: JobName.DatabaseBackup; data?: IBaseJob }

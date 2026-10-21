@@ -52,6 +52,7 @@ import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.re
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageBackendRepository, isBuiltinStorageBackend } from 'src/repositories/storage-backend.repository.js';
+import { StorageCheckRepository } from 'src/repositories/storage-check.repository.js';
 import { OriginalRecovery, StorageDeletionRepository } from 'src/repositories/storage-deletion.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
@@ -123,6 +124,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   SharedLinkAssetRepository,
   StackRepository,
   StorageBackendRepository,
+  StorageCheckRepository,
   StorageDeletionRepository,
   StorageRepository,
   SyncRepository,
@@ -189,6 +191,7 @@ export class BaseService {
     protected sharedLinkAssetRepository: SharedLinkAssetRepository,
     protected stackRepository: StackRepository,
     protected storageBackendRepository: StorageBackendRepository,
+    protected storageCheckRepository: StorageCheckRepository,
     protected storageDeletionRepository: StorageDeletionRepository,
     protected storageRepository: StorageRepository,
     protected syncRepository: SyncRepository,
@@ -264,6 +267,7 @@ export class BaseService {
       ctx.sharedLinkAssetRepository,
       ctx.stackRepository,
       ctx.storageBackendRepository,
+      ctx.storageCheckRepository,
       ctx.storageDeletionRepository,
       ctx.storageRepository,
       ctx.syncRepository,
