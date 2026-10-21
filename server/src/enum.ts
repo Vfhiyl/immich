@@ -380,6 +380,13 @@ export enum StorageBackendDriver {
   Local = 'local',
 }
 
+/** What a configured storage backend holds; new files of each kind are written to its backend */
+export enum StorageBackendRole {
+  Originals = 'originals',
+  Derived = 'derived',
+  Backup = 'backup',
+}
+
 export enum SystemMetadataKey {
   MediaLocation = 'MediaLocation',
   ReverseGeocodingState = 'reverse-geocoding-state',
@@ -839,6 +846,8 @@ export enum BootstrapEventPriority {
   DatabaseService = -200,
   // Detect and configure the media location before jobs are queued which may use it
   StorageService = -195,
+  // Register configured storage backends once the media location is known
+  StorageBackends = -194,
   // Other services may need to queue jobs on bootstrap.
   JobService = -190,
   // Initialize config after other bootstrap services, stop other services from using config on bootstrap
@@ -1029,6 +1038,8 @@ export enum DatabaseLock {
   IntegrityCheck = 67,
   VersionCheck = 800,
   HlsSessionCleanup = 850,
+  // far from upstream values so that new upstream locks do not collide
+  StorageBackends = 9100,
 }
 
 export enum MaintenanceAction {

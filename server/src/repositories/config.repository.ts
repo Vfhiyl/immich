@@ -115,6 +115,8 @@ export interface EnvData {
   storage: {
     ignoreMountCheckErrors: boolean;
     mediaLocation?: string;
+    /** File that configures storage backends; without it files are stored in the media location as before */
+    backendsFile?: string;
   };
 
   workers: ImmichWorker[];
@@ -356,6 +358,7 @@ const getEnv = (): EnvData => {
     storage: {
       ignoreMountCheckErrors: !!dto.IMMICH_IGNORE_MOUNT_CHECK_ERRORS,
       mediaLocation: dto.IMMICH_MEDIA_LOCATION,
+      backendsFile: dto.IMMICH_STORAGE_BACKENDS,
     },
 
     telemetry: {

@@ -1,4 +1,7 @@
-import { JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { JobName, JobStatus, StorageBackendDriver, StorageBackendRole, SystemMetadataKey } from 'src/enum.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
@@ -202,6 +205,113 @@ describe(StorageService.name, () => {
       await sut.handleDeleteFiles({ files: ['path/to/something'] });
 
       expect(mocks.storage.unlink).toHaveBeenCalledWith('path/to/something');
+    });
+  });
+
+  describe('onBootstrapStorageBackends', () => {
+    let root: string;
+    const backendsFile = '/config/storage.yaml';
+    const localBackend = (id: string, role: StorageBackendRole) => ({
+      id,
+      driver: StorageBackendDriver.Local as const,
+      role,
+      root: join(root, id),
+    });
+    const configure = (backends: ReturnType<typeof localBackend>[]) => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ storage: { ignoreMountCheckErrors: false, backendsFile } }));
+      mocks.storageBackend.readConfig.mockResolvedValue({ backends });
+    };
+
+    beforeEach(async () => {
+      root = await fs.mkdtemp(join(tmpdir(), 'immich-storage-backends-'));
+      mocks.crypto.randomUUID.mockReturnValue('probe-id');
+    });
+
+    afterEach(async () => {
+      await fs.rm(root, { recursive: true, force: true });
+    });
+
+    it('should only keep the built-in backends without a configuration file', async () => {
+      await sut.onBootstrapStorageBackends();
+
+      expect(mocks.storageBackend.readConfig).not.toHaveBeenCalled();
+      expect(mocks.storageBackend.register).toHaveBeenCalledWith([]);
+      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([]);
+    });
+
+    it('should register, configure and probe the configured backends', async () => {
+      const originals = localBackend('originals', StorageBackendRole.Originals);
+      configure([originals]);
+
+      await sut.onBootstrapStorageBackends();
+
+      expect(mocks.storageBackend.readConfig).toHaveBeenCalledWith(backendsFile);
+      expect(mocks.storageBackend.register).toHaveBeenCalledWith([{ id: 'originals', driver: 'local' }]);
+      expect(mocks.storageBackend.configure).toHaveBeenCalledWith([originals]);
+      // the probe was written, read back and removed
+      await expect(fs.readdir(join(root, 'originals', '.immich-probe'))).resolves.toEqual([]);
+    });
+
+    it('should not register a backend again', async () => {
+      configure([localBackend('originals', StorageBackendRole.Originals)]);
+      mocks.storageBackend.getRegistered.mockResolvedValue([{ id: 'originals', driver: StorageBackendDriver.Local }]);
+
+      await sut.onBootstrapStorageBackends();
+
+      expect(mocks.storageBackend.register).toHaveBeenCalledWith([]);
+    });
+
+    it('should refuse to start with an invalid configuration', async () => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ storage: { ignoreMountCheckErrors: false, backendsFile } }));
+      mocks.storageBackend.readConfig.mockRejectedValue(new Error('backends.0.root: Must be an absolute path'));
+
+      await expect(sut.onBootstrapStorageBackends()).rejects.toThrow(ImmichStartupError);
+      await expect(sut.onBootstrapStorageBackends()).rejects.toThrow('Must be an absolute path');
+      expect(mocks.storageBackend.register).not.toHaveBeenCalled();
+    });
+
+    it('should refuse to start when the driver of a registered backend changed', async () => {
+      configure([localBackend('originals', StorageBackendRole.Originals)]);
+      mocks.storageBackend.getRegistered.mockResolvedValue([{ id: 'originals', driver: 's3' as StorageBackendDriver }]);
+
+      await expect(sut.onBootstrapStorageBackends()).rejects.toThrow(
+        'Storage backend originals is configured with the local driver, but its files were written with the s3 driver',
+      );
+      expect(mocks.storageBackend.register).not.toHaveBeenCalled();
+    });
+
+    it('should refuse to start when a backend that still holds files is no longer configured', async () => {
+      configure([]);
+      mocks.storageBackend.getRegistered.mockResolvedValue([
+        { id: 'media', driver: StorageBackendDriver.Local },
+        { id: 'old', driver: StorageBackendDriver.Local },
+      ]);
+      mocks.storageBackend.isInUse.mockResolvedValue(true);
+
+      await expect(sut.onBootstrapStorageBackends()).rejects.toThrow(
+        'Storage backend old still holds files but is not configured in /config/storage.yaml',
+      );
+      expect(mocks.storageBackend.isInUse).toHaveBeenCalledWith('old');
+      expect(mocks.storageBackend.isInUse).not.toHaveBeenCalledWith('media');
+    });
+
+    it('should allow removing a backend that holds no files', async () => {
+      configure([]);
+      mocks.storageBackend.getRegistered.mockResolvedValue([{ id: 'old', driver: StorageBackendDriver.Local }]);
+      mocks.storageBackend.isInUse.mockResolvedValue(false);
+
+      await expect(sut.onBootstrapStorageBackends()).resolves.toBeUndefined();
+    });
+
+    it('should refuse to start when a backend cannot be written to', async () => {
+      const derived = localBackend('derived', StorageBackendRole.Derived);
+      // a file where the directory should be
+      await fs.writeFile(derived.root, '');
+      configure([derived]);
+
+      await expect(sut.onBootstrapStorageBackends()).rejects.toThrow(
+        'Storage backend derived failed the startup check',
+      );
     });
   });
 

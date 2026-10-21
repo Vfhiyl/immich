@@ -1,10 +1,21 @@
 import { Injectable } from '@nestjs/common';
+import { load as loadYaml } from 'js-yaml';
+import { Kysely, sql } from 'kysely';
+import { InjectKysely } from 'nestjs-kysely';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
-import { BuiltinStorageBackend } from 'src/enum.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import {
+  StorageBackendConfig,
+  StorageBackendsConfig,
+  StorageBackendsConfigSchema,
+} from 'src/dtos/storage-backend-config.dto.js';
+import { BuiltinStorageBackend, StorageBackendDriver } from 'src/enum.js';
 import { BlobStore } from 'src/repositories/blob-store.js';
 import { LocalBlobStore } from 'src/repositories/local-blob-store.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { DB } from 'src/schema/index.js';
 
 /** A file as recorded in the database: its path, and its location once one has been recorded */
 export interface RecordedFile {
@@ -25,20 +36,52 @@ export const toRecordedFile = (path: string, location: StorageLocation | null): 
   key: location?.key ?? null,
 });
 
-const isBuiltinBackend = (backendId: string): backendId is BuiltinStorageBackend =>
+/** Gives access to the blob store of each storage backend */
+export const isBuiltinStorageBackend = (backendId: string): backendId is BuiltinStorageBackend =>
   (Object.values(BuiltinStorageBackend) as string[]).includes(backendId);
 
-/** Gives access to the blob store of each storage backend */
 @Injectable()
 export class StorageBackendRepository {
   private media?: { root: string; store: LocalBlobStore };
   private host?: LocalBlobStore;
+  private configured = new Map<string, BlobStore>();
 
-  constructor(private logger: LoggingRepository) {
+  constructor(
+    @InjectKysely() private db: Kysely<DB>,
+    private logger: LoggingRepository,
+  ) {
     this.logger.setContext(StorageBackendRepository.name);
   }
 
+  /** Read and validate the storage backend configuration file */
+  async readConfig(path: string): Promise<StorageBackendsConfig> {
+    const content = await readFile(path, 'utf8');
+    let parsed: unknown;
+    try {
+      parsed = content.trim() === '' ? {} : loadYaml(content);
+    } catch (error) {
+      throw new Error(`Invalid storage backend configuration in ${path}: ${error}`, { cause: error });
+    }
+
+    const result = StorageBackendsConfigSchema.safeParse(parsed);
+    if (!result.success) {
+      const issues = result.error.issues.map(({ path, message }) => `${path.join('.') || '(root)'}: ${message}`);
+      throw new Error(`Invalid storage backend configuration in ${path}:\n${issues.join('\n')}`);
+    }
+    return result.data;
+  }
+
+  /** Make the configured storage backends available, replacing any configured before */
+  configure(backends: StorageBackendConfig[]) {
+    this.configured = new Map(backends.map((backend) => [backend.id, this.createStore(backend)]));
+  }
+
   get(backendId: string): BlobStore {
+    const configured = this.configured.get(backendId);
+    if (configured) {
+      return configured;
+    }
+
     switch (backendId) {
       case BuiltinStorageBackend.Media: {
         // the media location is only known once the server has started
@@ -83,7 +126,7 @@ export class StorageBackendRepository {
     }
 
     const localPath = store.getLocalPath(location.key);
-    if (isBuiltinBackend(location.backendId) && localPath !== resolve(file.path)) {
+    if (isBuiltinStorageBackend(location.backendId) && localPath !== resolve(file.path)) {
       this.logger.warn(
         `Storage location ${location.backendId}:${location.key} does not match the path ${file.path}, using the path`,
       );
@@ -91,5 +134,44 @@ export class StorageBackendRepository {
     }
 
     return localPath;
+  }
+
+  @GenerateSql()
+  getRegistered() {
+    return this.db.selectFrom('storage_backend').select(['id', 'driver']).orderBy('id').execute();
+  }
+
+  async register(backends: Array<{ id: string; driver: StorageBackendDriver }>) {
+    if (backends.length === 0) {
+      return;
+    }
+
+    await this.db
+      .insertInto('storage_backend')
+      .values(backends)
+      .onConflict((oc) => oc.column('id').doNothing())
+      .execute();
+  }
+
+  /** Whether any file is stored on a backend; uses the (backendId, key) indexes of the file tables */
+  @GenerateSql({ params: [DummyValue.STRING] })
+  async isInUse(backendId: string): Promise<boolean> {
+    const { rows } = await sql<{ inUse: boolean }>`
+      select
+        exists (select from "asset_file" where "backendId" = ${backendId})
+        or exists (select from "asset_original_file" where "backendId" = ${backendId})
+        or exists (select from "person_thumbnail_file" where "backendId" = ${backendId})
+        or exists (select from "user_profile_image_file" where "backendId" = ${backendId})
+        as "inUse"
+    `.execute(this.db);
+    return rows[0].inUse;
+  }
+
+  private createStore(backend: StorageBackendConfig): BlobStore {
+    switch (backend.driver) {
+      case StorageBackendDriver.Local: {
+        return new LocalBlobStore(backend.root);
+      }
+    }
   }
 }

@@ -549,9 +549,12 @@ const newRealRepository = <T extends BaseServiceDeps[number]>(key: T, db: Kysely
       return new key(db, LoggingRepository.create()) as InstanceType<T>;
     }
 
-    case StorageBackendRepository:
     case StorageRepository: {
       return new key(LoggingRepository.create()) as InstanceType<T>;
+    }
+
+    case StorageBackendRepository: {
+      return new key(db, LoggingRepository.create()) as InstanceType<T>;
     }
 
     case TagRepository: {
@@ -647,7 +650,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
     }
 
     case StorageBackendRepository: {
-      return automock(StorageBackendRepository, { args: [{ setContext: () => {} }] });
+      return automock(StorageBackendRepository, { args: [undefined, { setContext: () => {} }] });
     }
 
     case WebsocketRepository: {

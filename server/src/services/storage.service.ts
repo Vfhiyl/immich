@@ -1,9 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
+import { buffer } from 'node:stream/consumers';
 import type { JobOf, SystemFlags } from 'src/types.js';
 import { ErrorMessages } from 'src/constants.js';
 import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
+import { StorageBackendConfig } from 'src/dtos/storage-backend-config.dto.js';
 import {
   BootstrapEventPriority,
   BuiltinStorageBackend,
@@ -16,11 +19,14 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { PersonId } from 'src/repositories/person.repository.js';
+import { isBuiltinStorageBackend } from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 
 /** Number of asset files given a storage location per database round trip */
 const FILE_LOCATION_BATCH_SIZE = 5000;
+/** Where startup checks write their probes in each configured storage backend */
+const STORAGE_PROBE_PREFIX = '.immich-probe';
 
 type FileWithPath = { id: string; path: string };
 
@@ -140,6 +146,82 @@ export class StorageService extends BaseService {
         await this.systemMetadataRepository.set(SystemMetadataKey.MediaLocation, { location: current });
       }
     });
+  }
+
+  @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.StorageBackends })
+  async onBootstrapStorageBackends() {
+    const { backendsFile } = this.configRepository.getEnv().storage;
+    let backends: StorageBackendConfig[] = [];
+    if (backendsFile) {
+      try {
+        ({ backends } = await this.storageBackendRepository.readConfig(backendsFile));
+      } catch (error) {
+        throw new ImmichStartupError(`Unable to load the storage backend configuration: ${error}`);
+      }
+    }
+
+    await this.databaseRepository.withLock(DatabaseLock.StorageBackends, async () => {
+      const registered = await this.storageBackendRepository.getRegistered();
+      const configuredIds = new Set(backends.map(({ id }) => id));
+
+      for (const backend of backends) {
+        const existing = registered.find(({ id }) => id === backend.id);
+        if (existing && existing.driver !== backend.driver) {
+          throw new ImmichStartupError(
+            `Storage backend ${backend.id} is configured with the ${backend.driver} driver, but its files were written with the ${existing.driver} driver`,
+          );
+        }
+      }
+
+      // files on a backend can only be read while it is configured
+      for (const { id } of registered) {
+        if (
+          !isBuiltinStorageBackend(id) &&
+          !configuredIds.has(id) &&
+          (await this.storageBackendRepository.isInUse(id))
+        ) {
+          throw new ImmichStartupError(
+            `Storage backend ${id} still holds files but is not configured${backendsFile ? ` in ${backendsFile}` : ''}`,
+          );
+        }
+      }
+
+      const registeredIds = new Set(registered.map(({ id }) => id));
+      await this.storageBackendRepository.register(
+        backends.filter(({ id }) => !registeredIds.has(id)).map(({ id, driver }) => ({ id, driver })),
+      );
+    });
+
+    this.storageBackendRepository.configure(backends);
+
+    for (const backend of backends) {
+      await this.probeStorageBackend(backend.id);
+    }
+
+    if (backends.length > 0) {
+      this.logger.log(`Using storage backends: ${backends.map(({ id, role }) => `${id} (${role})`).join(', ')}`);
+    }
+  }
+
+  /** Check that a backend accepts writes and returns what was written, then remove the probe */
+  private async probeStorageBackend(backendId: string) {
+    const store = this.storageBackendRepository.get(backendId);
+    const key = `${STORAGE_PROBE_PREFIX}/${this.cryptoRepository.randomUUID()}`;
+    const content = Buffer.from(`immich storage probe ${key}`);
+
+    try {
+      const written = await store.put(key, Readable.from([content]));
+      const read = await buffer(await store.get(key, { expect: written }));
+      if (!read.equals(content)) {
+        throw new Error('the probe read back different content');
+      }
+      const { failed } = await store.deleteMany([key]);
+      if (failed.length > 0) {
+        this.logger.warn(`Unable to remove the probe ${key} from storage backend ${backendId}`);
+      }
+    } catch (error) {
+      throw new ImmichStartupError(`Storage backend ${backendId} failed the startup check: ${error}`);
+    }
   }
 
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
