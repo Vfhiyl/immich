@@ -26,9 +26,11 @@ import {
   ChecksumAlgorithm,
   JobName,
   Permission,
+  StorageBackendRole,
   StorageFolder,
 } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
+import { StoredFile, isBuiltinStorageBackend } from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireUploadAccess } from 'src/utils/access.js';
 import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
@@ -129,6 +131,8 @@ export class AssetMediaService extends BaseService {
     sidecarFile?: UploadFile,
   ): Promise<AssetMediaResponseDto> {
     let asset: Asset | undefined;
+    // where the original and sidecar were stored: the uploaded files themselves, or copies on the originals backend
+    const stored: { original?: StoredFile; sidecar?: StoredFile } = {};
     try {
       await this.requireAccess({
         auth,
@@ -146,6 +150,18 @@ export class AssetMediaService extends BaseService {
         );
       }
 
+      // recorded one by one, so that copies already made are removed if a later step fails
+      stored.original = await this.storageBackendRepository.storeFile(StorageBackendRole.Originals, file.originalPath);
+      if (stored.original.checksum && !stored.original.checksum.equals(file.checksum)) {
+        throw new Error(`The stored original of ${file.originalPath} does not match the uploaded file`);
+      }
+      if (sidecarFile) {
+        stored.sidecar = await this.storageBackendRepository.storeFile(
+          StorageBackendRole.Originals,
+          sidecarFile.originalPath,
+        );
+      }
+
       asset = await this.assetRepository.create({
         ownerId: auth.user.id,
         libraryId: null,
@@ -153,7 +169,7 @@ export class AssetMediaService extends BaseService {
         checksum: file.checksum,
         checksumAlgorithm: ChecksumAlgorithm.sha1File,
         originalPath: file.originalPath,
-        originalFile: StorageCore.getStorageLocation(file.originalPath),
+        originalFile: stored.original,
 
         fileCreatedAt: dto.fileCreatedAt,
         fileModifiedAt: dto.fileModifiedAt,
@@ -171,16 +187,28 @@ export class AssetMediaService extends BaseService {
         await this.assetRepository.upsertMetadata(asset.id, dto.metadata);
       }
 
-      if (sidecarFile) {
+      const isUploadKept = isBuiltinStorageBackend(stored.original.backendId);
+      if (sidecarFile && stored.sidecar) {
         await this.assetRepository.upsertFile({
           assetId: asset.id,
           path: sidecarFile.originalPath,
-          ...StorageCore.getStorageLocation(sidecarFile.originalPath),
+          ...stored.sidecar,
           type: AssetFileType.Sidecar,
         });
-        await this.storageRepository.utimes(sidecarFile.originalPath, new Date(), new Date(dto.fileModifiedAt));
+        if (isUploadKept) {
+          await this.storageRepository.utimes(sidecarFile.originalPath, new Date(), new Date(dto.fileModifiedAt));
+        }
       }
-      await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
+
+      if (isUploadKept) {
+        await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
+      } else {
+        // the files were copied to the originals backend
+        await this.jobRepository.queue({
+          name: JobName.FileDelete,
+          data: { files: [file.originalPath, sidecarFile?.originalPath] },
+        });
+      }
       await this.assetRepository.upsertExif({
         exif: { assetId: asset.id, fileSizeInByte: file.size },
         lockedPropertiesBehavior: 'override',
@@ -196,10 +224,16 @@ export class AssetMediaService extends BaseService {
 
       return { id: asset.id, status: AssetMediaStatus.CREATED };
     } catch (error: any) {
-      // clean up files
+      // clean up files, including copies on the originals backend
+      const copies = [stored.original, stored.sidecar].filter(
+        (copy): copy is StoredFile => !!copy && !isBuiltinStorageBackend(copy.backendId),
+      );
       await this.jobRepository.queue({
         name: JobName.FileDelete,
-        data: { files: [file.originalPath, sidecarFile?.originalPath] },
+        data: {
+          files: [file.originalPath, sidecarFile?.originalPath],
+          locations: copies.map(({ backendId, key }) => ({ backendId, key })),
+        },
       });
 
       // handle duplicates with a success response

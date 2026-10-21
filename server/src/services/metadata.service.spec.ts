@@ -1,7 +1,11 @@
 import { BinaryField, ExifDateTime } from 'exiftool-vendored';
 import { DateTime } from 'luxon';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { Stats } from 'node:fs';
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import {
   AssetFileType,
@@ -13,9 +17,12 @@ import {
   JobName,
   JobStatus,
   SourceType,
+  StorageBackendDriver,
+  StorageBackendRole,
 } from 'src/enum.js';
 import { ImmichTags } from 'src/repositories/metadata.repository.js';
 import { MetadataService, firstDateTime } from 'src/services/metadata.service.js';
+import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonGroupFactory } from 'test/factories/person-group.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
@@ -191,7 +198,7 @@ describe(MetadataService.name, () => {
       const asset = AssetFactory.create({ originalPath: '/data/library/IMG_1.jpg' });
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue({
         ...getForMetadataExtraction(asset),
-        originalFile: { backendId: 'media', key: 'library/IMG_1.jpg' },
+        originalFile: { backendId: 'media', key: 'library/IMG_1.jpg', size: null },
       });
       const release = vi.fn().mockResolvedValue(undefined);
       mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/IMG_1.jpg', [Symbol.asyncDispose]: release });
@@ -865,6 +872,109 @@ describe(MetadataService.name, () => {
       expect(mocks.metadata.extractBinaryTag).toHaveBeenCalledWith('/staging/IMG_1.heic', 'MotionPhotoVideo');
     });
 
+    it('should use the recorded size and modification time of an original on a storage backend', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue({
+        ...getForMetadataExtraction(asset),
+        originalFile: { backendId: 'originals', key: 'original-key', size: 1234 },
+      });
+      mocks.storageBackend.lease.mockResolvedValue({
+        path: '/staging/a.jpg',
+        [Symbol.asyncDispose]: () => Promise.resolve(),
+      });
+      mockReadTags({});
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.storage.stat).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({ fileSizeInByte: 1234, modifyDate: asset.fileModifiedAt }),
+        }),
+      );
+      expect(mocks.asset.update).toHaveBeenCalledWith(
+        expect.objectContaining({ fileModifiedAt: asset.fileModifiedAt }),
+      );
+    });
+
+    describe('with a storage backend for originals', () => {
+      let root: string;
+      const motionTags = { Directory: 'foo/bar/', MotionPhoto: 1, MotionPhotoVideo: new BinaryField(0, '') };
+
+      beforeEach(async () => {
+        root = await fs.mkdtemp(join(tmpdir(), 'immich-motion-'));
+        StorageCore.setMediaLocation(join(root, 'media'));
+        mocks.storageBackend.configure([
+          {
+            id: 'originals',
+            driver: StorageBackendDriver.Local,
+            role: StorageBackendRole.Originals,
+            root: join(root, 'originals'),
+          },
+        ]);
+        mocks.storage.createFile.mockImplementation((path, buffer) => fs.writeFile(path, buffer));
+        mocks.crypto.hashSha1.mockReturnValue(randomBytes(20));
+      });
+
+      afterEach(async () => {
+        StorageCore.setMediaLocation('/data');
+        await fs.rm(root, { recursive: true, force: true });
+      });
+
+      it('should store an extracted motion video on the backend before recording its asset', async () => {
+        const asset = AssetFactory.create();
+        const motionAsset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Hidden });
+        const video = randomBytes(512);
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags(motionTags);
+        mocks.asset.create.mockResolvedValue(motionAsset);
+        mocks.crypto.randomUUID.mockReturnValue(motionAsset.id);
+        mocks.metadata.extractBinaryTag.mockResolvedValue(video);
+
+        await sut.handleMetadataExtraction({ id: asset.id });
+
+        expect(mocks.asset.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            originalPath: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
+            originalFile: {
+              backendId: 'originals',
+              key: expect.stringMatching(/^[0-9a-f-]{36}$/),
+              size: 512,
+              checksum: createHash('sha1').update(video).digest(),
+            },
+          }),
+        );
+        expect(mocks.storage.checkFileExists).not.toHaveBeenCalled();
+        expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetEncodeVideo, data: { id: motionAsset.id } });
+        await expect(fs.readdir(join(root, 'originals'))).resolves.toHaveLength(1);
+        await expect(fs.readdir(join(root, 'media', '.immich-staging'))).resolves.toEqual([]);
+      });
+
+      it('should remove a stored motion video whose asset already exists', async () => {
+        const asset = AssetFactory.create();
+        const motionAsset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Hidden });
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags(motionTags);
+        const error = new Error('unique key violation');
+        (error as any).constraint_name = ASSET_CHECKSUM_CONSTRAINT;
+        mocks.asset.create.mockRejectedValue(error);
+        mocks.asset.getByChecksum.mockResolvedValueOnce(undefined).mockResolvedValueOnce(motionAsset);
+        mocks.crypto.randomUUID.mockReturnValue(motionAsset.id);
+        mocks.metadata.extractBinaryTag.mockResolvedValue(randomBytes(512));
+
+        await sut.handleMetadataExtraction({ id: asset.id });
+
+        const [key] = await fs.readdir(join(root, 'originals'));
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: [], locations: [{ backendId: 'originals', key }] },
+        });
+        // the existing motion video is not written again
+        expect(mocks.storage.checkFileExists).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.AssetEncodeVideo }));
+      });
+    });
+
     it('should extract the MotionPhotoVideo tag from Samsung HEIC motion photos', async () => {
       const asset = AssetFactory.create();
       const motionAsset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Hidden });
@@ -904,12 +1014,17 @@ describe(MetadataService.name, () => {
         localDateTime: asset.fileCreatedAt,
         originalFileName: `IMG_${asset.id}.mp4`,
         originalPath: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
-        originalFile: { backendId: 'media', key: expect.stringContaining(`${motionAsset.id}-MP.mp4`) },
+        originalFile: {
+          backendId: 'media',
+          key: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
+          size: null,
+          checksum: null,
+        },
         ownerId: asset.ownerId,
         type: AssetType.Video,
       });
       expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, 512);
-      expect(mocks.storage.createFile).toHaveBeenCalledWith(motionAsset.originalPath, video);
+      expect(mocks.storage.createFile).toHaveBeenCalledWith(expect.stringContaining(`${motionAsset.id}-MP.mp4`), video);
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: asset.id,
         livePhotoVideoId: motionAsset.id,
@@ -957,12 +1072,17 @@ describe(MetadataService.name, () => {
         localDateTime: asset.fileCreatedAt,
         originalFileName: `IMG_${asset.id}.mp4`,
         originalPath: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
-        originalFile: { backendId: 'media', key: expect.stringContaining(`${motionAsset.id}-MP.mp4`) },
+        originalFile: {
+          backendId: 'media',
+          key: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
+          size: null,
+          checksum: null,
+        },
         ownerId: asset.ownerId,
         type: AssetType.Video,
       });
       expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, 512);
-      expect(mocks.storage.createFile).toHaveBeenCalledWith(motionAsset.originalPath, video);
+      expect(mocks.storage.createFile).toHaveBeenCalledWith(expect.stringContaining(`${motionAsset.id}-MP.mp4`), video);
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: asset.id,
         livePhotoVideoId: motionAsset.id,
@@ -1010,12 +1130,17 @@ describe(MetadataService.name, () => {
         localDateTime: asset.fileCreatedAt,
         originalFileName: `IMG_${asset.id}.mp4`,
         originalPath: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
-        originalFile: { backendId: 'media', key: expect.stringContaining(`${motionAsset.id}-MP.mp4`) },
+        originalFile: {
+          backendId: 'media',
+          key: expect.stringContaining(`${motionAsset.id}-MP.mp4`),
+          size: null,
+          checksum: null,
+        },
         ownerId: asset.ownerId,
         type: AssetType.Video,
       });
       expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, 512);
-      expect(mocks.storage.createFile).toHaveBeenCalledWith(motionAsset.originalPath, video);
+      expect(mocks.storage.createFile).toHaveBeenCalledWith(expect.stringContaining(`${motionAsset.id}-MP.mp4`), video);
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: asset.id,
         livePhotoVideoId: motionAsset.id,

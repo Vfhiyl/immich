@@ -4,13 +4,25 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { UploadBody } from 'src/types.js';
 import { AssetFile } from 'src/database.js';
 import { AssetMediaStatus, AssetRejectReason, AssetUploadAction } from 'src/dtos/asset-media-response.dto.js';
 import { AssetMediaCreateDto, AssetMediaSize, UploadFieldName } from 'src/dtos/asset-media.dto.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AssetFileType, AssetType, AssetVisibility, CacheControl, JobName } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetType,
+  AssetVisibility,
+  CacheControl,
+  JobName,
+  StorageBackendDriver,
+  StorageBackendRole,
+} from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
@@ -170,6 +182,8 @@ const assetEntity = Object.freeze({
   livePhotoVideoId: null,
 } as MapAsset);
 
+const sha1 = (value: string) => createHash('sha1').update(value).digest();
+
 // assets whose original file has no recorded location yet
 const forOriginal = <T extends object>(asset: T) => ({ ...asset, originalBackendId: null, originalKey: null });
 
@@ -299,6 +313,102 @@ describe(AssetMediaService.name, () => {
     });
   });
 
+  describe('uploadAsset with a storage backend for originals', () => {
+    let root: string;
+
+    const upload = async (name: string, content: string) => {
+      const originalPath = join(root, 'upload', name);
+      await fs.mkdir(join(root, 'upload'), { recursive: true });
+      await fs.writeFile(originalPath, content);
+      return {
+        uuid: 'random-uuid',
+        originalPath,
+        mimeType: 'image/jpeg',
+        checksum: sha1(content),
+        originalName: name,
+        size: content.length,
+      };
+    };
+    const listOriginals = () => fs.readdir(join(root, 'originals')).catch(() => []);
+
+    beforeEach(async () => {
+      root = await fs.mkdtemp(join(tmpdir(), 'immich-upload-'));
+      mocks.storageBackend.configure([
+        {
+          id: 'originals',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Originals,
+          root: join(root, 'originals'),
+        },
+      ]);
+    });
+
+    afterEach(async () => {
+      await fs.rm(root, { recursive: true, force: true });
+    });
+
+    it('should copy the upload to the backend under a new key and remove the uploaded file', async () => {
+      const file = await upload('IMG_1.jpg', 'original');
+      const sidecar = await upload('IMG_1.jpg.xmp', 'sidecar');
+      mocks.asset.create.mockResolvedValue(assetEntity);
+
+      await expect(sut.uploadAsset(authStub.user1, createDto, file, sidecar)).resolves.toEqual({
+        id: 'id_1',
+        status: AssetMediaStatus.CREATED,
+      });
+
+      expect(mocks.asset.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          originalPath: file.originalPath,
+          originalFile: { backendId: 'originals', key: expect.any(String), size: 8, checksum: sha1('original') },
+        }),
+      );
+      expect(mocks.asset.upsertFile).toHaveBeenCalledWith(
+        expect.objectContaining({ type: AssetFileType.Sidecar, backendId: 'originals', size: 7 }),
+      );
+      expect(mocks.storage.utimes).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [file.originalPath, sidecar.originalPath] },
+      });
+      await expect(listOriginals()).resolves.toHaveLength(2);
+    });
+
+    it('should remove the copies on the backend when the upload is a duplicate', async () => {
+      const file = await upload('IMG_1.jpg', 'original');
+      const error = new Error('unique key violation');
+      (error as any).constraint_name = ASSET_CHECKSUM_CONSTRAINT;
+      mocks.asset.create.mockRejectedValue(error);
+      mocks.asset.getUploadAssetIdByChecksum.mockResolvedValue(assetEntity.id);
+
+      await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
+        id: 'id_1',
+        status: AssetMediaStatus.DUPLICATE,
+      });
+
+      const [key] = await listOriginals();
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [file.originalPath, undefined], locations: [{ backendId: 'originals', key }] },
+      });
+    });
+
+    it('should reject an upload that was stored differently than it was received', async () => {
+      const file = { ...(await upload('IMG_1.jpg', 'original')), checksum: sha1('something else') };
+
+      await expect(sut.uploadAsset(authStub.user1, createDto, file)).rejects.toThrow(
+        'does not match the uploaded file',
+      );
+
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+      const [key] = await listOriginals();
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [file.originalPath, undefined], locations: [{ backendId: 'originals', key }] },
+      });
+    });
+  });
+
   describe('uploadAsset', () => {
     it('should throw an error if the quota is exceeded', async () => {
       const file = {
@@ -324,7 +434,7 @@ describe(AssetMediaService.name, () => {
       expect(mocks.asset.remove).not.toHaveBeenCalled();
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: [file.originalPath, undefined] },
+        data: { files: [file.originalPath, undefined], locations: [] },
       });
       expect(mocks.event.emit).not.toHaveBeenCalled();
       expect(mocks.user.updateUsage).not.toHaveBeenCalledWith(authStub.user1.user.id, file.size);
@@ -355,7 +465,7 @@ describe(AssetMediaService.name, () => {
       expect(mocks.asset.create).toHaveBeenCalledWith(
         expect.objectContaining({
           originalPath: '/data/fake_path/asset_1.jpeg',
-          originalFile: { backendId: 'media', key: 'fake_path/asset_1.jpeg' },
+          originalFile: { backendId: 'media', key: 'fake_path/asset_1.jpeg', size: null, checksum: null },
         }),
       );
       expect(mocks.storage.utimes).toHaveBeenCalledWith(
@@ -387,7 +497,7 @@ describe(AssetMediaService.name, () => {
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: ['/data/fake_path/asset_1.jpeg', undefined] },
+        data: { files: ['/data/fake_path/asset_1.jpeg', undefined], locations: [] },
       });
       expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });
@@ -412,7 +522,7 @@ describe(AssetMediaService.name, () => {
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: ['/data/fake_path/asset_1.jpeg', undefined] },
+        data: { files: ['/data/fake_path/asset_1.jpeg', undefined], locations: [] },
       });
       expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });

@@ -129,6 +129,21 @@ export class StorageBackendRepository {
   }
 
   /**
+   * Store a complete local file as a new file of a role. Without a backend for the role the file stays where it is;
+   * otherwise it is copied to the backend under a new key, and the caller removes the local file.
+   */
+  async storeFile(role: StorageBackendRole, path: string): Promise<StoredFile> {
+    const backendId = this.getBackendFor(role);
+    if (!backendId) {
+      return { ...StorageCore.getStorageLocation(path), size: null, checksum: null };
+    }
+
+    const key = randomUUID();
+    const { size, sha1 } = await this.get(backendId).put(key, createReadStream(path));
+    return { backendId, key, size, checksum: sha1 };
+  }
+
+  /**
    * Prepare a new file that will be stored at `path`, or in the backend configured for its role. On a backend the file
    * gets a new random key, and `path` only serves as its logical name (its extension is kept for tools and type checks).
    */

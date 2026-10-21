@@ -23,10 +23,16 @@ import {
   JobStatus,
   QueueName,
   SourceType,
+  StorageBackendRole,
 } from 'src/enum.js';
 import { ReverseGeocodeResult } from 'src/repositories/map.repository.js';
 import { ImmichTags } from 'src/repositories/metadata.repository.js';
-import { toRecordedFile } from 'src/repositories/storage-backend.repository.js';
+import {
+  LocalFileLease,
+  isBuiltinStorageBackend,
+  toFileDeletion,
+  toRecordedFile,
+} from 'src/repositories/storage-backend.repository.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -243,10 +249,7 @@ export class MetadataService extends BaseService {
     );
     const source = { ...asset, originalPath: original.path };
 
-    const [exifResult, stats] = await Promise.all([
-      this.getExifTags(source),
-      this.storageRepository.stat(original.path),
-    ]);
+    const [exifResult, stats] = await Promise.all([this.getExifTags(source), this.getOriginalStats(asset, original)]);
     const { tags: exifTags, audio, video, packets, format } = exifResult;
     this.logger.verbose('Exif Tags', exifTags);
 
@@ -586,6 +589,29 @@ export class MetadataService extends BaseService {
     return { width, height };
   }
 
+  /**
+   * File times and size of an original. Uploads keep the client's modification time as the file time, which an
+   * original on a storage backend does not have, so there the values recorded in the database are used.
+   */
+  private async getOriginalStats(
+    asset: { fileModifiedAt: Date; originalFile: { backendId: string; size: number | null } | null },
+    original: LocalFileLease,
+  ): Promise<Stats> {
+    const { originalFile } = asset;
+    if (!originalFile || isBuiltinStorageBackend(originalFile.backendId)) {
+      return this.storageRepository.stat(original.path);
+    }
+
+    let size = originalFile.size;
+    if (size === null) {
+      const stats = await this.storageRepository.stat(original.path);
+      size = stats.size;
+    }
+    const mtimeMs = asset.fileModifiedAt.getTime();
+    // without a creation time the earliest date falls back to the modification time, as it does for uploads
+    return { size, mtime: asset.fileModifiedAt, mtimeMs, birthtimeMs: 0 } as Stats;
+  }
+
   private async readSidecarTags(file: AssetFile) {
     await using sidecar = await this.storageBackendRepository.lease(file);
     return this.metadataRepository.readTags(sidecar.path);
@@ -752,9 +778,11 @@ export class MetadataService extends BaseService {
       let isNewMotionAsset = false;
 
       if (!motionAsset) {
+        const motionAssetId = this.cryptoRepository.randomUUID();
+        const motionAssetPath = StorageCore.getAndroidMotionPath(asset, motionAssetId);
+        // the video is stored first, since an original on a storage backend is recorded together with its asset
+        const motionFile = await this.storeMotionVideo(motionAssetPath, video);
         try {
-          const motionAssetId = this.cryptoRepository.randomUUID();
-          const motionAssetPath = StorageCore.getAndroidMotionPath(asset, motionAssetId);
           motionAsset = await this.assetRepository.create({
             id: motionAssetId,
             libraryId: asset.libraryId,
@@ -766,7 +794,7 @@ export class MetadataService extends BaseService {
             checksumAlgorithm: ChecksumAlgorithm.sha1File,
             ownerId: asset.ownerId,
             originalPath: motionAssetPath,
-            originalFile: StorageCore.getStorageLocation(motionAssetPath),
+            originalFile: motionFile,
             originalFileName: `${parse(asset.originalFileName).name}.mp4`,
             visibility: AssetVisibility.Hidden,
           });
@@ -777,6 +805,10 @@ export class MetadataService extends BaseService {
             await this.userRepository.updateUsage(asset.ownerId, video.byteLength);
           }
         } catch (error) {
+          await this.jobRepository.queue({
+            name: JobName.FileDelete,
+            data: toFileDeletion([{ path: motionAssetPath, ...motionFile }]),
+          });
           if (!isAssetChecksumConstraint(error)) {
             throw error;
           }
@@ -821,11 +853,20 @@ export class MetadataService extends BaseService {
         }
       }
 
-      // write extracted motion video to disk, especially if the encoded-video folder has been deleted
-      const isExistsOnDisk = await this.storageRepository.checkFileExists(motionAsset.originalPath);
-      if (!isExistsOnDisk) {
+      // write extracted motion video to disk, especially if the encoded-video folder has been deleted. A storage backend
+      // does not guarantee that a missing file is gone, so a video stored there is never written again
+      let isWritten = isNewMotionAsset;
+      if (
+        !isNewMotionAsset &&
+        !this.storageBackendRepository.getBackendFor(StorageBackendRole.Originals) &&
+        !(await this.storageRepository.checkFileExists(motionAsset.originalPath))
+      ) {
         this.storageCore.ensureFolders(motionAsset.originalPath);
         await this.storageRepository.createFile(motionAsset.originalPath, video);
+        isWritten = true;
+      }
+
+      if (isWritten) {
         this.logger.log(`Wrote motion photo video to ${motionAsset.originalPath}`);
 
         await this.handleMetadataExtraction({ id: motionAsset.id });
@@ -839,6 +880,13 @@ export class MetadataService extends BaseService {
         error?.stack,
       );
     }
+  }
+
+  private async storeMotionVideo(path: string, video: Buffer) {
+    this.storageCore.ensureFolders(path);
+    await using output = await this.storageBackendRepository.createOutput(StorageBackendRole.Originals, path);
+    await this.storageRepository.createFile(output.path, video);
+    return output.commit();
   }
 
   private hasTaggedFaces(tags: ImmichTags): tags is ImmichTagsWithFaces {

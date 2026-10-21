@@ -822,7 +822,8 @@ select
       (
         select
           "asset_original_file"."backendId",
-          "asset_original_file"."key"
+          "asset_original_file"."key",
+          "asset_original_file"."size"
         from
           "asset_original_file"
         where

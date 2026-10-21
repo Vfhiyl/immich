@@ -653,7 +653,7 @@ describe(AssetService.name, () => {
         .build();
       mocks.assetJob.getForAssetDeletion.mockResolvedValue({
         ...getForAssetDeletion(asset),
-        originalFile: { backendId: 'originals', key: 'original-key' },
+        originalFile: { backendId: 'originals', key: 'original-key', size: null },
         files: [
           { ...asset.files[0], backendId: 'derived', key: 'preview-key' },
           { ...asset.files[1], backendId: null, key: null },
@@ -678,7 +678,7 @@ describe(AssetService.name, () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).build();
       mocks.assetJob.getForAssetDeletion.mockResolvedValue({
         ...getForAssetDeletion(asset),
-        originalFile: { backendId: 'originals', key: 'original-key' },
+        originalFile: { backendId: 'originals', key: 'original-key', size: null },
       });
 
       await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: false });

@@ -237,7 +237,7 @@ export function withOriginalFile(eb: ExpressionBuilder<DB, 'asset'>) {
   return jsonObjectFrom(
     eb
       .selectFrom('asset_original_file')
-      .select(['asset_original_file.backendId', 'asset_original_file.key'])
+      .select(['asset_original_file.backendId', 'asset_original_file.key', 'asset_original_file.size'])
       .whereRef('asset_original_file.assetId', '=', 'asset.id'),
   ).as('originalFile');
 }

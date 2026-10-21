@@ -574,7 +574,7 @@ describe(MediaService.name, () => {
       const asset = AssetFactory.from().exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),
-        originalFile: { backendId: 'media', key: 'library/IMG_1.jpg' },
+        originalFile: { backendId: 'media', key: 'library/IMG_1.jpg', size: null },
       });
       const release = vi.fn().mockResolvedValue(undefined);
       mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/IMG_1.jpg', [Symbol.asyncDispose]: release });
@@ -1814,7 +1814,11 @@ describe(MediaService.name, () => {
       const person = PersonFactory.create();
       mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue({
         ...personThumbnailStub.newThumbnailMiddle,
-        originalFile: { backendId: 'host', key: personThumbnailStub.newThumbnailMiddle.originalPath.slice(1) },
+        originalFile: {
+          backendId: 'host',
+          key: personThumbnailStub.newThumbnailMiddle.originalPath.slice(1),
+          size: null,
+        },
       });
       const release = vi.fn().mockResolvedValue(undefined);
       mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/original.jpg', [Symbol.asyncDispose]: release });
@@ -2331,7 +2335,7 @@ describe(MediaService.name, () => {
 
   describe('handleVideoConversion', () => {
     let asset: ReturnType<typeof AssetFactory.create> & {
-      originalFile: { backendId: string; key: string } | null;
+      originalFile: { backendId: string; key: string; size: number | null } | null;
       videoStream: VideoStreamInfo & { timeBase: number };
       audioStream: AudioStreamInfo | null;
       format: VideoFormat;
@@ -2339,7 +2343,7 @@ describe(MediaService.name, () => {
     beforeEach(() => {
       asset = {
         ...AssetFactory.create({ id: 'video-id', type: AssetType.Video, originalPath: '/original/path.ext' }),
-        originalFile: { backendId: 'host', key: 'original/path.ext' },
+        originalFile: { backendId: 'host', key: 'original/path.ext', size: null },
         videoStream: probeStub.videoStreamH264.videoStream,
         audioStream: null,
         format: probeStub.videoStreamH264.format,
