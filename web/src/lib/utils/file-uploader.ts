@@ -15,8 +15,9 @@ import { uploadManager } from '$lib/managers/upload-manager.svelte';
 import { addAssetsToAlbums } from '$lib/services/album.service';
 import { uploadAssetsStore } from '$lib/stores/upload';
 import { UploadState } from '$lib/types';
-import { uploadRequest } from '$lib/utils';
+import { trackUpload, uploadRequest } from '$lib/utils';
 import { ExecutorQueue } from '$lib/utils/executor-queue';
+import { resumableUploader, UploadInterruptedError } from '$lib/utils/resumable-upload';
 import { asQueryString } from '$lib/utils/shared-links';
 import { handleError } from './handle-error';
 
@@ -175,11 +176,12 @@ async function fileUploader({
     }
 
     let responseData: { id: string; status: AssetMediaStatus; isTrashed?: boolean } | undefined;
+    let checksum: string | undefined;
     if (!authManager.isSharedLink) {
       uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_hashing') });
       await tick();
       try {
-        const checksum = await hashFile(assetFile);
+        checksum = await hashFile(assetFile);
 
         const {
           results: [checkUploadResult],
@@ -193,6 +195,47 @@ async function fileUploader({
         }
       } catch (error) {
         console.error(`Error calculating sha1 file=${assetFile.name})`, error);
+      }
+    }
+
+    // in parts that resume where they stopped, when the server takes them (not for shared links)
+    if (!responseData && checksum && !authManager.isSharedLink && (await resumableUploader.getOptions(getBaseUrl()))) {
+      uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_uploading') });
+      const controller = new AbortController();
+      const unsubscribe = trackUpload(() => controller.abort());
+      try {
+        const result = await resumableUploader.upload({
+          baseUrl: getBaseUrl(),
+          file: assetFile,
+          checksum,
+          assetData: {
+            filename: assetFile.name,
+            fileCreatedAt,
+            fileModifiedAt: new Date(assetFile.lastModified).toISOString(),
+            isFavorite: false,
+            ...(isLockedAssets && { visibility: AssetVisibility.Locked }),
+          },
+          // the same file selected again goes on where its upload stopped
+          sessionKey: [authManager.user?.id, assetFile.name, assetFile.size, assetFile.lastModified].join(':'),
+          onProgress: (loaded, total) => uploadAssetsStore.updateProgress(deviceAssetId, loaded, total),
+          signal: controller.signal,
+        });
+        responseData = {
+          id: result.id,
+          status: result.status === 'duplicate' ? AssetMediaStatus.Duplicate : AssetMediaStatus.Created,
+        };
+      } catch (error) {
+        if (!(error instanceof UploadInterruptedError)) {
+          throw error;
+        }
+        uploadAssetsStore.track('error');
+        uploadAssetsStore.updateItem(deviceAssetId, {
+          state: UploadState.ERROR,
+          error: $t('upload_interrupted_can_resume'),
+        });
+        return;
+      } finally {
+        unsubscribe();
       }
     }
 

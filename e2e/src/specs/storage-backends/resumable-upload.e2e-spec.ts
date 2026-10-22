@@ -17,6 +17,12 @@ import {
   testAssetDir,
 } from 'src/storage-backends.js';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import {
+  MemorySessionStore,
+  NetworkError,
+  ResumableUploader,
+  type Transport,
+} from '../../../../web/src/lib/utils/resumable-upload.js';
 
 /**
  * Resumable uploads (draft-ietf-httpbis-resumable-upload) against a real server: without storage backends, with
@@ -178,6 +184,73 @@ describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3 }) =
       result: 'duplicate',
       id: outcome.id,
     });
+  });
+
+  it('should take a file from the client of the web app, resuming it after the connection was cut', async () => {
+    const content = await largePhoto(PART + 54_321);
+    // the web app's requests, sent from here; the first part is cut off after a megabyte
+    let cutAfter: number | undefined = 1_000_000;
+    const requests: string[] = [];
+    const transport: Transport = async ({ method, url, headers, body }) => {
+      requests.push(method);
+      const data = body ? Buffer.from(await body.arrayBuffer()) : undefined;
+      return new Promise((resolve, reject) => {
+        const request = httpRequest(
+          url,
+          {
+            method,
+            headers: {
+              ...headers,
+              Authorization: `Bearer ${api.accessToken}`,
+              ...(data && { 'Content-Length': String(data.length) }),
+            },
+          },
+          (response) => {
+            const chunks: Buffer[] = [];
+            response.on('data', (chunk: Buffer) => {
+              chunks.push(chunk);
+            });
+            response.on('end', () =>
+              resolve({
+                status: response.statusCode!,
+                header: (name) => (response.headers[name.toLowerCase()] as string | undefined) ?? null,
+                body: Buffer.concat(chunks).toString(),
+              }),
+            );
+          },
+        );
+        request.on('error', (error) => reject(new NetworkError(error.message)));
+        if (data && method === 'PATCH' && cutAfter !== undefined) {
+          request.write(data.subarray(0, cutAfter));
+          cutAfter = undefined;
+          setTimeout(() => request.destroy(), 500);
+        } else {
+          request.end(data);
+        }
+      });
+    };
+    const uploader = new ResumableUploader(transport, new MemorySessionStore(), [200, 500, 1000], 4 * 1024 * 1024);
+    const upload = () =>
+      uploader.upload({
+        baseUrl,
+        file: new Blob([new Uint8Array(content)]),
+        checksum: sha1(content),
+        assetData: {
+          filename: 'web-upload.jpg',
+          fileCreatedAt: '2021-01-01T00:00:00.000Z',
+          fileModifiedAt: '2021-01-01T00:00:00.000Z',
+        },
+        sessionKey: 'web-upload.jpg',
+      });
+
+    const result = await upload();
+
+    expect(result).toEqual({ id: expect.any(String), status: 'created' });
+    // asked the server how far it got after the cut, and went on from there
+    expect(requests.filter((method) => method === 'HEAD')).toHaveLength(2);
+    await expectOriginal(result.id, content);
+    // the same file again is not sent again
+    await expect(upload()).resolves.toEqual({ id: result.id, status: 'duplicate' });
   });
 
   it('should keep what the app knows about the photo, as a single upload does', async () => {

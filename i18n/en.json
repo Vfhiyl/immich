@@ -2355,6 +2355,7 @@
   "upload_error_with_count": "Upload error for {count, plural, one {# asset} other {# assets}}",
   "upload_errors": "Upload completed with {count, plural, one {# error} other {# errors}}.",
   "upload_finished": "Upload finished",
+  "upload_interrupted_can_resume": "The upload was interrupted. Upload the same file again to continue where it stopped.",
   "upload_progress": "Remaining {remaining, number} - Processed {processed, number}/{total, number}",
   "upload_skipped_duplicates": "Skipped {count, plural, one {# duplicate asset} other {# duplicate assets}}",
   "upload_status_duplicates": "Duplicates",
