@@ -1,5 +1,6 @@
 <script lang="ts">
   import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
+  import StorageImportModal from '$lib/modals/StorageImportModal.svelte';
   import StoragePurgeModal from '$lib/modals/StoragePurgeModal.svelte';
   import { Route } from '$lib/route';
   import { formatAge, handleImportDeletedOriginal } from '$lib/services/storage.service';
@@ -43,8 +44,15 @@
     originals.items = originals.items.filter((original) => original.id !== id);
   };
 
-  const onImport = async (id: string) => {
-    if (await handleImportDeletedOriginal(id)) {
+  // users that can get a photo: not deleted
+  const activeUsers = $derived(data.users.filter((user) => !user.deletedAt));
+
+  const onImport = async (id: string, ownerId: string | null | undefined, fileName: string) => {
+    // the photo goes to its owner; to a user chosen here when the owner no longer exists
+    const imported = activeUsers.some((user) => user.id === ownerId)
+      ? await handleImportDeletedOriginal(id)
+      : await modalManager.show(StorageImportModal, { id, fileName, users: activeUsers });
+    if (imported) {
       remove(id);
     }
   };
@@ -86,7 +94,7 @@
             <TableCell>{DateTime.fromISO(original.deleteAfter).toLocaleString(DateTime.DATE_MED)}</TableCell>
             <TableCell>
               <HStack gap={1}>
-                <Button size="tiny" variant="ghost" onclick={() => onImport(original.id)}>
+                <Button size="tiny" variant="ghost" onclick={() => onImport(original.id, original.ownerId, fileName)}>
                   {$t('admin.storage_import_original')}
                 </Button>
                 <Button size="tiny" variant="ghost" color="danger" onclick={() => onPurge(original.id, fileName)}>

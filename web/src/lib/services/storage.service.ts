@@ -84,10 +84,11 @@ export const handleFetchStoredDatabaseBackup = async (key: string) => {
   }
 };
 
-export const handleImportDeletedOriginal = async (id: string) => {
+/** Imports a deleted original as a new photo, of its owner or of `userId` */
+export const handleImportDeletedOriginal = async (id: string, userId?: string) => {
   const $t = await getFormatter();
   try {
-    await importDeletedOriginal({ id, storageDeletionImportDto: {} });
+    await importDeletedOriginal({ id, storageDeletionImportDto: userId ? { userId } : {} });
     toastManager.info($t('admin.storage_deleted_original_imported'));
     return true;
   } catch (error) {

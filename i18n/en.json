@@ -387,6 +387,8 @@
     "storage_encrypted": "Encrypted",
     "storage_forever": "forever",
     "storage_import_original": "Import as new photo",
+    "storage_import_original_owner_gone": "The owner of {fileName} no longer exists. Choose who gets the photo.",
+    "storage_import_original_user": "Import for",
     "storage_issue_acknowledge": "Acknowledge",
     "storage_issue_acknowledged": "Acknowledged",
     "storage_issue_file": "File",
