@@ -44,12 +44,19 @@ const assetData = (filename: string, extra: object = {}) =>
 
 const digest = (content: Buffer) => `sha=:${Buffer.from(sha1(content), 'hex').toString('base64')}:`;
 
-type Scenario = { name: string; backends?: (s3: S3Service | undefined) => LocalBackend[]; s3?: boolean };
+type Scenario = {
+  name: string;
+  backends?: (s3: S3Service | undefined) => LocalBackend[];
+  s3?: boolean;
+  /** The master keys from a command (encryption.masterKeyCommand) instead of a file */
+  keyCommand?: boolean;
+};
 
 const scenarios: Scenario[] = [
   { name: 'without storage backends' },
   {
-    name: 'on encrypted local backends',
+    name: 'on encrypted local backends, with the master keys from a command',
+    keyCommand: true,
     backends: () => [
       { id: 'originals', role: 'originals', encrypted: true },
       { id: 'derived', role: 'derived', encrypted: true },
@@ -65,7 +72,7 @@ const scenarios: Scenario[] = [
   },
 ];
 
-describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3 }) => {
+describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3, keyCommand }) => {
   let environment: TestEnvironment;
   let s3: S3Service | undefined;
   let server: ImmichServer;
@@ -115,7 +122,7 @@ describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3 }) =
       s3 = await S3Service.start(environment);
     }
     if (backends) {
-      await environment.writeBackends(backends(s3));
+      await environment.writeBackends(backends(s3), { keyCommand });
     }
     server = await ImmichServer.start(environment, { backends: !!backends });
     api = await Api.signUpAdmin();

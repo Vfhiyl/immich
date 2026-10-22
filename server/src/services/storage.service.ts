@@ -7,7 +7,7 @@ import type { JobOf, SystemFlags } from 'src/types.js';
 import { ErrorMessages } from 'src/constants.js';
 import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { StorageBackendConfig, StorageBackendsConfig } from 'src/dtos/storage-backend-config.dto.js';
+import { StorageBackendConfig, StorageBackendsConfig, describeKeySource } from 'src/dtos/storage-backend-config.dto.js';
 import { StorageConfigurationResponseDto } from 'src/dtos/storage-backend.dto.js';
 import {
   BootstrapEventPriority,
@@ -165,7 +165,7 @@ export class StorageService extends BaseService {
         ({ backends, encryption, deletion, databaseBackups } =
           await this.storageBackendRepository.readConfig(backendsFile));
         if (encryption) {
-          keys = this.storageBackendRepository.readMasterKeys(encryption.masterKeyFile);
+          keys = this.storageBackendRepository.readMasterKeys(encryption);
         }
       } catch (error) {
         throw new ImmichStartupError(`Unable to load the storage backend configuration: ${error}`);
@@ -205,8 +205,8 @@ export class StorageService extends BaseService {
         const ids = missingKeys.map((id) => id.toString('hex')).join(', ');
         throw new ImmichStartupError(
           encryption
-            ? `Files were encrypted with master keys that are not in ${encryption.masterKeyFile}: ${ids}`
-            : `Files were encrypted with master keys ${ids}, but no master key file is configured (encryption.masterKeyFile)`,
+            ? `Files were encrypted with master keys that are not in ${describeKeySource(encryption)}: ${ids}`
+            : `Files were encrypted with master keys ${ids}, but no master keys are configured (encryption.masterKeyFile or encryption.masterKeyCommand)`,
         );
       }
       if (keys && backends.some(({ encrypted }) => encrypted)) {

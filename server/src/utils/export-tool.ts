@@ -491,12 +491,7 @@ export const runExportTool = async (args: string[], output: ToolOutput): Promise
 
   const backends = new StorageBackendRepository(undefined as never, LoggingRepository.create());
   const { backends: configs, encryption, deletion, databaseBackups } = await backends.readConfig(values.storage);
-  backends.configure(
-    configs,
-    encryption ? backends.readMasterKeys(encryption.masterKeyFile) : undefined,
-    deletion,
-    databaseBackups,
-  );
+  backends.configure(configs, encryption ? backends.readMasterKeys(encryption) : undefined, deletion, databaseBackups);
 
   const exporter = new Exporter(backends, output);
   const options = { output: values.output, users: values.user, includeTrashed: values['include-trashed'] };

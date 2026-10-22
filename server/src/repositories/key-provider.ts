@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { chmod, readFile, rename, writeFile } from 'node:fs/promises';
@@ -5,6 +6,8 @@ import { chmod, readFile, rename, writeFile } from 'node:fs/promises';
 /** Length of master key ids, which identify a key without revealing it */
 export const MASTER_KEY_ID_LENGTH = 8;
 const MASTER_KEY_LENGTH = 32;
+/** A key management service may take a while to answer, but Immich should not hang at startup */
+const KEY_COMMAND_TIMEOUT_MS = 60 * 1000;
 
 /**
  * Master keys that wrap the keys of encrypted files. The current key wraps new file keys; older keys stay available
@@ -33,19 +36,46 @@ export class MasterKeys implements KeyProvider {
    * storage and the database.
    */
   static fromFile(path: string) {
-    const lines = readFileSync(path, 'utf8')
+    return MasterKeys.fromText(readFileSync(path, 'utf8'), `The master key file ${path}`);
+  }
+
+  /**
+   * Master keys from what a command prints, as a key file holds them: e.g. a key file decrypted by the command line tool
+   * of a key management service. The command runs without a shell; what it prints is never written anywhere.
+   */
+  static fromCommand([program, ...args]: string[]) {
+    let output: string;
+    try {
+      output = execFileSync(program, args, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: KEY_COMMAND_TIMEOUT_MS,
+        maxBuffer: 1024 * 1024,
+      });
+    } catch (error) {
+      const { stderr, status } = error as { stderr?: string; status?: number | null };
+      const detail = stderr?.trim() || (error instanceof Error ? error.message : String(error));
+      throw new Error(`The master key command ${program} failed${status ? ` (exit code ${status})` : ''}: ${detail}`, {
+        cause: error,
+      });
+    }
+    return MasterKeys.fromText(output, `The output of the master key command ${program}`);
+  }
+
+  private static fromText(text: string, source: string) {
+    const lines = text
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith('#'));
     if (lines.length === 0) {
-      throw new Error(`The master key file ${path} holds no key`);
+      throw new Error(`${source} holds no key`);
     }
 
     return new MasterKeys(
       lines.map((line) => {
         const key = Buffer.from(line, 'base64');
         if (key.length !== MASTER_KEY_LENGTH || key.toString('base64') !== line) {
-          throw new Error(`The master key file ${path} holds a line that is not a base64 encoded 256-bit key`);
+          throw new Error(`${source} holds a line that is not a base64 encoded 256-bit key`);
         }
         return key;
       }),

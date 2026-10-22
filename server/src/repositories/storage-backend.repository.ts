@@ -11,6 +11,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import {
+  EncryptionConfig,
   ReplicatedRole,
   StorageBackendConfig,
   StorageBackendsConfig,
@@ -208,9 +209,9 @@ export class StorageBackendRepository {
     return result.data;
   }
 
-  /** Master keys from a key file, one base64 key per line */
-  readMasterKeys(path: string): KeyProvider {
-    return MasterKeys.fromFile(path);
+  /** Master keys from a key file (one base64 key per line), or from what a command prints */
+  readMasterKeys({ masterKeyFile, masterKeyCommand }: EncryptionConfig): KeyProvider {
+    return masterKeyCommand ? MasterKeys.fromCommand(masterKeyCommand) : MasterKeys.fromFile(masterKeyFile!);
   }
 
   /**

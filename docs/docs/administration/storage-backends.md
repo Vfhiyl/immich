@@ -154,6 +154,18 @@ docker compose run --rm immich-server 'immich-encryption generate-key --rotate /
 
 `immich-encryption inspect <object>` shows how a downloaded object is encrypted, and `immich-encryption decrypt --keys <key file> <object> <output>` decrypts it, without Immich.
 
+### Master keys from a key management service
+
+Instead of a key file on the server, the keys can come from a command that prints what the key file would hold, run once when Immich starts: for example the command line tool of your provider's key management service (KMS) decrypting the key file, or of a secret store reading it. The keys then only exist in memory; Immich never writes them anywhere.
+
+```yaml
+encryption:
+  # the program by its absolute path, then its arguments; no shell
+  masterKeyCommand: ['/config/immich/master-keys.sh']
+```
+
+The command must print the keys as the key file holds them (base64, one per line, the current one first; lines starting with `#` are ignored) and exit with 0 within a minute; otherwise Immich does not start, and logs what the command wrote to its standard error. A script for a KMS typically decrypts a key file that was encrypted with the KMS key, e.g. with the tool and options your provider documents for decrypting data; the credentials it needs come from the container's environment or the instance's role, like those of the bucket. Keep the decrypted key file offline as well (see above): the KMS key alone does not help without the encrypted file, and losing access to the KMS key loses the photos. `immich-encryption decrypt --keys` and `immich-export` take a key file; with bash, `--keys <(/config/immich/master-keys.sh)` gives them the command's output without writing it to disk.
+
 ## Deleting files
 
 When a photo is deleted permanently (or emptied from the trash), its files are not deleted from the backend at once: originals stay for `deletion.delayDays` (360 days by default), derived files for 30 days. Until then an administrator can look at deleted originals, recover them as new photos, or delete one at once after entering their password (`/api/admin/storage/deletions/originals`).

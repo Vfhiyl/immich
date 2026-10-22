@@ -174,15 +174,23 @@ export class TestEnvironment {
     return join(this.root, 'master.key');
   }
 
-  /** Write the storage backend configuration, with a new master key unless `keepMasterKey` */
-  async writeBackends(backends: LocalBackend[], { keepMasterKey = false } = {}) {
+  /**
+   * Write the storage backend configuration, with a new master key unless `keepMasterKey`; with `keyCommand`, the keys
+   * come from a command that prints the key file (as one would print what a key management service decrypts)
+   */
+  async writeBackends(backends: LocalBackend[], { keepMasterKey = false, keyCommand = false } = {}) {
     const lines = [];
     if (backends.some(({ s3, encrypted }) => encrypted ?? !!s3)) {
       if (!keepMasterKey) {
         await rm(this.masterKeyFile, { force: true });
         await runEncryptionTool(['generate-key', this.masterKeyFile]);
       }
-      lines.push('encryption:', `  masterKeyFile: ${this.masterKeyFile}`);
+      lines.push(
+        'encryption:',
+        keyCommand
+          ? `  masterKeyCommand: ["/bin/cat", "${this.masterKeyFile}"]`
+          : `  masterKeyFile: ${this.masterKeyFile}`,
+      );
     }
 
     lines.push('backends:');

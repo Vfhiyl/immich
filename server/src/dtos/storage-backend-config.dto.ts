@@ -84,9 +84,28 @@ export const StorageBackendConfigSchema = z.discriminatedUnion('driver', [LocalB
 const EncryptionConfigSchema = z
   .object({
     /** Base64 encoded 256-bit master keys, one per line; the first one encrypts new files */
-    masterKeyFile: absolutePath,
+    masterKeyFile: absolutePath.optional(),
+    /**
+     * A command that prints what a master key file holds, run when Immich starts: so that the keys can come from a key
+     * management service or a secret store (e.g. decrypted with its command line tool) and are never written to disk.
+     * The program, by its absolute path, and its arguments; no shell.
+     */
+    masterKeyCommand: z.array(z.string().min(1)).min(1).optional(),
   })
-  .strict();
+  .strict()
+  .refine(({ masterKeyFile, masterKeyCommand }) => !!masterKeyFile !== !!masterKeyCommand, {
+    message: 'Set either encryption.masterKeyFile or encryption.masterKeyCommand',
+  })
+  .refine(({ masterKeyCommand }) => !masterKeyCommand || masterKeyCommand[0].startsWith('/'), {
+    message: 'The program of encryption.masterKeyCommand must be an absolute path',
+    path: ['masterKeyCommand', 0],
+  });
+
+export type EncryptionConfig = z.infer<typeof EncryptionConfigSchema>;
+
+/** Where the master keys come from, for messages */
+export const describeKeySource = ({ masterKeyFile, masterKeyCommand }: EncryptionConfig) =>
+  masterKeyFile ?? `the output of ${masterKeyCommand![0]}`;
 
 /** The shortest delay: deleted originals must outlive the database backups that still record them */
 export const MIN_DELETION_DELAY_DAYS = 30;
@@ -165,7 +184,8 @@ export const StorageBackendsConfigSchema = z
         context.addIssue({
           code: 'custom',
           path: ['backends', index, 'encrypted'],
-          message: 'An encrypted storage backend needs a master key file (encryption.masterKeyFile)',
+          message:
+            'An encrypted storage backend needs master keys (encryption.masterKeyFile or encryption.masterKeyCommand)',
         });
       }
     }

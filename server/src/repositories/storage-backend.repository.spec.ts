@@ -43,6 +43,16 @@ const replica = (id: string, overrides: object = {}) => ({
   ...overrides,
 });
 
+/** A configuration with one local backend and the given encryption settings */
+const backendsWith = (encryption: object) => `
+backends:
+  - id: originals
+    driver: local
+    role: originals
+    root: /data/originals
+encryption: ${JSON.stringify(encryption)}
+`;
+
 describe(StorageBackendRepository.name, () => {
   let sut: StorageBackendRepository;
   let logger: Mocked<Pick<LoggingRepository, 'setContext' | 'warn' | 'debug'>>;
@@ -308,11 +318,11 @@ describe(StorageBackendRepository.name, () => {
       const unencrypted = JSON.parse(s3({ encrypted: undefined }));
       const path = await write(JSON.stringify(unencrypted));
       await expect(sut.readConfig(path)).rejects.toThrow(
-        'backends.0.encrypted: An encrypted storage backend needs a master key file (encryption.masterKeyFile)',
+        'backends.0.encrypted: An encrypted storage backend needs master keys (encryption.masterKeyFile or encryption.masterKeyCommand)',
       );
 
       const local = '{"backends":[{"id":"a","driver":"local","role":"originals","root":"/a","encrypted":true}]}';
-      await expect(sut.readConfig(await write(local))).rejects.toThrow('needs a master key file');
+      await expect(sut.readConfig(await write(local))).rejects.toThrow('needs master keys');
     });
 
     it('should need the storage backend for backups to be encrypted', async () => {
@@ -1038,7 +1048,53 @@ describe(StorageBackendRepository.name, () => {
       const key = randomBytes(32);
       await fs.writeFile(path, `${key.toString('base64')}\n`);
 
-      expect(sut.readMasterKeys(path).currentKeyId).toEqual(new MasterKeys([key]).currentKeyId);
+      expect(sut.readMasterKeys({ masterKeyFile: path }).currentKeyId).toEqual(new MasterKeys([key]).currentKeyId);
+    });
+
+    it('should read master keys from what a command prints, e.g. a key management service', () => {
+      const [current, older] = [randomBytes(32), randomBytes(32)];
+      const keys = sut.readMasterKeys({
+        masterKeyCommand: [
+          '/bin/sh',
+          '-c',
+          String.raw`printf '# from the vault\n%s\n%s\n' "$0" "$1"`,
+          current.toString('base64'),
+          older.toString('base64'),
+        ],
+      });
+
+      expect(keys.currentKeyId).toEqual(new MasterKeys([current]).currentKeyId);
+      expect(keys.hasKey(new MasterKeys([older]).currentKeyId)).toBe(true);
+    });
+
+    it('should tell why a master key command failed, or what it printed was no key', () => {
+      expect(() =>
+        sut.readMasterKeys({ masterKeyCommand: ['/bin/sh', '-c', 'echo access denied >&2; exit 3'] }),
+      ).toThrow('The master key command /bin/sh failed (exit code 3): access denied');
+      expect(() => sut.readMasterKeys({ masterKeyCommand: ['/bin/echo', 'not a key'] })).toThrow(
+        'The output of the master key command /bin/echo holds a line that is not a base64 encoded 256-bit key',
+      );
+      expect(() => sut.readMasterKeys({ masterKeyCommand: ['/bin/true'] })).toThrow('holds no key');
+      expect(() => sut.readMasterKeys({ masterKeyCommand: ['/nonexistent/program'] })).toThrow(
+        'The master key command /nonexistent/program failed',
+      );
+    });
+
+    it('should take master keys from either a file or a command, and the program by its path', async () => {
+      const path = join(directory, 'storage.yaml');
+      const read = async (encryption: object) => {
+        await fs.writeFile(path, backendsWith(encryption));
+        return sut.readConfig(path);
+      };
+
+      await expect(read({ masterKeyCommand: ['/usr/local/bin/keys', '--vault'] })).resolves.toMatchObject({
+        encryption: { masterKeyCommand: ['/usr/local/bin/keys', '--vault'] },
+      });
+      await expect(read({})).rejects.toThrow('Set either encryption.masterKeyFile or encryption.masterKeyCommand');
+      await expect(read({ masterKeyFile: '/keys/master.key', masterKeyCommand: ['/bin/cat'] })).rejects.toThrow(
+        'Set either encryption.masterKeyFile or encryption.masterKeyCommand',
+      );
+      await expect(read({ masterKeyCommand: ['keys'] })).rejects.toThrow('must be an absolute path');
     });
   });
 });

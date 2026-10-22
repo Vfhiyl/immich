@@ -280,7 +280,7 @@ describe(StorageService.name, () => {
 
       await sut.onBootstrapStorageBackends();
 
-      expect(mocks.storageBackend.readMasterKeys).toHaveBeenCalledWith('/run/secrets/master.key');
+      expect(mocks.storageBackend.readMasterKeys).toHaveBeenCalledWith({ masterKeyFile: '/run/secrets/master.key' });
       expect(mocks.storageBackend.configure).toHaveBeenCalledWith(
         [originals],
         keys,
@@ -326,12 +326,12 @@ describe(StorageService.name, () => {
       expect(mocks.storageBackend.configure).not.toHaveBeenCalled();
     });
 
-    it('should refuse to start when files are encrypted but no master key file is configured', async () => {
+    it('should refuse to start when files are encrypted but no master keys are configured', async () => {
       configure([]);
       mocks.storageBackend.getMasterKeyIds.mockResolvedValue([Buffer.from('0102030405060708', 'hex')]);
 
       await expect(sut.onBootstrapStorageBackends()).rejects.toThrow(
-        'Files were encrypted with master keys 0102030405060708, but no master key file is configured',
+        'Files were encrypted with master keys 0102030405060708, but no master keys are configured',
       );
     });
 
