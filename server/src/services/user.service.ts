@@ -304,6 +304,7 @@ export class UserService extends BaseService {
     }
 
     this.logger.log(`Deleting user: ${user.id}`);
+    await this.eventRepository.emit('UserDeleting', user);
 
     // files on storage backends are not in the folders below: registered before their records are deleted with the user
     const now = DateTime.now();

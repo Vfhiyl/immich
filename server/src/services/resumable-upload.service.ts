@@ -5,8 +5,9 @@ import { IncomingHttpHeaders } from 'node:http';
 import { extname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import z from 'zod';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { OnJob } from 'src/decorators.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
 import { AssetMetadataUpsertItemSchema } from 'src/dtos/asset.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
@@ -236,6 +237,22 @@ export class ResumableUploadService extends BaseService {
     await this.stopActive(session.id);
     await this.removeSession(session);
     return { status: 204, headers: {} };
+  }
+
+  /**
+   * The uploads of a user about to be deleted, whose records go with the user: what they wrote to a storage backend
+   * would otherwise stay there until the bucket's rule for unfinished uploads removes it
+   */
+  @OnEvent({ name: 'UserDeleting' })
+  async onUserDeleting({ id }: ArgOf<'UserDeleting'>) {
+    for (const session of await this.uploadSessionRepository.getByOwner(id)) {
+      try {
+        await this.stopActive(session.id);
+        await this.removeSession(session);
+      } catch (error) {
+        this.logger.warn(`Unable to remove upload ${session.id} of deleted user ${id}: ${error}`);
+      }
+    }
   }
 
   @OnJob({ name: JobName.UploadSessionCleanup, queue: QueueName.BackgroundTask })

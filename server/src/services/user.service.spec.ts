@@ -344,6 +344,19 @@ describe(UserService.name, () => {
       expect(mocks.user.delete).not.toHaveBeenCalled();
     });
 
+    it('should tell that the user is about to be deleted while their records are still there', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+
+      await sut.handleUserDelete({ id: user.id });
+
+      expect(mocks.event.emit).toHaveBeenCalledWith('UserDeleting', user);
+      const deleting = mocks.event.emit.mock.calls.findIndex(([name]) => name === 'UserDeleting');
+      expect(mocks.event.emit.mock.invocationCallOrder[deleting]).toBeLessThan(
+        mocks.user.delete.mock.invocationCallOrder[0],
+      );
+    });
+
     it('should register the files of the user on storage backends before deleting their records', async () => {
       const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
       mocks.user.get.mockResolvedValue(user);

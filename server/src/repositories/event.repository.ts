@@ -89,6 +89,8 @@ type EventMap = {
   UserCreate: [UserEvent];
   /** user is soft deleted */
   UserTrash: [UserEvent];
+  /** user is about to be permanently deleted, with their records still there */
+  UserDeleting: [UserEvent];
   /** user is permanently deleted */
   UserDelete: [UserEvent];
   UserRestore: [UserEvent];

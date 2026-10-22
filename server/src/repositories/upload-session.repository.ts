@@ -45,6 +45,11 @@ export class UploadSessionRepository {
     return Number(reserved);
   }
 
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getByOwner(ownerId: string) {
+    return this.db.selectFrom('upload_session').selectAll().where('ownerId', '=', ownerId).execute();
+  }
+
   @GenerateSql({ params: [DummyValue.DATE] })
   getExpired(now: Date) {
     return this.db.selectFrom('upload_session').selectAll().where('expiresAt', '<', now).limit(1000).execute();

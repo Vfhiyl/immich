@@ -129,6 +129,47 @@ describe(ResumableUploadService.name, () => {
     });
   });
 
+  describe('onUserDeleting', () => {
+    it('should drop the uploads of a deleted user, with what they wrote to the backend', async () => {
+      const media = mocks.storageBackend.get('media');
+      const upload = await media.createUpload('upload/b.jpg', { partSize: 16 * 1024 * 1024 });
+      await media.uploadPart('upload/b.jpg', upload, { number: 1, data: Buffer.alloc(10) });
+      const abort = vi.spyOn(media, 'abortUpload');
+      const session = {
+        status: UploadSessionStatus.Receiving,
+        backendId: 'media',
+        key: 'upload/b.jpg',
+        blobUploadId: upload.uploadId,
+        partSize: upload.partSize,
+        encryption: null,
+      };
+      mocks.uploadSession.getByOwner.mockResolvedValue([
+        { ...session, id: 'session-1' } as never,
+        // already received: nothing is left on the backend
+        { ...session, id: 'session-2', status: UploadSessionStatus.Completed } as never,
+      ]);
+      mocks.uploadSession.delete.mockResolvedValue();
+      const user = UserFactory.create();
+
+      await sut.onUserDeleting(user);
+
+      expect(mocks.uploadSession.getByOwner).toHaveBeenCalledWith(user.id);
+      expect(abort).toHaveBeenCalledOnce();
+      expect(abort).toHaveBeenCalledWith('upload/b.jpg', expect.objectContaining({ uploadId: upload.uploadId }));
+      expect(mocks.uploadSession.delete).toHaveBeenCalledWith('session-1');
+      expect(mocks.uploadSession.delete).toHaveBeenCalledWith('session-2');
+    });
+
+    it('should go on with the other uploads when one cannot be removed', async () => {
+      mocks.uploadSession.getByOwner.mockResolvedValue([{ id: 'a' } as never, { id: 'b' } as never]);
+      mocks.uploadSession.delete.mockRejectedValueOnce(new Error('gone')).mockResolvedValue();
+
+      await sut.onUserDeleting(UserFactory.create());
+
+      expect(mocks.uploadSession.delete).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('handleUploadSessionCleanup', () => {
     it('should drop expired uploads, with what they wrote to the backend', async () => {
       const media = mocks.storageBackend.get('media');

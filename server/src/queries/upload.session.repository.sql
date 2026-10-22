@@ -22,6 +22,14 @@ where
   "ownerId" = $1
   and "status" = $2
 
+-- UploadSessionRepository.getByOwner
+select
+  *
+from
+  "upload_session"
+where
+  "ownerId" = $1
+
 -- UploadSessionRepository.getExpired
 select
   *
