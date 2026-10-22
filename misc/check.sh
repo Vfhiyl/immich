@@ -5,6 +5,7 @@
 #   app.
 #
 # Usage: misc/check.sh [--quick]     --quick skips the medium, contract and end-to-end tests
+#        misc/fix.sh first formats the changed files and applies the lint fixes that can be applied
 #
 # Needs: Node and pnpm with dependencies installed (`pnpm install`), ffmpeg, redis-server, oazapfts (the version
 # pinned in mise.toml) and Flutter on PATH, OPENAPI_GENERATOR_JAR (the openapi-generator-cli jar), a JDK and the
