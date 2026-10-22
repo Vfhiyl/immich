@@ -268,6 +268,75 @@ void main() {
     });
   });
 
+  group('SyncStreamRepository - reset without emptying the timeline', () {
+    Future<List<String>> assetIds() async {
+      final rows = await db.remoteAssetEntity.select().get();
+      return rows.map((row) => row.id).toList()..sort();
+    }
+
+    Future<void> seed() async {
+      await sut.updateUsersV1([_createUser()]);
+      await sut.updateAssetsV1([
+        _createAsset(id: 'kept', checksum: 'K', fileName: 'kept.jpg'),
+        _createAsset(id: 'gone', checksum: 'G', fileName: 'gone.jpg'),
+      ]);
+      await db.remoteExifEntity.insertOne(RemoteExifEntityCompanion.insert(assetId: 'gone'));
+    }
+
+    test('keeps the remote assets while everything is synced anew', () async {
+      await seed();
+
+      await sut.reset();
+
+      expect(await assetIds(), ['gone', 'kept']);
+    });
+
+    test('deletes the assets the server did not send again, with their exif, once it sent everything', () async {
+      await seed();
+      await sut.reset();
+      await sut.updateUsersV1([_createUser()]);
+      await sut.updateAssetsV2([_createAssetV2(id: 'kept', checksum: 'K', fileName: 'kept.jpg')]);
+      await sut.updateAssetsV1([_createAsset(id: 'new', checksum: 'N', fileName: 'new.jpg')]);
+
+      await sut.finishReset(isComplete: true);
+
+      expect(await assetIds(), ['kept', 'new']);
+      final exif = await db.remoteExifEntity.select().get();
+      expect(exif, isEmpty, reason: 'the exif of a deleted asset goes with it');
+    });
+
+    test('deletes nothing when the sync stopped before the server sent everything', () async {
+      await seed();
+      await sut.reset();
+      await sut.updateAssetsV1([_createAsset(id: 'kept', checksum: 'K', fileName: 'kept.jpg')]);
+
+      await sut.finishReset(isComplete: false);
+
+      expect(await assetIds(), ['gone', 'kept']);
+    });
+
+    test('deletes the users the server did not send again, with their assets', () async {
+      await seed();
+      await sut.reset();
+      await sut.updateUsersV1([_createUser(id: 'other')]);
+
+      await sut.finishReset(isComplete: true);
+
+      final users = await db.userEntity.select().get();
+      expect(users.map((user) => user.id), ['other']);
+      expect(await assetIds(), isEmpty, reason: 'the assets of user-1 went with it');
+    });
+
+    test('deletes nothing without a reset', () async {
+      await seed();
+      await sut.updateAssetsV1([_createAsset(id: 'kept', checksum: 'K', fileName: 'kept.jpg')]);
+
+      await sut.finishReset(isComplete: true);
+
+      expect(await assetIds(), ['gone', 'kept']);
+    });
+  });
+
   group('SyncStreamRepository - updateAssets upsert dedupe (#22522 #27186)', () {
     Future<void> seedExif(String assetId) =>
         db.remoteExifEntity.insertOne(RemoteExifEntityCompanion.insert(assetId: assetId));

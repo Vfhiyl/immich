@@ -108,6 +108,8 @@ void main() {
     });
 
     when(() => mockSyncApiRepo.ack(any())).thenAnswer((_) async => {});
+    when(() => mockSyncStreamRepo.reset()).thenAnswer((_) async {});
+    when(() => mockSyncStreamRepo.finishReset(isComplete: any(named: 'isComplete'))).thenAnswer((_) async {});
     when(() => mockSyncApiRepo.deleteSyncAck(any())).thenAnswer((_) async => {});
 
     when(() => mockApi.serverInfoApi).thenReturn(mockServerApi);
@@ -178,6 +180,56 @@ void main() {
     await sut.sync();
     await handleEventsCallback(events, mockAbortCallbackWrapper.call, mockResetCallbackWrapper.call);
   }
+
+  group("SyncStreamService - reset", () {
+    const complete = SyncEvent(type: SyncEntityType.syncCompleteV1, data: Object(), ack: 'complete');
+    const resetEvent = SyncEvent(type: SyncEntityType.syncResetV1, data: Object(), ack: 'reset');
+
+    /// The server asks for a reset, and then sends [events] in the stream that follows
+    void stubReset(List<SyncEvent> events) {
+      when(
+        () => mockSyncApiRepo.streamChanges(
+          any(),
+          onReset: any(named: 'onReset'),
+          serverVersion: any(named: 'serverVersion'),
+          abortSignal: any(named: 'abortSignal'),
+        ),
+      ).thenAnswer((invocation) async {
+        final handle =
+            invocation.positionalArguments.first as Future<void> Function(List<SyncEvent>, Function(), Function());
+        final onReset = invocation.namedArguments[#onReset] as void Function();
+        await handle([resetEvent], () {}, onReset);
+      });
+      when(
+        () => mockSyncApiRepo.streamChanges(
+          any(),
+          serverVersion: any(named: 'serverVersion'),
+          abortSignal: any(named: 'abortSignal'),
+        ),
+      ).thenAnswer((invocation) async {
+        final handle =
+            invocation.positionalArguments.first as Future<void> Function(List<SyncEvent>, Function(), Function());
+        await handle(events, () {}, () {});
+      });
+    }
+
+    test("deletes what the server did not send again, once it sent everything", () async {
+      stubReset([SyncStreamStub.assetModified(id: 'a1', checksum: 'c1', ack: '1'), complete]);
+
+      await sut.sync();
+
+      verify(() => mockSyncStreamRepo.reset()).called(1);
+      verify(() => mockSyncStreamRepo.finishReset(isComplete: true)).called(1);
+    });
+
+    test("deletes nothing when the server did not send everything", () async {
+      stubReset([SyncStreamStub.assetModified(id: 'a1', checksum: 'c1', ack: '1')]);
+
+      await sut.sync();
+
+      verify(() => mockSyncStreamRepo.finishReset(isComplete: false)).called(1);
+    });
+  });
 
   group("SyncStreamService - progress", () {
     test("counts the photos and videos received, after each batch", () async {

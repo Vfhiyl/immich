@@ -43,8 +43,17 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
 
   Drift get _db => attachedDatabase;
 
+  /// The users and remote assets received since a reset, or null while no reset is under way
+  Set<String>? _usersSinceReset;
+  Set<String>? _assetsSinceReset;
+
+  /// Start syncing everything anew. The users and the remote assets with their exif stay, so that the timeline does not
+  /// empty while the server sends everything again (and assets keep their owner): the ones it does not send again are
+  /// deleted by [finishReset] once it has sent everything. The other remote entities, which are few, are deleted now.
   Future<void> reset() async {
     _logger.fine("SyncResetV1 received. Resetting remote entities");
+    _usersSinceReset = {};
+    _assetsSinceReset = {};
     try {
       await _db.exclusively(() async {
         // foreign_keys PRAGMA is no-op within transactions
@@ -65,11 +74,8 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
             await _db.remoteAlbumAssetEntity.deleteAll();
             await _db.remoteAlbumEntity.deleteAll();
             await _db.remoteAlbumUserEntity.deleteAll();
-            await _db.remoteAssetEntity.deleteAll();
-            await _db.remoteExifEntity.deleteAll();
             await _db.stackEntity.deleteAll();
             await _db.authUserEntity.deleteAll();
-            await _db.userEntity.deleteAll();
             await _db.userMetadataEntity.deleteAll();
             await _db.remoteAssetCloudIdEntity.deleteAll();
             await _db.assetEditEntity.deleteAll();
@@ -86,6 +92,41 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
       rethrow;
     }
   }
+
+  /// After the server sent everything anew, delete the remote assets it did not send, with what belongs to them. Does
+  /// nothing without a reset, or with [isComplete] false (the sync stopped before everything arrived: the assets stay,
+  /// rather than to delete ones that would have arrived).
+  Future<void> finishReset({required bool isComplete}) async {
+    final users = _usersSinceReset;
+    final assets = _assetsSinceReset;
+    _usersSinceReset = null;
+    _assetsSinceReset = null;
+    if (users == null || assets == null || !isComplete) {
+      return;
+    }
+
+    // with foreign keys on, what belongs to them goes with them: the assets of a user, the exif and album entries of an
+    // asset, and the like
+    final goneUsers = await _deleteAllBut(_db.userEntity, _db.userEntity.id, users);
+    final goneAssets = await _deleteAllBut(_db.remoteAssetEntity, _db.remoteAssetEntity.id, assets);
+    _logger.info("Reset complete: $goneUsers users and $goneAssets remote assets are gone");
+  }
+
+  /// Delete the rows whose id is not one of [keep]; returns how many
+  Future<int> _deleteAllBut<T extends Table, R>(
+    TableInfo<T, R> table,
+    GeneratedColumn<String> id,
+    Set<String> keep,
+  ) async {
+    final stored = await (_db.selectOnly(table)..addColumns([id])).map((row) => row.read(id)!).get();
+    final gone = stored.where((value) => !keep.contains(value)).toList();
+    for (final ids in gone.slices(kDriftMaxChunk)) {
+      await (_db.delete(table)..where((_) => id.isIn(ids))).go();
+    }
+    return gone.length;
+  }
+
+  void _received(Iterable<String> assetIds) => _assetsSinceReset?.addAll(assetIds);
 
   Future<void> updateAuthUsersV1(Iterable<SyncAuthUserV1> data) async {
     try {
@@ -159,6 +200,7 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
   }
 
   Future<void> updateUsersV1(Iterable<SyncUserV1> data) async {
+    _usersSinceReset?.addAll(data.map((user) => user.id));
     try {
       await _db.batch((batch) {
         for (final user in data) {
@@ -230,6 +272,7 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
   }
 
   Future<void> updateAssetsV1(Iterable<SyncAssetV1> data, {String debugLabel = 'user'}) async {
+    _received(data.map((asset) => asset.id));
     try {
       await _db.batch((batch) {
         for (final asset in data) {
@@ -270,6 +313,7 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
   }
 
   Future<void> updateAssetsV2(Iterable<SyncAssetV2> data, {String debugLabel = 'user'}) async {
+    _received(data.map((asset) => asset.id));
     try {
       await _db.batch((batch) {
         for (final asset in data) {

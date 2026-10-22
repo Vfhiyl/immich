@@ -64,6 +64,9 @@ class SyncStreamService {
 
   bool get isCancelled => _cancellation?.isCompleted ?? false;
 
+  /// Whether the server said that it sent everything
+  bool _isComplete = false;
+
   /// The photos and videos received in this sync so far, and who wants to know
   int _assetsReceived = 0;
   void Function(int assetsReceived)? _onProgress;
@@ -101,11 +104,14 @@ class SyncStreamService {
     );
     if (shouldReset) {
       _logger.info("Resetting sync state as requested by server");
+      _isComplete = false;
       await _syncApiRepository.streamChanges(
         _handleEvents,
         serverVersion: serverSemVer,
         abortSignal: _cancellation?.future,
       );
+      // what the server did not send again is gone, if it sent everything
+      await _syncStreamRepository.finishReset(isComplete: _isComplete && !isCancelled);
     }
 
     previousLength = migrations.length;
@@ -309,8 +315,8 @@ class SyncStreamService {
         return;
       // SyncCompleteV1 is used to signal the completion of the sync process. Cleanup stale assets and signal completion
       case SyncEntityType.syncCompleteV1:
+        _isComplete = true;
         return;
-      // return _syncStreamRepository.pruneAssets();
       // Request to reset the client state. Clear everything related to remote entities
       case SyncEntityType.syncResetV1:
         return _syncStreamRepository.reset();
