@@ -394,6 +394,23 @@ describe(StorageBackendRepository.name, () => {
       });
     });
 
+    it('should read the examples of the documentation', async () => {
+      const page = await fs.readFile(
+        join(import.meta.dirname, '../../../docs/docs/administration/storage-backends.md'),
+        'utf8',
+      );
+      const [example] = /```yaml title="storage.yaml"\n(.*?)```/s.exec(page)!.slice(1);
+      const [replica] = /```yaml\nbackends:\n {2}# … originals and backups as above\n(.*?)```/s.exec(page)!.slice(1);
+
+      await expect(sut.readConfig(await write(example))).resolves.toMatchObject({
+        backends: [{ id: 'originals' }, { id: 'derived' }, { id: 'backups' }],
+      });
+      const withReplica = example.replace('\ndeletion:', () => `\n${replica}\ndeletion:`);
+      await expect(sut.readConfig(await write(withReplica))).resolves.toMatchObject({
+        backends: [{}, {}, {}, { id: 'replica-1', role: 'replica', replicaOf: ['originals', 'backup'] }],
+      });
+    });
+
     it('should read an S3 backend that is not encrypted without a master key file', async () => {
       const { backends } = await sut.readConfig(await write(s3({ encrypted: false })));
       expect(backends[0]).toMatchObject({ encrypted: false });

@@ -69,6 +69,9 @@ e2e_files=(src/storage-backends.ts src/specs/storage-backends vitest.storage-bac
 e2e_format() { cd "$e2e" && "$(bin "$e2e" prettier)" --check "${e2e_files[@]}"; }
 e2e_lint() { cd "$e2e" && "$(bin "$e2e" eslint)" "${e2e_files[@]}" --max-warnings 0; }
 
+# the documentation of storage backends (the other pages are upstream's); its examples are checked by the unit tests
+docs_format() { cd "$repo/docs" && "$(bin "$repo/docs" prettier)" --check docs/administration/storage-backends.md; }
+
 # --- build, schema and generated SQL ---
 
 server_build() { cd "$server" && "$(bin "$server" nest)" build; }
@@ -126,6 +129,7 @@ step 'server: lint' server_lint
 step 'server: types' server_types
 step 'e2e: formatting' e2e_format
 step 'e2e: lint' e2e_lint
+step 'docs: formatting' docs_format
 step 'server: build' server_build
 step 'schema: migrations and drift' schema
 step 'server: generated SQL is up to date' generated_sql

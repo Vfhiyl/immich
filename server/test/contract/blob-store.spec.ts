@@ -267,5 +267,6 @@ describe.each(targets)('S3 key prefixes: $name', (target) => {
     ]);
     await first.deleteMany(['same-key']);
     await expect(second.head('same-key')).resolves.toEqual({ size: 6 });
+    await second.deleteMany(['same-key']);
   });
 });

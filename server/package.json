@@ -27,6 +27,7 @@
     "test": "vitest --config test/vitest.config.mjs",
     "test:cov": "vitest --config test/vitest.config.mjs --coverage",
     "test:medium": "vitest --config test/vitest.config.medium.mjs",
+    "test:real-storage": "IMMICH_CONTRACT_REAL_S3_ONLY=true vitest --config test/vitest.config.contract.mjs --run test/contract/blob-store.spec.ts test/contract/encrypted-blob-store.spec.ts",
     "migrations:debug": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/immich} migrations generate --debug",
     "migrations:generate": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/immich} migrations generate",
     "migrations:create": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/immich} migrations create",

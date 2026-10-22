@@ -19,9 +19,10 @@ import { S3Target, toClient } from 'test/contract/servers.js';
 const sha1 = (value: Buffer) => createHash('sha1').update(value).digest();
 const toStream = (value: Buffer) => Readable.from([value]);
 
-const [target]: S3Target[] = JSON.parse(process.env.CONTRACT_S3_TARGETS ?? '[]');
+// a service started for the tests: the proxy speaks plain HTTP to it
+const target = (JSON.parse(process.env.CONTRACT_S3_TARGETS ?? '[]') as S3Target[]).find(({ isReal }) => !isReal)!;
 
-describe('S3 blob store against a misbehaving service', () => {
+describe.skipIf(!target)('S3 blob store against a misbehaving service', () => {
   let proxy: FaultProxy;
   let store: S3BlobStore;
   let direct: S3BlobStore;
