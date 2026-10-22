@@ -100,6 +100,16 @@ export class DatabaseRepository {
     }
   }
 
+  /** A database of its own on the same server, e.g. to restore a backup into without touching Immich's */
+  async createDatabase(name: string) {
+    await sql`CREATE DATABASE ${sql.id(name)}`.execute(this.db);
+  }
+
+  /** Drop a database made with `createDatabase`, with the connections to it */
+  async dropDatabase(name: string) {
+    await sql`DROP DATABASE IF EXISTS ${sql.id(name)} WITH (FORCE)`.execute(this.db);
+  }
+
   @GenerateSql()
   async getPostgresVersion(): Promise<string> {
     const { rows } = await sql<{ server_version: string }>`SHOW server_version`.execute(this.db);

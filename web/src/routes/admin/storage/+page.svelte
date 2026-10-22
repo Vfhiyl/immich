@@ -240,8 +240,27 @@
 
     {#if data.databaseBackups}
       <section>
-        <Text size="large" fontWeight="semi-bold">{$t('admin.storage_database_backups')}</Text>
-        <Text size="small" color="muted" class="mb-3">{$t('admin.storage_database_backups_description')}</Text>
+        <HStack class="justify-between">
+          <Text size="large" fontWeight="semi-bold">{$t('admin.storage_database_backups')}</Text>
+          <Button size="small" variant="ghost" onclick={() => handleStartStorageCheck(StorageCheckKind.RestoreDrill)}>
+            {$t('admin.storage_restore_drill_start')}
+          </Button>
+        </HStack>
+        <Text size="small" color="muted">{$t('admin.storage_database_backups_description')}</Text>
+        <Text size="small" class="mb-3">
+          {$t('admin.storage_last_restore_drill')}: {formatRun(data.health?.lastRestoreDrill)}
+          {#if data.health?.lastRestoreDrill?.restoredBackup}
+            · {$t('admin.storage_restore_drill_restored', {
+              values: {
+                filename: data.health.lastRestoreDrill.restoredBackup,
+                assets: data.health.lastRestoreDrill.restoredAssets ?? 0,
+              },
+            })}
+          {/if}
+          {#if data.health?.lastRestoreDrill?.stoppedBecause}
+            · {data.health.lastRestoreDrill.stoppedBecause}
+          {/if}
+        </Text>
         <Table striped spacing="tiny">
           <TableBody>
             {#each data.databaseBackups.backups as backup (backup.key)}

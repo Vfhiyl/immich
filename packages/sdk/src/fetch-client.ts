@@ -606,6 +606,10 @@ export type StorageCheckRunDto = {
     newIssues: number;
     /** Problems open after the run */
     openIssues: number;
+    /** Of a restore drill: the assets the backup records */
+    restoredAssets?: number;
+    /** Of a restore drill: the file name of the backup restored */
+    restoredBackup?: string;
     startedAt: string;
     status: StorageCheckStatus;
     /** Why the run did not cover everything */
@@ -613,6 +617,7 @@ export type StorageCheckRunDto = {
 };
 export type StorageCheckSummaryResponseDto = {
     lastReconcile: (StorageCheckRunDto) | null;
+    lastRestoreDrill: (StorageCheckRunDto) | null;
     lastVerify: (StorageCheckRunDto) | null;
     /** The last 12 months, the oldest first */
     months: {
@@ -8635,7 +8640,8 @@ export enum StorageCheckKind {
     Reconcile = "reconcile",
     Verify = "verify",
     ReplicaReconcile = "replica_reconcile",
-    ReplicaVerify = "replica_verify"
+    ReplicaVerify = "replica_verify",
+    RestoreDrill = "restore_drill"
 }
 export enum StorageCheckStatus {
     Running = "running",
@@ -9017,6 +9023,7 @@ export enum JobName {
     StorageReplicate = "StorageReplicate",
     StorageReplicaReconcile = "StorageReplicaReconcile",
     StorageReplicaVerify = "StorageReplicaVerify",
+    StorageRestoreDrill = "StorageRestoreDrill",
     StorageUsageSnapshot = "StorageUsageSnapshot",
     AssetGenerateThumbnailsQueueAll = "AssetGenerateThumbnailsQueueAll",
     AssetGenerateThumbnails = "AssetGenerateThumbnails",

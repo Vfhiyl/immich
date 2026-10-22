@@ -349,15 +349,17 @@ export class StorageCheckService extends BaseService {
   }
 
   async getSummary(): Promise<StorageCheckSummaryResponseDto> {
-    const [lastReconcile, lastVerify] = await Promise.all([
+    const [lastReconcile, lastVerify, lastRestoreDrill] = await Promise.all([
       this.storageCheckRepository.getLastRun(StorageCheckKind.Reconcile),
       this.storageCheckRepository.getLastRun(StorageCheckKind.Verify),
+      this.storageCheckRepository.getLastRun(StorageCheckKind.RestoreDrill),
     ]);
     const since = DateTime.now().startOf('month').minus({ months: 11 }).toJSDate();
     return {
       openIssues: await this.storageCheckRepository.countOpenIssuesByKind(),
       lastReconcile: lastReconcile ? mapRun(lastReconcile) : null,
       lastVerify: lastVerify ? mapRun(lastVerify) : null,
+      lastRestoreDrill: lastRestoreDrill ? mapRun(lastRestoreDrill) : null,
       months: await this.storageCheckRepository.getMonthlySummary(since),
     };
   }
@@ -433,6 +435,7 @@ export class StorageCheckService extends BaseService {
       [StorageCheckKind.Verify]: JobName.StorageVerify,
       [StorageCheckKind.ReplicaReconcile]: JobName.StorageReplicaReconcile,
       [StorageCheckKind.ReplicaVerify]: JobName.StorageReplicaVerify,
+      [StorageCheckKind.RestoreDrill]: JobName.StorageRestoreDrill,
     } as const;
     await this.jobRepository.queue({ name: jobs[kind], data: { force: true } });
   }
@@ -479,7 +482,8 @@ export class StorageCheckService extends BaseService {
     return files.length === 0 && rows.length > 0 ? next() : files;
   }
 
-  private async verifyFile(file: VerifiableFile, stats: StorageCheckStats) {
+  /** Read a recorded file back and compare it with what is recorded, reporting it when it fails */
+  async verifyFile(file: VerifiableFile, stats: StorageCheckStats) {
     const { backendId, key } = file;
     const now = new Date();
     try {

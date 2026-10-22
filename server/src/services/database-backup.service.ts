@@ -5,6 +5,7 @@ import path, { basename } from 'node:path';
 import { Duplex, PassThrough, Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { coerce, satisfies } from 'semver';
+import type { DatabaseConnectionParams } from '@immich/sql-tools';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -112,6 +113,8 @@ export class DatabaseBackupService {
     bin: 'pg_dump' | 'pg_dumpall' | 'psql',
     options: {
       singleTransaction?: boolean;
+      /** Another database than Immich's, e.g. one of its own to restore a backup into */
+      connection?: DatabaseConnectionParams;
     } = {},
   ): Promise<{
     bin: string;
@@ -121,9 +124,7 @@ export class DatabaseBackupService {
     databaseVersion: string;
     databaseMajorVersion?: number;
   }> {
-    const {
-      database: { config: databaseConfig },
-    } = this.configRepository.getEnv();
+    const databaseConfig = options.connection ?? this.configRepository.getEnv().database.config;
     const isUrlConnection = databaseConfig.connectionType === 'url';
 
     const databaseVersion = await this.databaseRepository.getPostgresVersion();
@@ -590,7 +591,7 @@ function createSqlProgressStreams(cb: (progress: number) => void) {
   return [source, sink];
 }
 
-function createSqlOwnerTransformStream(databaseUsername: string) {
+export function createSqlOwnerTransformStream(databaseUsername: string) {
   const OWNER_MARKER_START = new TextEncoder().encode('OWNER TO ');
   const DATA_MARKER_START = new TextEncoder().encode('FROM stdin');
   const LINE_END = new TextEncoder().encode(';');

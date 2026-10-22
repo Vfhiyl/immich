@@ -373,6 +373,7 @@ export type JobItem =
   | { name: JobName.StorageReplicate; data?: IBaseJob }
   | { name: JobName.StorageReplicaReconcile; data?: IStorageCheckJob }
   | { name: JobName.StorageReplicaVerify; data?: IStorageCheckJob }
+  | { name: JobName.StorageRestoreDrill; data?: IStorageCheckJob }
   | { name: JobName.StorageUsageSnapshot; data?: IBaseJob }
 
   // Backups

@@ -23985,6 +23985,7 @@
           "StorageReplicate",
           "StorageReplicaReconcile",
           "StorageReplicaVerify",
+          "StorageRestoreDrill",
           "StorageUsageSnapshot",
           "AssetGenerateThumbnailsQueueAll",
           "AssetGenerateThumbnails",
@@ -31256,7 +31257,8 @@
           "reconcile",
           "verify",
           "replica_reconcile",
-          "replica_verify"
+          "replica_verify",
+          "restore_drill"
         ],
         "type": "string"
       },
@@ -31304,6 +31306,16 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "restoredAssets": {
+            "description": "Of a restore drill: the assets the backup records",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "restoredBackup": {
+            "description": "Of a restore drill: the file name of the backup restored",
+            "type": "string"
           },
           "startedAt": {
             "type": "string"
@@ -31355,6 +31367,14 @@
       "StorageCheckSummaryResponseDto": {
         "properties": {
           "lastReconcile": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageCheckRunDto"
+              }
+            ],
+            "nullable": true
+          },
+          "lastRestoreDrill": {
             "allOf": [
               {
                 "$ref": "#/components/schemas/StorageCheckRunDto"
@@ -31428,6 +31448,7 @@
         },
         "required": [
           "lastReconcile",
+          "lastRestoreDrill",
           "lastVerify",
           "months",
           "openIssues"

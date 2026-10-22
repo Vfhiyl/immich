@@ -3,10 +3,10 @@ import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { JobStatus, StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
+import { JobStatus, StorageBackendDriver, StorageBackendRole, StorageCheckKind } from 'src/enum.js';
 import { EncryptedBlobStore } from 'src/repositories/encrypted-blob-store.js';
 import { MasterKeys } from 'src/repositories/key-provider.js';
-import { StorageBackupService } from 'src/services/storage-backup.service.js';
+import { StorageBackupService, databaseNameOf, withDatabase } from 'src/services/storage-backup.service.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const backupName = (day: number) =>
@@ -222,5 +222,72 @@ describe(StorageBackupService.name, () => {
     await writeBackups(backupName(1));
     await sut.handleStoreDatabaseBackups();
     await expect(sut.fetchStoredBackup('00000000-0000-4000-8000-000000000000')).rejects.toThrow('not found');
+  });
+
+  describe('restore drill', () => {
+    it('should connect to a database of its own on the same server', () => {
+      const parts = {
+        connectionType: 'parts' as const,
+        host: 'database',
+        port: 5432,
+        username: 'postgres',
+        password: 'secret',
+        database: 'immich',
+      };
+      expect(withDatabase(parts, 'immich_restore_drill')).toEqual({ ...parts, database: 'immich_restore_drill' });
+      expect(databaseNameOf(parts)).toBe('immich');
+
+      const url = {
+        connectionType: 'url' as const,
+        url: 'postgres://postgres:secret@database:5432/immich?sslmode=require',
+      };
+      expect(withDatabase(url, 'immich_restore_drill')).toEqual({
+        connectionType: 'url',
+        url: 'postgres://postgres:secret@database:5432/immich_restore_drill?sslmode=require',
+      });
+      expect(databaseNameOf(url)).toBe('immich');
+    });
+
+    it('should not run without a backend for backups', async () => {
+      mocks.storageBackend.configure([]);
+
+      await expect(sut.handleRestoreDrill()).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.storageCheck.startRun).not.toHaveBeenCalled();
+    });
+
+    it('should only run every three months, unless started', async () => {
+      configure();
+      mocks.storageCheck.getLastRun.mockResolvedValue({
+        startedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+      } as never);
+
+      await expect(sut.handleRestoreDrill()).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.storageCheck.getLastRun).toHaveBeenCalledWith(StorageCheckKind.RestoreDrill);
+      expect(mocks.storageCheck.startRun).not.toHaveBeenCalled();
+    });
+
+    it('should report a drill without a backup to restore as failed, and tell the administrator', async () => {
+      configure();
+      mocks.storageCheck.getLastRun.mockResolvedValue(undefined);
+      mocks.storageCheck.startRun.mockResolvedValue({ id: 'run-id' } as never);
+      mocks.storageCheck.finishRun.mockResolvedValue();
+      mocks.database.dropDatabase.mockResolvedValue();
+      mocks.user.getAdmin.mockResolvedValue({ id: 'admin-id' } as never);
+      mocks.notification.create.mockResolvedValue({ id: 'notification-id', createdAt: new Date() } as never);
+
+      await expect(sut.handleRestoreDrill({ force: true })).resolves.toBe(JobStatus.Failed);
+
+      expect(mocks.storageCheck.finishRun).toHaveBeenCalledWith(
+        'run-id',
+        'failed',
+        expect.objectContaining({ stoppedBecause: 'There is no stored database backup to restore' }),
+      );
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'The restore drill failed' }),
+      );
+      // nothing is left behind
+      expect(mocks.database.dropDatabase).toHaveBeenCalledWith('immich_restore_drill');
+      expect(mocks.database.createDatabase).not.toHaveBeenCalled();
+    });
   });
 });

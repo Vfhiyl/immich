@@ -680,6 +680,8 @@ export enum StorageCheckKind {
   ReplicaReconcile = 'replica_reconcile',
   /** Reading a sample of the copies on each replica back, decrypting them and comparing their checksum */
   ReplicaVerify = 'replica_verify',
+  /** Restoring the latest stored database backup into a database of its own, and reading back files it records */
+  RestoreDrill = 'restore_drill',
 }
 
 export enum StorageCheckStatus {
@@ -973,6 +975,7 @@ export enum JobName {
   StorageReplicate = 'StorageReplicate',
   StorageReplicaReconcile = 'StorageReplicaReconcile',
   StorageReplicaVerify = 'StorageReplicaVerify',
+  StorageRestoreDrill = 'StorageRestoreDrill',
   StorageUsageSnapshot = 'StorageUsageSnapshot',
   AssetGenerateThumbnailsQueueAll = 'AssetGenerateThumbnailsQueueAll',
   AssetGenerateThumbnails = 'AssetGenerateThumbnails',

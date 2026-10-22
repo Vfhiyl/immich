@@ -24,6 +24,8 @@ const StorageCheckRunSchema = z
     newIssues: z.int().nonnegative().describe('Problems the run reported'),
     openIssues: z.int().nonnegative().describe('Problems open after the run'),
     stoppedBecause: z.string().optional().describe('Why the run did not cover everything'),
+    restoredBackup: z.string().optional().describe('Of a restore drill: the file name of the backup restored'),
+    restoredAssets: z.int().nonnegative().optional().describe('Of a restore drill: the assets the backup records'),
   })
   .meta({ id: 'StorageCheckRunDto' });
 
@@ -78,6 +80,7 @@ const StorageCheckSummarySchema = z
     openIssues: z.record(z.string(), z.int().nonnegative()).describe('Open problems by kind'),
     lastReconcile: StorageCheckRunSchema.nullable(),
     lastVerify: StorageCheckRunSchema.nullable(),
+    lastRestoreDrill: StorageCheckRunSchema.nullable(),
     months: z.array(MonthlySummarySchema).describe('The last 12 months, the oldest first'),
   })
   .meta({ id: 'StorageCheckSummaryResponseDto' });

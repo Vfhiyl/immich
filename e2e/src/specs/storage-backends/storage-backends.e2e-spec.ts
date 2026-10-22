@@ -538,6 +538,39 @@ describe('storage backends on an S3 service', () => {
     expect(local.backups.map(({ filename }) => filename)).toContain(`uploaded-${backup.filename}`);
   });
 
+  it('should restore the latest stored backup in a drill, and read back originals it records', async () => {
+    type Run = {
+      status: string;
+      restoredBackup?: string;
+      restoredAssets?: number;
+      checked: number;
+      stoppedBecause?: string;
+    };
+    const { body: stored } = await api.json<{ backups: Array<{ filename: string }> }>(
+      '/admin/storage/database-backups',
+    );
+    await expect(
+      api.json('/admin/storage/checks', { method: 'POST', body: { kind: 'restore_drill' } }),
+    ).resolves.toMatchObject({ status: 204 });
+
+    const drill = await eventually(
+      async () => {
+        const { body } = await api.json<{ lastRestoreDrill: Run | null }>('/admin/storage/checks');
+        expect(body.lastRestoreDrill?.status).toMatch(/^(ok|issues|failed)$/);
+        return body.lastRestoreDrill!;
+      },
+      { timeout: 120_000 },
+    );
+
+    expect(drill).toMatchObject({ status: 'ok', restoredBackup: stored.backups[0].filename });
+    expect(drill.restoredAssets).toBeGreaterThan(0);
+    expect(drill.checked).toBeGreaterThan(0);
+    // the database of the drill is gone again
+    await expect(
+      environment.query(`select datname from pg_database where datname like '%restore_drill'`),
+    ).resolves.toEqual([]);
+  });
+
   it('should copy originals and database backups to the replica, as they are stored', async () => {
     type Replicas = { replicas: Array<{ id: string; sourceFiles: number; copied: number; pending: number }> };
     const original = await getOriginal(environment, assetId);

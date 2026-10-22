@@ -1,20 +1,66 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Kysely, sql } from 'kysely';
 import { partition } from 'lodash-es';
 import { randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { join } from 'node:path';
+import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { createGunzip } from 'node:zlib';
+import type { DatabaseConnectionParams } from '@immich/sql-tools';
+import type { IStorageCheckJob } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
+import { mapNotification } from 'src/dtos/notification.dto.js';
 import { StoredDatabaseBackupListResponseDto } from 'src/dtos/storage-backup.dto.js';
-import { JobName, JobStatus, QueueName, StorageBackendRole, StorageFolder } from 'src/enum.js';
+import {
+  JobName,
+  JobStatus,
+  NotificationLevel,
+  NotificationType,
+  QueueName,
+  StorageBackendRole,
+  StorageCheckKind,
+  StorageCheckStatus,
+  StorageFolder,
+} from 'src/enum.js';
 import { BlobStore } from 'src/repositories/blob-store.js';
 import { BlobManifest, EncryptedBlobStore } from 'src/repositories/encrypted-blob-store.js';
+import { VerifiableFile } from 'src/repositories/storage-check.repository.js';
+import { DB } from 'src/schema/index.js';
+import { StorageCheckStats } from 'src/schema/tables/storage-check.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import { DatabaseBackupService, createSqlOwnerTransformStream } from 'src/services/database-backup.service.js';
+import { StorageCheckService } from 'src/services/storage-check.service.js';
 import { isValidDatabaseBackupName, isValidDatabaseRoutineBackupName } from 'src/utils/database-backups.js';
+import { getKyselyConfig } from 'src/utils/database.js';
 
 /** What an object on the backend for backups says it is, in its encrypted manifest */
 const DATABASE_BACKUP_KIND = 'database-backup';
+
+/** A restore drill runs every three months, and when an administrator starts one */
+const RESTORE_DRILL_INTERVAL_MS = 90 * 24 * 60 * 60 * 1000;
+/** Originals the restored backup records that are read back */
+const RESTORE_DRILL_SAMPLE = 20;
+
+/** The connection to another database of the same server */
+export const withDatabase = (connection: DatabaseConnectionParams, database: string): DatabaseConnectionParams => {
+  if (connection.connectionType !== 'url') {
+    return { ...connection, database };
+  }
+  if (!URL.canParse(connection.url)) {
+    throw new Error('The database URL cannot be read to connect to another database');
+  }
+  const url = new URL(connection.url);
+  url.pathname = `/${encodeURIComponent(database)}`;
+  return { ...connection, url: url.href };
+};
+
+/** The name of the database of a connection */
+export const databaseNameOf = (connection: DatabaseConnectionParams) =>
+  connection.connectionType === 'url'
+    ? decodeURIComponent(new URL(connection.url).pathname.slice(1)) || 'postgres'
+    : connection.database;
 
 export interface StoredDatabaseBackup {
   key: string;
@@ -150,6 +196,147 @@ export class StorageBackupService extends BaseService {
       await this.storageRepository.unlink(temporary).catch(() => {});
     }
     return { filename };
+  }
+
+  /**
+   * Restore the latest stored backup into a database of its own on the same server, as a disaster would need it (from
+   * the backend for backups, with the master key), check that it holds what Immich needs, and read back a sample of the
+   * originals it records: a backup is only worth something if it can be restored, and the files it records are there.
+   * The database is dropped afterwards; Immich's own is not touched.
+   */
+  @OnJob({ name: JobName.StorageRestoreDrill, queue: QueueName.BackupDatabase })
+  async handleRestoreDrill({ force }: IStorageCheckJob = {}): Promise<JobStatus> {
+    const backendId = this.storageBackendRepository.getBackendFor(StorageBackendRole.Backup);
+    if (!backendId) {
+      return JobStatus.Skipped;
+    }
+    const last = await this.storageCheckRepository.getLastRun(StorageCheckKind.RestoreDrill);
+    if (!force && last && Date.now() - new Date(last.startedAt).getTime() < RESTORE_DRILL_INTERVAL_MS) {
+      return JobStatus.Skipped;
+    }
+
+    const run = await this.storageCheckRepository.startRun(StorageCheckKind.RestoreDrill, [backendId]);
+    const stats: StorageCheckStats = { backends: [backendId], checked: 0, bytes: 0, newIssues: 0, openIssues: 0 };
+    const live = this.configRepository.getEnv().database.config;
+    const name = `${databaseNameOf(live)}_restore_drill`.slice(0, 63);
+    try {
+      const [backup] = await this.listStoredBackups(backendId);
+      if (!backup) {
+        throw new Error('There is no stored database backup to restore');
+      }
+      stats.restoredBackup = backup.filename;
+      const connection = withDatabase(live, name);
+
+      await this.databaseRepository.dropDatabase(name);
+      await this.databaseRepository.createDatabase(name);
+      await this.restoreInto(backendId, backup, connection);
+
+      const restored = new Kysely<DB>(getKyselyConfig(connection));
+      let sample: VerifiableFile[];
+      try {
+        const counts = await restored
+          .selectNoFrom((eb) => [
+            eb
+              .selectFrom('user')
+              .select((eb) => eb.fn.countAll<string>().as('count'))
+              .as('users'),
+            eb
+              .selectFrom('asset')
+              .select((eb) => eb.fn.countAll<string>().as('count'))
+              .as('assets'),
+          ])
+          .executeTakeFirstOrThrow();
+        if (Number(counts.users) === 0) {
+          throw new Error('The restored backup has no users');
+        }
+        stats.restoredAssets = Number(counts.assets);
+        sample = (await restored
+          .selectFrom('asset_original_file')
+          .select(['backendId', 'key', 'size', 'checksum', 'encryption'])
+          .where('backendId', 'is not', null)
+          .where('key', 'is not', null)
+          .orderBy(sql`random()`)
+          .limit(RESTORE_DRILL_SAMPLE)
+          .execute()) as VerifiableFile[];
+      } finally {
+        await restored.destroy();
+      }
+
+      // the files the restored records point to, read back where they are now
+      const checks = BaseService.create(StorageCheckService, this);
+      for (const file of sample) {
+        await checks.verifyFile(file, stats);
+      }
+    } catch (error) {
+      this.logger.error(`Restore drill failed: ${error}`);
+      await this.storageCheckRepository.finishRun(run.id, StorageCheckStatus.Failed, {
+        ...stats,
+        stoppedBecause: error instanceof Error ? error.message : String(error),
+      });
+      await this.notifyAdmin(error);
+      return JobStatus.Failed;
+    } finally {
+      try {
+        await this.databaseRepository.dropDatabase(name);
+      } catch (error) {
+        this.logger.warn(`Unable to drop the database of the restore drill (${name}): ${error}`);
+      }
+    }
+
+    stats.openIssues = await this.storageCheckRepository.countOpenIssues();
+    await this.storageCheckRepository.finishRun(
+      run.id,
+      stats.newIssues > 0 ? StorageCheckStatus.Issues : StorageCheckStatus.Ok,
+      stats,
+    );
+    return JobStatus.Success;
+  }
+
+  /** Read a stored backup (decrypted and verified as it is read) into psql, connected to `connection` */
+  private async restoreInto(backendId: string, backup: StoredDatabaseBackup, connection: DatabaseConnectionParams) {
+    const backups = new DatabaseBackupService(
+      this.logger,
+      this.storageRepository,
+      this.configRepository,
+      this.systemMetadataRepository,
+      this.processRepository,
+      this.databaseRepository,
+      this.userRepository,
+      this.cronRepository,
+      this.jobRepository,
+      // only for restoring Immich's own database
+      undefined as never,
+    );
+    const { bin, args, databaseUsername, databasePassword } = await backups.buildPostgresLaunchArguments('psql', {
+      singleTransaction: true,
+      connection,
+    });
+    const content = await this.storageBackendRepository
+      .getWriteStore(backendId)
+      .get(backup.key, { encryption: backup.encryption, expect: { size: backup.size, sha1: backup.sha1 } });
+    const psql = this.processRepository.spawnDuplexStream(bin, args, {
+      env: { PATH: process.env.PATH, PGPASSWORD: databasePassword },
+    });
+    // psql echoes what it runs
+    const discard = new Writable({ write: (_chunk, _encoding, done) => done() });
+    await (backup.filename.endsWith('.gz')
+      ? pipeline(content, createGunzip(), createSqlOwnerTransformStream(databaseUsername), psql, discard)
+      : pipeline(content, createSqlOwnerTransformStream(databaseUsername), psql, discard));
+  }
+
+  private async notifyAdmin(error: unknown) {
+    const admin = await this.userRepository.getAdmin();
+    if (!admin) {
+      return;
+    }
+    const notification = await this.notificationRepository.create({
+      userId: admin.id,
+      type: NotificationType.SystemMessage,
+      level: NotificationLevel.Error,
+      title: 'The restore drill failed',
+      description: `The latest stored database backup could not be restored: ${error instanceof Error ? error.message : String(error)}. See the storage page.`,
+    });
+    this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(notification));
   }
 
   private requireBackupBackend() {

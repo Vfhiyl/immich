@@ -22,6 +22,9 @@ export type StorageCheckStats = {
   openIssues: number;
   /** Why a run did not cover everything, e.g. its time limit */
   stoppedBecause?: string;
+  /** Of a restore drill: the backup restored, and the assets it records */
+  restoredBackup?: string;
+  restoredAssets?: number;
 };
 
 /** A run of a storage check: one report of the report center */

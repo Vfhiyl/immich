@@ -274,6 +274,8 @@ export class QueueService extends BaseService {
       // run every two weeks and every month, which they keep track of themselves
       { name: JobName.StorageReplicaReconcile },
       { name: JobName.StorageReplicaVerify },
+      // every three months, which it keeps track of itself
+      { name: JobName.StorageRestoreDrill },
       { name: JobName.StorageUsageSnapshot },
     ];
 

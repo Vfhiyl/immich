@@ -191,6 +191,8 @@ A replica keeps the files of each backend in a folder named after its id, under 
 
 The daily database backups (see [Backup and Restore](./backup-and-restore.md)) are also stored on the backend for backups, encrypted, and on its replicas; `databaseBackups.keepLast` of them are kept, with the same "only extend" rule as the deletion delay. Each one describes itself, so they can be listed with nothing but the bucket and the master key.
 
+Every three months (and when started on the storage page), Immich runs a **restore drill**: it restores the latest stored backup, read from the bucket with the master key as a disaster would need it, into a database of its own on the same PostgreSQL server (named after Immich's, with `_restore_drill`), checks that it holds users and photos, reads back a sample of the originals it records, and drops it again. Immich's own database is not touched. The database user needs to be allowed to create databases, as the default `postgres` user is; a drill that fails is reported on the storage page and to the administrator.
+
 `GET /api/admin/storage/database-backups` lists them, `POST /api/admin/storage/database-backups/<key>/fetch` copies one back into the backups folder, from where it is restored like any backup.
 
 ## Disaster recovery
