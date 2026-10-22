@@ -404,6 +404,7 @@ export enum SystemMetadataKey {
   IntegrityChecksumCheckpoint = 'integrity-checksum-checkpoint',
   StorageDeletionState = 'storage-deletion-state',
   SyncDeleteRetention = 'sync-delete-retention',
+  StorageBudgetReminders = 'storage-budget-reminders',
 }
 
 export enum UserMetadataKey {

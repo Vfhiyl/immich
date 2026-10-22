@@ -131,6 +131,7 @@ export const Route = {
   storage: () => '/admin/storage',
   storageIssues: () => '/admin/storage/issues',
   storageDeletedOriginals: () => '/admin/storage/deleted',
+  storageUsage: () => '/admin/storage/usage',
 
   // tags
   tags: (params?: { path?: string }) => '/tags' + asQueryString(params),

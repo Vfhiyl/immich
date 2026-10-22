@@ -241,7 +241,7 @@ With storage backends, the integrity checks of **Administration → Maintenance*
 
 ## Costs
 
-Immich counts every request to every service, by day and by what made it (a background job, or users), and records every night what each backend stores. Fill in the prices of your provider as system settings, in the configuration file (`IMMICH_CONFIG_FILE`) or through the API, to get estimates at `GET /api/admin/storage/usage`:
+Immich counts every request to every service, by day and by what made it (a background job, or users), and records every night what each backend stores. Fill in the prices of your provider in **Administration > Settings > Storage Prices** (or in the configuration file, `IMMICH_CONFIG_FILE`) to get estimates on **Administration > Storage > Usage and costs** (`GET /api/admin/storage/usage`):
 
 ```json
 {
@@ -254,7 +254,8 @@ Immich counts every request to every service, by day and by what made it (a back
         "writeRequests10k": 0.01,
         "readRequests10k": 0.01,
         "deleteRequests10k": 0,
-        "egressGb": 0
+        "egressGb": 0,
+        "monthlyBudget": 50
       }
     ]
   }
@@ -262,6 +263,8 @@ Immich counts every request to every service, by day and by what made it (a back
 ```
 
 These numbers are only an example: take the prices from the official price list of your provider and region. GiB are 2<sup>30</sup> bytes and months 30 days. Requests over the internal network usually cost the same as over the public one, but traffic does not (`egressGb: 0`). The estimates leave out discounts, free quotas, minimum storage durations and the server itself: the bill of the provider is what counts.
+
+`monthlyBudget` is optional. With one, the usage page shows what the calendar month (UTC) cost so far and will cost at that pace, and the administrator gets a notification once a month when a backend is on course to exceed its budget, and once more when it did. Nothing is paused: background jobs go on as before.
 
 ## Other settings
 

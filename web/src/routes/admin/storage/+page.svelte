@@ -62,7 +62,12 @@
 <AdminPageLayout breadcrumbs={[{ title: data.meta.title }]}>
   <Container size="large" center class="my-4 flex flex-col gap-8 pb-28">
     <section>
-      <Text size="large" fontWeight="semi-bold">{$t('admin.storage_configuration')}</Text>
+      <HStack class="justify-between">
+        <Text size="large" fontWeight="semi-bold">{$t('admin.storage_configuration')}</Text>
+        {#if data.configuration.backends.length > 0}
+          <Button size="small" href={Route.storageUsage()}>{$t('admin.storage_view_usage')}</Button>
+        {/if}
+      </HStack>
       <Text size="small" color="muted" class="mb-3">{$t('admin.storage_configuration_description')}</Text>
       {#if data.configuration.backends.length === 0}
         <Alert color="info" title={$t('admin.storage_no_backends')} />
@@ -125,6 +130,33 @@
           <Text size="small">{$t('admin.storage_last_reconcile')}: {formatRun(data.health.lastReconcile)}</Text>
           <Text size="small">{$t('admin.storage_last_verify')}: {formatRun(data.health.lastVerify)}</Text>
         </Stack>
+        {#if data.health.months.some((month) => month.runs > 0)}
+          <Text size="small" fontWeight="semi-bold" class="mt-4 mb-2">{$t('admin.storage_monthly_report')}</Text>
+          <Table striped spacing="tiny">
+            <TableHeader>
+              <TableHeading>{$t('admin.storage_month')}</TableHeading>
+              <TableHeading>{$t('admin.storage_month_runs')}</TableHeading>
+              <TableHeading>{$t('admin.storage_month_verified')}</TableHeading>
+              <TableHeading>{$t('admin.storage_month_reported')}</TableHeading>
+              <TableHeading>{$t('admin.storage_month_resolved')}</TableHeading>
+            </TableHeader>
+            <TableBody>
+              {#each [...data.health.months].reverse() as month (month.month)}
+                <TableRow>
+                  <TableCell>{month.month}</TableCell>
+                  <TableCell>
+                    {month.runs}{month.runsWithProblems > 0
+                      ? ` (${$t('admin.storage_month_with_problems', { values: { count: month.runsWithProblems } })})`
+                      : ''}
+                  </TableCell>
+                  <TableCell>{getByteUnitString(month.bytesVerified)}</TableCell>
+                  <TableCell>{month.issuesReported}</TableCell>
+                  <TableCell>{month.issuesResolved}</TableCell>
+                </TableRow>
+              {/each}
+            </TableBody>
+          </Table>
+        {/if}
       </section>
     {/if}
 

@@ -14,6 +14,7 @@
   import NotificationSettings from './NotificationSettings.svelte';
   import ServerSettings from './ServerSettings.svelte';
   import StorageTemplateSettings from '$lib/components/admin-settings/StorageTemplateSettings.svelte';
+  import StoragePricingSettings from './StoragePricingSettings.svelte';
   import ThemeSettings from './ThemeSettings.svelte';
   import TrashSettings from './TrashSettings.svelte';
   import UserSettings from './UserSettings.svelte';
@@ -29,6 +30,7 @@
     mdiBackupRestore,
     mdiBellOutline,
     mdiBookshelf,
+    mdiCashMultiple,
     mdiClockOutline,
     mdiDatabaseOutline,
     mdiFileCheckOutline,
@@ -153,6 +155,13 @@
       subtitle: $t('admin.server_settings_description'),
       key: 'server',
       icon: mdiServerOutline,
+    },
+    {
+      component: StoragePricingSettings,
+      title: $t('admin.storage_pricing_settings'),
+      subtitle: $t('admin.storage_pricing_settings_description'),
+      key: 'storage-pricing',
+      icon: mdiCashMultiple,
     },
     {
       component: StorageTemplateSettings,

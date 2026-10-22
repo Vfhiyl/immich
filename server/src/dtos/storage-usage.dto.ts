@@ -57,12 +57,27 @@ const StoragePurposeUsageSchema = z
   })
   .meta({ id: 'StoragePurposeUsageDto' });
 
+const StorageBudgetSchema = z
+  .object({
+    month: z.string().describe('The current calendar month (UTC), as YYYY-MM'),
+    currency: z.string(),
+    amount: z.number().nonnegative().meta({ format: 'double' }).describe('The budget for the month'),
+    monthToDate: z.number().nonnegative().meta({ format: 'double' }).describe('Estimated cost of the month so far'),
+    projected: z
+      .number()
+      .nonnegative()
+      .meta({ format: 'double' })
+      .describe('Estimated cost of the whole month, at the pace so far'),
+  })
+  .meta({ id: 'StorageBudgetDto' });
+
 const StorageBackendUsageSchema = z
   .object({
     backendId: z.string(),
     days: z.array(StorageDailyUsageSchema),
     purposes: z.array(StoragePurposeUsageSchema).describe('Requests over the whole range, by what made them'),
     cost: StorageCostSchema.nullable(),
+    budget: StorageBudgetSchema.nullable().describe('The budget of the backend for this month; null without one'),
   })
   .meta({ id: 'StorageBackendUsageDto' });
 
@@ -78,3 +93,4 @@ export class StorageUsageQueryDto extends createZodDto(StorageUsageQuerySchema) 
 export class StorageUsageResponseDto extends createZodDto(StorageUsageResponseSchema) {}
 export type StorageCostDto = z.infer<typeof StorageCostSchema>;
 export type StorageBackendUsageDto = z.infer<typeof StorageBackendUsageSchema>;
+export type StorageBudgetDto = z.infer<typeof StorageBudgetSchema>;

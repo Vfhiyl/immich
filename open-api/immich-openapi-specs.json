@@ -20767,6 +20767,14 @@
             "minimum": 0,
             "type": "number"
           },
+          "monthlyBudget": {
+            "default": null,
+            "description": "Budget for a calendar month (UTC); administrators are reminded when it would be exceeded",
+            "format": "double",
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
+          },
           "readRequests10k": {
             "description": "Price of 10,000 read requests (GET, HEAD)",
             "format": "double",
@@ -31164,6 +31172,15 @@
           "backendId": {
             "type": "string"
           },
+          "budget": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageBudgetDto"
+              }
+            ],
+            "description": "The budget of the backend for this month; null without one",
+            "nullable": true
+          },
           "cost": {
             "allOf": [
               {
@@ -31188,9 +31205,47 @@
         },
         "required": [
           "backendId",
+          "budget",
           "cost",
           "days",
           "purposes"
+        ],
+        "type": "object"
+      },
+      "StorageBudgetDto": {
+        "properties": {
+          "amount": {
+            "description": "The budget for the month",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "month": {
+            "description": "The current calendar month (UTC), as YYYY-MM",
+            "type": "string"
+          },
+          "monthToDate": {
+            "description": "Estimated cost of the month so far",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "projected": {
+            "description": "Estimated cost of the whole month, at the pace so far",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "amount",
+          "currency",
+          "month",
+          "monthToDate",
+          "projected"
         ],
         "type": "object"
       },

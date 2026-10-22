@@ -597,6 +597,8 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.StorageDeletionState]: StorageDeletionState;
   [SystemMetadataKey.SyncDeleteRetention]: SyncDeleteRetentionState;
+  /** The reminders about budgets sent, by backend: `<month>:projected` and `<month>:exceeded` */
+  [SystemMetadataKey.StorageBudgetReminders]: Record<string, string[]>;
 }
 
 export type UserPreferences = {

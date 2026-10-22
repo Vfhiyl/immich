@@ -1,4 +1,11 @@
-import { JobStatus, StorageBackendDriver, StorageBackendRole, StorageUsageCategory } from 'src/enum.js';
+import {
+  JobStatus,
+  NotificationLevel,
+  StorageBackendDriver,
+  StorageBackendRole,
+  StorageUsageCategory,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { StoragePriceClass, StorageUsageService, toPriceClass } from 'src/services/storage-usage.service.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -117,5 +124,126 @@ describe(StorageUsageService.name, () => {
     });
 
     await expect(sut.getUsage({ from: '2026-10-22', to: '2026-10-21' })).rejects.toThrow('starts after it ends');
+  });
+
+  /** 10 GiB stored on each of the first `days` days of October, which costs 1 a day */
+  const store = (days: number) =>
+    mocks.storageUsage.getStored.mockImplementation((from: string, to: string) =>
+      Promise.resolve(
+        Array.from({ length: days }, (_, i) => `2026-10-${String(i + 1).padStart(2, '0')}`)
+          .filter((day) => day >= from && day <= to)
+          .map((day) => ({
+            day,
+            backendId: 'originals',
+            category: StorageUsageCategory.Files,
+            objects: 1,
+            bytes: 10 * GIB,
+          })),
+      ),
+    );
+
+  describe('budgets', () => {
+    const pricing = {
+      backendId: 'originals',
+      currency: 'CNY',
+      storageGbMonth: 3,
+      writeRequests10k: 0,
+      readRequests10k: 0,
+      deleteRequests10k: 0,
+      egressGb: 0,
+    };
+    let reminders: Record<string, string[]> | null;
+    let budget: number | null;
+
+    beforeEach(() => {
+      vi.useFakeTimers({ now: new Date('2026-10-10T12:00:00.000Z'), toFake: ['Date'] });
+      reminders = null;
+      budget = 20;
+      mocks.systemMetadata.get.mockImplementation((key: SystemMetadataKey) =>
+        Promise.resolve(
+          key === SystemMetadataKey.SystemConfig
+            ? { storagePricing: { backends: [{ ...pricing, monthlyBudget: budget }] } }
+            : key === SystemMetadataKey.StorageBudgetReminders
+              ? reminders
+              : null,
+        ),
+      );
+      mocks.systemMetadata.set.mockImplementation((_key: SystemMetadataKey, value: unknown) => {
+        reminders = value as Record<string, string[]>;
+        return Promise.resolve();
+      });
+      mocks.storageUsage.getRequests.mockResolvedValue([]);
+      mocks.user.getAdmin.mockResolvedValue({ id: 'admin-id' } as never);
+      mocks.notification.create.mockResolvedValue({ id: 'notification-id', createdAt: new Date() } as never);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('should tell what the month cost so far, and will cost at that pace', async () => {
+      store(10);
+
+      const { backends } = await sut.getUsage({ from: '2026-10-09', to: '2026-10-10' });
+
+      // 10 days at 1 a day so far; the 31 days of October at that pace
+      expect(backends[0].budget).toEqual({
+        month: '2026-10',
+        currency: 'CNY',
+        amount: 20,
+        monthToDate: 10,
+        projected: 31,
+      });
+      // the range asked for is still the range shown
+      expect(backends[0].days.map(({ day }) => day)).toEqual(['2026-10-09', '2026-10-10']);
+    });
+
+    it('should have no budget without one in the settings', async () => {
+      budget = null;
+      store(10);
+
+      const { backends } = await sut.getUsage({});
+
+      expect(backends[0].budget).toBeNull();
+    });
+
+    it('should remind once a month when the budget would be exceeded, and once more when it is', async () => {
+      store(10);
+      await sut.handleSnapshot();
+      await sut.handleSnapshot();
+
+      expect(mocks.notification.create).toHaveBeenCalledOnce();
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'admin-id',
+          level: NotificationLevel.Warning,
+          title: 'Storage backend originals is on course to exceed its budget',
+          description: expect.stringContaining('31.00 CNY, over the budget of 20.00 CNY'),
+        }),
+      );
+
+      vi.setSystemTime(new Date('2026-10-25T12:00:00.000Z'));
+      store(25);
+      await sut.handleSnapshot();
+      await sut.handleSnapshot();
+
+      expect(mocks.notification.create).toHaveBeenCalledTimes(2);
+      expect(mocks.notification.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          level: NotificationLevel.Error,
+          title: 'Storage backend originals exceeded its budget',
+        }),
+      );
+      expect(reminders).toEqual({ originals: ['2026-10:projected', '2026-10:exceeded'] });
+    });
+
+    it('should not remind within the budget', async () => {
+      store(5);
+      vi.setSystemTime(new Date('2026-10-30T12:00:00.000Z'));
+
+      await sut.handleSnapshot();
+
+      expect(mocks.notification.create).not.toHaveBeenCalled();
+    });
   });
 });

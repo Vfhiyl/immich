@@ -671,6 +671,7 @@ describe('storage backends on an S3 service', () => {
         days: Array<{ requests: { write: number; read: number }; bytesSent: number }>;
         purposes: Array<{ purpose: string }>;
         cost: { currency: string; total: number } | null;
+        budget: { amount: number; monthToDate: number; projected: number } | null;
       }>;
     };
     // the prices are part of the system settings, here in the configuration file
@@ -680,7 +681,9 @@ describe('storage backends on an S3 service', () => {
       environment.configFile,
       JSON.stringify({
         ...config,
-        storagePricing: { backends: [{ backendId: 'originals', ...prices, deleteRequests10k: 0, egressGb: 0.5 }] },
+        storagePricing: {
+          backends: [{ backendId: 'originals', ...prices, deleteRequests10k: 0, egressGb: 0.5, monthlyBudget: 100 }],
+        },
       }),
     );
     await server.stop();
@@ -699,9 +702,15 @@ describe('storage backends on an S3 service', () => {
     const originals = body.backends.find(({ backendId }) => backendId === 'originals');
     expect(originals?.days.some(({ requests, bytesSent }) => requests.write > 0 && bytesSent > 0)).toBe(true);
     expect(originals?.cost).toMatchObject({ currency: 'CNY', total: expect.any(Number) });
+    expect(originals?.budget).toMatchObject({
+      amount: 100,
+      monthToDate: expect.any(Number),
+      projected: expect.any(Number),
+    });
     const replica = body.backends.find(({ backendId }) => backendId === 'replica');
     expect(replica?.days.some(({ requests }) => requests.write > 0)).toBe(true);
     expect(replica?.cost).toBeNull();
+    expect(replica?.budget).toBeNull();
   });
 
   it('should export the originals with their metadata, from the database or from the objects alone', async () => {

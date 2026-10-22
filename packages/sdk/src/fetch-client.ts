@@ -382,6 +382,8 @@ export type AdminConfigStorageBackendPricingDto = {
     deleteRequests10k: number;
     /** Price of reading 1 GiB from the service to the server */
     egressGb: number;
+    /** Budget for a calendar month (UTC); administrators are reminded when it would be exceeded */
+    monthlyBudget?: number | null;
     /** Price of 10,000 read requests (GET, HEAD) */
     readRequests10k: number;
     /** Price of storing 1 GiB for a month */
@@ -752,6 +754,17 @@ export type StorageReplicaRetryResponseDto = {
     /** Copies that are tried again now */
     count: number;
 };
+export type StorageBudgetDto = {
+    /** The budget for the month */
+    amount: number;
+    currency: string;
+    /** The current calendar month (UTC), as YYYY-MM */
+    month: string;
+    /** Estimated cost of the month so far */
+    monthToDate: number;
+    /** Estimated cost of the whole month, at the pace so far */
+    projected: number;
+};
 export type StorageCostDto = {
     /** Currency of the prices */
     currency: string;
@@ -804,6 +817,8 @@ export type StoragePurposeUsageDto = {
 };
 export type StorageBackendUsageDto = {
     backendId: string;
+    /** The budget of the backend for this month; null without one */
+    budget: (StorageBudgetDto) | null;
     cost: (StorageCostDto) | null;
     days: StorageDailyUsageDto[];
     /** Requests over the whole range, by what made them */

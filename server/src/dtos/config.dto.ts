@@ -382,6 +382,10 @@ const AdminConfigSchemaWithVisibility = z
                 readRequests10k: price.describe('Price of 10,000 read requests (GET, HEAD)'),
                 deleteRequests10k: price.describe('Price of 10,000 delete requests'),
                 egressGb: price.describe('Price of reading 1 GiB from the service to the server'),
+                monthlyBudget: price
+                  .nullable()
+                  .default(null)
+                  .describe('Budget for a calendar month (UTC); administrators are reminded when it would be exceeded'),
               })
               .meta({ id: 'AdminConfigStorageBackendPricingDto' }),
           )
