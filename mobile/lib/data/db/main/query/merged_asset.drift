@@ -86,6 +86,98 @@ AND NOT EXISTS (
 ORDER BY created_at DESC
 LIMIT $limit;
 
+-- A page of the main timeline from the photos taken before :before (as stored, i.e. compared as text), skipping
+-- :skip of them: in a total order (created_at DESC, sort_id DESC, source) that the timeline indexes
+-- (ext_idx_*_timeline, see timeline_index.dart) give without sorting. The owner is left out of the index search
+-- (+owner_id), so that the index of the order is used.
+mergedAssetPage(:before AS TEXT, :count AS INTEGER, :skip AS INTEGER):
+SELECT
+	rae.id as remote_id,
+	(SELECT lae.id FROM local_asset_entity lae WHERE lae.checksum = rae.checksum LIMIT 1) as local_id,
+	rae.name,
+	rae."type",
+	rae.created_at as created_at,
+	rae.updated_at,
+	rae.width,
+	rae.height,
+	rae.duration_ms,
+	rae.is_favorite,
+	rae.thumb_hash,
+	rae.checksum,
+	rae.owner_id,
+	rae.live_photo_video_id,
+	0 as orientation,
+	rae.stack_id,
+	NULL as i_cloud_id,
+	NULL as latitude,
+	NULL as longitude,
+	NULL as adjustmentTime,
+	rae.is_edited,
+	0 as playback_style,
+	rae.uploaded_at,
+	rae.id as sort_id,
+	0 as source
+FROM
+	remote_asset_entity rae
+LEFT JOIN
+	stack_entity se ON rae.stack_id = se.id
+WHERE
+	rae.deleted_at IS NULL
+	AND rae.visibility = 0 -- timeline visibility
+	AND +rae.owner_id IN :user_ids
+	AND (
+		rae.stack_id IS NULL
+		OR rae.id = se.primary_asset_id
+	)
+	AND rae.created_at < :before
+
+UNION ALL
+
+SELECT
+	NULL as remote_id,
+	lae.id as local_id,
+	lae.name,
+	lae."type",
+	lae.created_at as created_at,
+	lae.updated_at,
+	lae.width,
+	lae.height,
+	lae.duration_ms,
+	lae.is_favorite,
+	NULL as thumb_hash,
+	lae.checksum,
+	NULL as owner_id,
+	NULL as live_photo_video_id,
+	lae.orientation,
+	NULL as stack_id,
+	lae.i_cloud_id,
+	lae.latitude,
+	lae.longitude,
+	lae.adjustment_time,
+	0 as is_edited,
+	lae.playback_style,
+	NULL as uploaded_at,
+	lae.id as sort_id,
+	1 as source
+FROM
+	local_asset_entity lae
+WHERE NOT EXISTS (
+	SELECT 1 FROM remote_asset_entity rae WHERE rae.checksum = lae.checksum AND rae.owner_id IN :user_ids
+)
+AND EXISTS (
+	SELECT 1 FROM local_album_asset_entity laa
+	INNER JOIN local_album_entity la on laa.album_id = la.id
+	WHERE laa.asset_id = lae.id AND la.backup_selection = 0 -- selected
+)
+AND NOT EXISTS (
+    SELECT 1 FROM local_album_asset_entity laa
+    INNER JOIN local_album_entity la on laa.album_id = la.id
+    WHERE laa.asset_id = lae.id AND la.backup_selection = 2 -- excluded
+)
+AND lae.created_at < :before
+ORDER BY created_at DESC, sort_id DESC, source
+LIMIT :count OFFSET :skip;
+
 mergedBucket(:group_by AS INTEGER):
 SELECT
 	COUNT(*) as asset_count,

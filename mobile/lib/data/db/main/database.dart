@@ -37,6 +37,7 @@ import 'package:immich_mobile/data/db/main/table/user/auth_user.dart';
 import 'package:immich_mobile/data/db/main/table/user/metadata.dart';
 import 'package:immich_mobile/data/db/main/table/user/partner.dart';
 import 'package:immich_mobile/data/db/main/table/user/user.dart';
+import 'package:immich_mobile/data/db/main/timeline_index.dart';
 import 'package:immich_mobile/infrastructure/repositories/backup.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/local_album.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/local_asset.repository.dart';
@@ -401,6 +402,8 @@ class Drift extends $Drift {
       await customStatement('PRAGMA busy_timeout = 30000'); // 30s
       await customStatement('PRAGMA cache_size = -32000'); // 32MB
       await customStatement('PRAGMA temp_store = MEMORY');
+      await TimelineIndex.configureConnection(this);
+      await TimelineIndex.ensure(this);
     },
   );
 }

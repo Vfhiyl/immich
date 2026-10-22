@@ -11,6 +11,7 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/map.model.dart';
 import 'package:immich_mobile/domain/models/timeline.model.dart';
 import 'package:immich_mobile/domain/services/timeline.service.dart';
+import 'package:immich_mobile/infrastructure/repositories/main_timeline.dart';
 import 'package:immich_mobile/infrastructure/repositories/map.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/timeline.repository.drift.dart';
 import 'package:stream_transform/stream_transform.dart';
@@ -33,69 +34,16 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
         .map((users) => users..add(userId));
   }
 
-  TimelineQuery main(List<String> userIds, GroupAssetsBy groupBy) => (
-    bucketSource: () => _watchMainBucket(userIds, groupBy: groupBy),
-    assetSource: (offset, count) => _getMainBucketAssets(userIds, offset: offset, count: count),
-    origin: TimelineOrigin.main,
-  );
-
-  Stream<List<Bucket>> _watchMainBucket(List<String> userIds, {GroupAssetsBy groupBy = GroupAssetsBy.day}) {
+  TimelineQuery main(List<String> userIds, GroupAssetsBy groupBy) {
     if (groupBy == GroupAssetsBy.none) {
       throw UnsupportedError("GroupAssetsBy.none is not supported for watchMainBucket");
     }
-
-    return _db.mergedAssetDrift.mergedBucket(userIds: userIds, groupBy: groupBy.index).map((row) {
-      final date = row.bucketDate.truncateDate(groupBy);
-      return TimeBucket(date: date, assetCount: row.assetCount);
-    }).watch();
-  }
-
-  Future<List<BaseAsset>> _getMainBucketAssets(List<String> userIds, {required int offset, required int count}) {
-    return _db.mergedAssetDrift
-        .mergedAsset(userIds: userIds, limit: (_) => Limit(count, offset))
-        .map(
-          (row) => row.remoteId != null && row.ownerId != null
-              ? RemoteAsset(
-                  id: row.remoteId!,
-                  localId: row.localId,
-                  name: row.name,
-                  ownerId: row.ownerId!,
-                  checksum: row.checksum,
-                  type: row.type,
-                  createdAt: row.createdAt,
-                  updatedAt: row.updatedAt,
-                  uploadedAt: row.uploadedAt,
-                  thumbHash: row.thumbHash,
-                  width: row.width,
-                  height: row.height,
-                  isFavorite: row.isFavorite,
-                  durationMs: row.durationMs,
-                  livePhotoVideoId: row.livePhotoVideoId,
-                  stackId: row.stackId,
-                  isEdited: row.isEdited,
-                )
-              : LocalAsset(
-                  id: row.localId!,
-                  remoteId: row.remoteId,
-                  name: row.name,
-                  checksum: row.checksum,
-                  type: row.type,
-                  createdAt: row.createdAt,
-                  updatedAt: row.updatedAt,
-                  width: row.width,
-                  height: row.height,
-                  isFavorite: row.isFavorite,
-                  durationMs: row.durationMs,
-                  orientation: row.orientation,
-                  playbackStyle: AssetPlaybackStyle.values[row.playbackStyle],
-                  cloudId: row.iCloudId,
-                  latitude: row.latitude,
-                  longitude: row.longitude,
-                  adjustmentTime: row.adjustmentTime,
-                  isEdited: row.isEdited,
-                ),
-        )
-        .get();
+    final timeline = MainTimeline(_db, userIds);
+    return (
+      bucketSource: () => timeline.watchBuckets(groupBy),
+      assetSource: (offset, count) => timeline.getAssets(offset: offset, count: count),
+      origin: TimelineOrigin.main,
+    );
   }
 
   TimelineQuery localAlbum(String albumId, GroupAssetsBy groupBy) => (

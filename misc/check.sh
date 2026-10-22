@@ -142,6 +142,10 @@ mobile_format() {
 mobile_analyze() { cd "$mobile" && dart analyze --fatal-infos; }
 # in English, like the web app
 mobile_unit() { cd "$mobile" && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 flutter test --reporter=compact; }
+# the main timeline with 400 000 server photos: a page anywhere in milliseconds
+mobile_timeline_scale() {
+  cd "$mobile" && IMMICH_TIMELINE_SCALE=400000 flutter test test/medium/scale/main_timeline_scale_test.dart
+}
 # the native code of the Android app: its unit tests, and the app built (with the Dart code compiled into it)
 mobile_android() {
   : "${ANDROID_HOME:?set ANDROID_HOME to the Android SDK}"
@@ -221,6 +225,7 @@ step 'mobile: generated code' mobile_codegen
 step 'mobile: formatting' mobile_format
 step 'mobile: analysis' mobile_analyze
 step 'mobile: unit tests' mobile_unit
+step 'mobile: timeline at scale' mobile_timeline_scale
 step 'mobile: Android app' mobile_android
 if [[ "$quick" == false ]]; then
   step 'server: medium tests' medium
