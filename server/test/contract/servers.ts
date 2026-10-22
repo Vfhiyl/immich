@@ -16,18 +16,39 @@ export interface S3Target {
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
+  /** Services started for the tests are addressed by path; a real service may need virtual hosts */
+  addressing?: 'path' | 'virtual-host';
+  /** A real service: objects the tests leave are removed afterwards */
+  isReal?: boolean;
 }
 
-export const freePort = () =>
-  new Promise<number>((resolve, reject) => {
+const isFree = (port: number) =>
+  new Promise<boolean>((resolve) => {
     const server = createServer();
-    server.once('error', reject);
-    // below 50000, so that ports derived by adding 10000 stay valid
-    server.listen(10_000 + Math.floor(Math.random() * 40_000), '127.0.0.1', () => {
-      const { port } = server.address() as { port: number };
-      server.close(() => resolve(port));
-    });
+    server.once('error', () => resolve(false));
+    server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));
   });
+
+const handedOut = new Set<number>();
+
+/**
+ * A port that is free, and so is the port 10000 above it (services such as SeaweedFS derive their gRPC ports that way),
+ * that no other service of this run was given; ports picked at random are tried until one is
+ */
+export const freePort = async (): Promise<number> => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    // below 50000, so that ports derived by adding 10000 stay valid
+    const port = 10_000 + Math.floor(Math.random() * 40_000);
+    if (handedOut.has(port) || handedOut.has(port + 10_000) || handedOut.has(port - 10_000)) {
+      continue;
+    }
+    if ((await isFree(port)) && (await isFree(port + 10_000))) {
+      handedOut.add(port);
+      return port;
+    }
+  }
+  throw new Error('No free port found');
+};
 
 export class RunningService {
   constructor(
@@ -88,7 +109,7 @@ export const toBackendOptions = (target: S3Target, prefix = ''): S3BackendOption
   region: target.region,
   bucket: target.bucket,
   prefix,
-  addressing: 'path',
+  addressing: target.addressing ?? 'path',
   credentials: { type: 'chain' },
 });
 
