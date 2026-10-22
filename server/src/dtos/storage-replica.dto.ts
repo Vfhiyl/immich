@@ -20,6 +20,7 @@ const StorageReplicaListResponseSchema = z
   .object({
     replicas: z.array(StorageReplicaSchema),
     lastReconcileAt: z.string().nullable().describe('When the replicas were last reconciled'),
+    lastVerifyAt: z.string().nullable().describe('When a sample of the copies was last read back and verified'),
   })
   .meta({ id: 'StorageReplicaListResponseDto' });
 

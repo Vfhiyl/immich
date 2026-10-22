@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buffer } from 'node:stream/consumers';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { JobStatus, StorageBackendDriver, StorageBackendRole, StorageIssueKind } from 'src/enum.js';
+import { JobStatus, StorageBackendDriver, StorageBackendRole, StorageCheckKind, StorageIssueKind } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -129,6 +129,7 @@ describe(StorageReplicaService.name, () => {
         expect.objectContaining({ id: 'copy', replicaOf: ['originals'], sourceFiles: 1, copied: 1, pending: 0 }),
       ],
       lastReconcileAt: null,
+      lastVerifyAt: null,
     });
 
     // the backend lost, the replica takes its place: the same records read the same file there
@@ -241,5 +242,50 @@ describe(StorageReplicaService.name, () => {
     await original(randomBytes(10));
     await expect(checks.handleReplicaReconcile()).resolves.toBe(JobStatus.Success);
     await expect(checks.handleReplicaReconcile()).resolves.toBe(JobStatus.Skipped);
+  });
+
+  it('should read a sample of the copies back every month, and copy again one that is damaged', async () => {
+    const { sut, db, original, copyPath, checks } = await setup();
+    const files = [];
+    for (let i = 0; i < 3; i++) {
+      files.push(await original(randomBytes(10_000)));
+    }
+    await sut.handleReplicate();
+    // one copy damaged on the replica (encrypted, so a changed byte fails its authentication)
+    const damaged = files[1].stored.key;
+    const copy = await fs.readFile(copyPath(damaged));
+    copy[Math.floor(copy.length / 2)] ^= 0xff;
+    await fs.writeFile(copyPath(damaged), copy);
+
+    await expect(checks.handleReplicaVerify({ force: true })).resolves.toBe(JobStatus.Success);
+
+    const [run] = await db
+      .selectFrom('storage_check_run')
+      .selectAll()
+      .where('kind', '=', StorageCheckKind.ReplicaVerify)
+      .execute();
+    expect(run.stats).toMatchObject({ backends: ['copy'], checked: 3 });
+    await expect(
+      db.selectFrom('storage_issue').select(['backendId', 'key', 'kind', 'resolvedAt']).execute(),
+    ).resolves.toEqual([
+      { backendId: 'copy', key: `originals/${damaged}`, kind: StorageIssueKind.Corrupt, resolvedAt: null },
+    ]);
+    // copied again from the original
+    await sut.handleReplicate();
+    await expect(fs.readFile(copyPath(damaged))).resolves.toEqual(await fs.readFile(join(root, 'originals', damaged)));
+    await expect(sut.getReplicas()).resolves.toMatchObject({ lastVerifyAt: expect.any(String) });
+
+    // verified again: nothing wrong any more
+    await checks.handleReplicaVerify({ force: true });
+    await expect(db.selectFrom('storage_issue').select('resolvedAt').executeTakeFirst()).resolves.toEqual({
+      resolvedAt: expect.any(Date),
+    });
+  });
+
+  it('should only read the replicas back every month', async () => {
+    const { checks, original } = await setup();
+    await original(randomBytes(10));
+    await expect(checks.handleReplicaVerify()).resolves.toBe(JobStatus.Success);
+    await expect(checks.handleReplicaVerify()).resolves.toBe(JobStatus.Skipped);
   });
 });

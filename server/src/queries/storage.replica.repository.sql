@@ -251,16 +251,27 @@ where
 limit
   $6
 
--- StorageReplicaRepository.requeue
-update "storage_replica_copy"
-set
-  "completedAt" = $1,
-  "size" = $2,
-  "attempts" = $3,
-  "nextAttemptAt" = $4,
-  "leaseUntil" = $5,
-  "lastError" = $6
+-- StorageReplicaRepository.countCopies
+select
+  count(*) as "count"
+from
+  "storage_replica_copy"
 where
-  "replicaBackendId" = $7
-  and "sourceBackendId" = $8
-  and "key" in ($9)
+  "replicaBackendId" = $1
+  and "sourceBackendId" = $2
+  and "completedAt" is not null
+
+-- StorageReplicaRepository.sampleCopies
+select
+  "key",
+  "size"
+from
+  "storage_replica_copy"
+where
+  "replicaBackendId" = $1
+  and "sourceBackendId" = $2
+  and "completedAt" is not null
+order by
+  random()
+limit
+  $3

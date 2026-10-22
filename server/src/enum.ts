@@ -678,6 +678,8 @@ export enum StorageCheckKind {
   Verify = 'verify',
   /** Listing each replica and comparing it with the copies that are recorded */
   ReplicaReconcile = 'replica_reconcile',
+  /** Reading a sample of the copies on each replica back, decrypting them and comparing their checksum */
+  ReplicaVerify = 'replica_verify',
 }
 
 export enum StorageCheckStatus {
@@ -970,6 +972,7 @@ export enum JobName {
   StorageVerify = 'StorageVerify',
   StorageReplicate = 'StorageReplicate',
   StorageReplicaReconcile = 'StorageReplicaReconcile',
+  StorageReplicaVerify = 'StorageReplicaVerify',
   StorageUsageSnapshot = 'StorageUsageSnapshot',
   AssetGenerateThumbnailsQueueAll = 'AssetGenerateThumbnailsQueueAll',
   AssetGenerateThumbnails = 'AssetGenerateThumbnails',

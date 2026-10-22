@@ -715,6 +715,8 @@ export type StorageDeletionPurgeDto = {
 export type StorageReplicaListResponseDto = {
     /** When the replicas were last reconciled */
     lastReconcileAt: string | null;
+    /** When a sample of the copies was last read back and verified */
+    lastVerifyAt: string | null;
     replicas: {
         /** Files copied to the replica */
         copied: number;
@@ -8632,7 +8634,8 @@ export enum StorageBackendRole {
 export enum StorageCheckKind {
     Reconcile = "reconcile",
     Verify = "verify",
-    ReplicaReconcile = "replica_reconcile"
+    ReplicaReconcile = "replica_reconcile",
+    ReplicaVerify = "replica_verify"
 }
 export enum StorageCheckStatus {
     Running = "running",
@@ -9013,6 +9016,7 @@ export enum JobName {
     StorageVerify = "StorageVerify",
     StorageReplicate = "StorageReplicate",
     StorageReplicaReconcile = "StorageReplicaReconcile",
+    StorageReplicaVerify = "StorageReplicaVerify",
     StorageUsageSnapshot = "StorageUsageSnapshot",
     AssetGenerateThumbnailsQueueAll = "AssetGenerateThumbnailsQueueAll",
     AssetGenerateThumbnails = "AssetGenerateThumbnails",

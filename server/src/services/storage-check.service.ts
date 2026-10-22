@@ -47,6 +47,14 @@ const NEW_FILE_DELAY_MS = 24 * 60 * 60 * 1000;
 
 /** Replicas are listed every two weeks: they are only read when a backend is lost, and listing is not free */
 const REPLICA_RECONCILE_INTERVAL_MS = 14 * 24 * 60 * 60 * 1000;
+/**
+ * A sample of the copies on each replica is read back and decrypted every month: listing only shows that a copy is
+ * there and of the right size, not that it can be restored
+ */
+const REPLICA_VERIFY_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
+/** 1 % of the copies, but at least this many (all of them when there are fewer) */
+const REPLICA_SAMPLE_SHARE = 0.01;
+const REPLICA_SAMPLE_MIN = 100;
 /** Originals looked at per round trip when registering the copies that are missing */
 const REGISTER_BATCH_SIZE = 10_000;
 
@@ -187,6 +195,105 @@ export class StorageCheckService extends BaseService {
   }
 
   /**
+   * Read a sample of the copies on each replica back, decrypt them and compare their checksum with what is recorded of
+   * the files they copy; a copy that fails is reported and made again
+   */
+  @OnJob({ name: JobName.StorageReplicaVerify, queue: QueueName.IntegrityCheck })
+  async handleReplicaVerify({ force }: IStorageCheckJob = {}): Promise<JobStatus> {
+    const sources = this.storageBackendRepository
+      .getReplicaSources()
+      .filter(({ role }) => TRACKED_REPLICA_ROLES.has(role));
+    if (sources.length === 0) {
+      return JobStatus.Skipped;
+    }
+
+    const last = await this.storageCheckRepository.getLastRun(StorageCheckKind.ReplicaVerify);
+    if (!force && last && Date.now() - new Date(last.startedAt).getTime() < REPLICA_VERIFY_INTERVAL_MS) {
+      return JobStatus.Skipped;
+    }
+
+    const replicas = [...new Set(sources.map(({ replicaBackendId }) => replicaBackendId))];
+    const run = await this.storageCheckRepository.startRun(StorageCheckKind.ReplicaVerify, replicas);
+    const stats: StorageCheckStats = { backends: replicas, checked: 0, bytes: 0, newIssues: 0, openIssues: 0 };
+    try {
+      for (const source of sources) {
+        await this.verifyReplicaSample(source, stats);
+      }
+    } catch (error) {
+      this.logger.error(`Verification of replicas failed: ${error}`);
+      await this.storageCheckRepository.finishRun(run.id, StorageCheckStatus.Failed, {
+        ...stats,
+        stoppedBecause: String(error),
+      });
+      throw error;
+    }
+
+    await this.finish(run.id, stats);
+    return JobStatus.Success;
+  }
+
+  private async verifyReplicaSample(source: ReplicaSource, stats: StorageCheckStats) {
+    const { replicaBackendId, sourceBackendId } = source;
+    const total = await this.storageReplicaRepository.countCopies(source);
+    const size = Math.min(total, Math.max(REPLICA_SAMPLE_MIN, Math.ceil(total * REPLICA_SAMPLE_SHARE)));
+    const copies = await this.storageReplicaRepository.sampleCopies(source, size);
+    const recorded = await this.storageCheckRepository.getRecordedFiles(
+      sourceBackendId,
+      copies.map(({ key }) => key),
+    );
+
+    const corrupt: string[] = [];
+    for (const file of recorded) {
+      // issues of a replica are reported with their key on it, in the folder of their backend
+      const key = `${sourceBackendId}/${file.key}`;
+      const now = new Date();
+      try {
+        const blob = this.storageBackendRepository.resolve({ path: file.key, ...file });
+        if (!('blob' in blob)) {
+          continue;
+        }
+        const store = file.encryption
+          ? this.storageBackendRepository.getEncryptedReplicaStore(replicaBackendId, sourceBackendId)
+          : this.storageBackendRepository.getReplicaStore(replicaBackendId, sourceBackendId);
+        for await (const chunk of (await readBlob({ ...blob.blob, store })) as AsyncIterable<Buffer>) {
+          stats.bytes += chunk.length;
+        }
+        stats.checked++;
+        await this.storageCheckRepository.resolveIssues(replicaBackendId, key, [
+          StorageIssueKind.Corrupt,
+          StorageIssueKind.Unreadable,
+        ]);
+      } catch (error) {
+        stats.checked++;
+        const kind = error instanceof BlobIntegrityError ? StorageIssueKind.Corrupt : StorageIssueKind.Unreadable;
+        if (kind === StorageIssueKind.Corrupt) {
+          corrupt.push(file.key);
+        }
+        this.logger.warn(
+          `Verifying the copy of ${sourceBackendId}:${file.key} on ${replicaBackendId} failed: ${error}`,
+        );
+        stats.newIssues += await this.storageCheckRepository.recordSightings(
+          replicaBackendId,
+          kind,
+          [{ key, detail: error instanceof Error ? error.message : String(error) }],
+          now,
+        );
+      }
+    }
+    // a copy that is not what was copied is made again right away, from the source; copies are written once, so the
+    // damaged one goes first (one that could not be read is only reported: it may be fine)
+    if (corrupt.length === 0) {
+      return;
+    }
+
+    await this.storageBackendRepository
+      .getReplicaStore(replicaBackendId, sourceBackendId, { deletion: true })
+      .deleteMany(corrupt);
+    await this.storageReplicaRepository.requeue(source, corrupt, new Date());
+    await this.jobRepository.queue({ name: JobName.StorageReplicate });
+  }
+
+  /**
    * Read files back, decrypt them and compare their checksum, within the time and share of files the integrity check
    * settings allow per run: files that failed first, then files never verified, then the ones verified longest ago,
    * so that every file is read back in turn. New files wait a day, since they were verified when they were written.
@@ -321,11 +428,13 @@ export class StorageCheckService extends BaseService {
     if (this.getCheckedBackends().length === 0) {
       throw new BadRequestException('No storage backends to check are configured');
     }
-    await this.jobRepository.queue(
-      kind === StorageCheckKind.Reconcile
-        ? { name: JobName.StorageReconcile, data: { force: true } }
-        : { name: JobName.StorageVerify, data: { force: true } },
-    );
+    const jobs = {
+      [StorageCheckKind.Reconcile]: JobName.StorageReconcile,
+      [StorageCheckKind.Verify]: JobName.StorageVerify,
+      [StorageCheckKind.ReplicaReconcile]: JobName.StorageReplicaReconcile,
+      [StorageCheckKind.ReplicaVerify]: JobName.StorageReplicaVerify,
+    } as const;
+    await this.jobRepository.queue({ name: jobs[kind], data: { force: true } });
   }
 
   private getCheckedBackends() {

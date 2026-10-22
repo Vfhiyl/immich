@@ -123,9 +123,10 @@ export class StorageReplicaService extends BaseService {
   }
 
   async getReplicas(): Promise<StorageReplicaListResponseDto> {
-    const [statuses, lastReconcile] = await Promise.all([
+    const [statuses, lastReconcile, lastVerify] = await Promise.all([
       this.storageReplicaRepository.getStatus(),
       this.storageCheckRepository.getLastRun(StorageCheckKind.ReplicaReconcile),
+      this.storageCheckRepository.getLastRun(StorageCheckKind.ReplicaVerify),
     ]);
     const sources = this.storageBackendRepository.getReplicaSources();
     const replicas = [];
@@ -151,6 +152,7 @@ export class StorageReplicaService extends BaseService {
     return {
       replicas,
       lastReconcileAt: lastReconcile ? new Date(lastReconcile.startedAt).toISOString() : null,
+      lastVerifyAt: lastVerify ? new Date(lastVerify.startedAt).toISOString() : null,
     };
   }
 

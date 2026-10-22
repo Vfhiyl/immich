@@ -10,6 +10,8 @@ export const newStorageReplicaRepositoryMock = (): Mocked<RepositoryInterface<St
   claim: vitest.fn().mockResolvedValue([]),
   complete: vitest.fn().mockResolvedValue(true),
   recordFailure: vitest.fn().mockResolvedValue(undefined),
+  countCopies: vitest.fn().mockResolvedValue(0),
+  sampleCopies: vitest.fn().mockResolvedValue([]),
   retryFailed: vitest.fn().mockResolvedValue(0),
   getStatus: vitest.fn().mockResolvedValue([]),
   getFailing: vitest.fn().mockResolvedValue([]),

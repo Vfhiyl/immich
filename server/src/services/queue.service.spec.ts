@@ -40,6 +40,7 @@ describe(QueueService.name, () => {
         { name: JobName.StorageDeletionRun },
         { name: JobName.UploadSessionCleanup },
         { name: JobName.StorageReplicaReconcile },
+        { name: JobName.StorageReplicaVerify },
         { name: JobName.StorageUsageSnapshot },
         { name: JobName.AssetDeleteCheck },
         { name: JobName.UserDeleteCheck },

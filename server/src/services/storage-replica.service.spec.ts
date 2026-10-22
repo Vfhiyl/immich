@@ -203,6 +203,7 @@ describe(StorageReplicaService.name, () => {
         },
       ],
       lastReconcileAt: null,
+      lastVerifyAt: null,
     });
     expect(mocks.storageReplica.countSourceFiles).toHaveBeenCalledWith('originals');
     expect(mocks.storageReplica.countSourceFiles).toHaveBeenCalledOnce();

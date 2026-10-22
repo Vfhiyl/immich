@@ -325,6 +325,33 @@ export class StorageReplicaRepository {
       DummyValue.DATE,
     ],
   })
+  /** How many copies of a source a replica holds */
+  @GenerateSql({ params: [{ replicaBackendId: DummyValue.STRING, sourceBackendId: DummyValue.STRING }] })
+  async countCopies(source: ReplicaSource): Promise<number> {
+    const { count } = await this.db
+      .selectFrom('storage_replica_copy')
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .where('replicaBackendId', '=', source.replicaBackendId)
+      .where('sourceBackendId', '=', source.sourceBackendId)
+      .where('completedAt', 'is not', null)
+      .executeTakeFirstOrThrow();
+    return Number(count);
+  }
+
+  /** Copies of a source that a replica holds, picked at random */
+  @GenerateSql({ params: [{ replicaBackendId: DummyValue.STRING, sourceBackendId: DummyValue.STRING }, 100] })
+  sampleCopies(source: ReplicaSource, limit: number) {
+    return this.db
+      .selectFrom('storage_replica_copy')
+      .select(['key', 'size'])
+      .where('replicaBackendId', '=', source.replicaBackendId)
+      .where('sourceBackendId', '=', source.sourceBackendId)
+      .where('completedAt', 'is not', null)
+      .orderBy(sql`random()`)
+      .limit(limit)
+      .execute();
+  }
+
   async requeue(source: ReplicaSource, keys: string[], now: Date) {
     if (keys.length === 0) {
       return;

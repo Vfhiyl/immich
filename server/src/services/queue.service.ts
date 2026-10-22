@@ -271,8 +271,9 @@ export class QueueService extends BaseService {
       { name: JobName.LocalCopyCleanup },
       { name: JobName.StorageDeletionRun },
       { name: JobName.UploadSessionCleanup },
-      // runs every two weeks, which it keeps track of itself
+      // run every two weeks and every month, which they keep track of themselves
       { name: JobName.StorageReplicaReconcile },
+      { name: JobName.StorageReplicaVerify },
       { name: JobName.StorageUsageSnapshot },
     ];
 

@@ -192,9 +192,18 @@
 
     {#if replicas && replicas.replicas.length > 0}
       <section>
-        <Text size="large" fontWeight="semi-bold">{$t('admin.storage_replicas')}</Text>
-        <Text size="small" color="muted" class="mb-3">
+        <HStack class="justify-between">
+          <Text size="large" fontWeight="semi-bold">{$t('admin.storage_replicas')}</Text>
+          <Button size="small" variant="ghost" onclick={() => handleStartStorageCheck(StorageCheckKind.ReplicaVerify)}>
+            {$t('admin.storage_check_replica_verify')}
+          </Button>
+        </HStack>
+        <Text size="small" color="muted">
           {$t('admin.storage_last_replica_reconcile')}: {formatAge(replicas.lastReconcileAt) ??
+            $t('admin.storage_check_never')}
+        </Text>
+        <Text size="small" color="muted" class="mb-3">
+          {$t('admin.storage_last_replica_verify')}: {formatAge(replicas.lastVerifyAt) ??
             $t('admin.storage_check_never')}
         </Text>
         <Table striped spacing="tiny">

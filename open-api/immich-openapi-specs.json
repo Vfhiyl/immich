@@ -23984,6 +23984,7 @@
           "StorageVerify",
           "StorageReplicate",
           "StorageReplicaReconcile",
+          "StorageReplicaVerify",
           "StorageUsageSnapshot",
           "AssetGenerateThumbnailsQueueAll",
           "AssetGenerateThumbnails",
@@ -31254,7 +31255,8 @@
         "enum": [
           "reconcile",
           "verify",
-          "replica_reconcile"
+          "replica_reconcile",
+          "replica_verify"
         ],
         "type": "string"
       },
@@ -31943,6 +31945,11 @@
             "nullable": true,
             "type": "string"
           },
+          "lastVerifyAt": {
+            "description": "When a sample of the copies was last read back and verified",
+            "nullable": true,
+            "type": "string"
+          },
           "replicas": {
             "items": {
               "properties": {
@@ -32010,6 +32017,7 @@
         },
         "required": [
           "lastReconcileAt",
+          "lastVerifyAt",
           "replicas"
         ],
         "type": "object"

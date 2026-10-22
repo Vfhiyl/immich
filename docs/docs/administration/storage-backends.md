@@ -162,7 +162,7 @@ A longer delay applies to originals deleted before too; a shorter one only to or
 
 ## Replicas
 
-A replica holds copies of the files of other backends, made by Immich: new originals are copied within minutes, database backups when they are stored. Copies are checked by size, and failed copies are tried again with growing pauses; an administrator is notified when copies keep failing. Every 14 days Immich lists each replica and compares it with what it should hold: missing copies are made again, and objects that should not be there are reported, never deleted.
+A replica holds copies of the files of other backends, made by Immich: new originals are copied within minutes, database backups when they are stored. Copies are checked by size, and failed copies are tried again with growing pauses; an administrator is notified when copies keep failing. Every 14 days Immich lists each replica and compares it with what it should hold: missing copies are made again, and objects that should not be there are reported, never deleted. Every month it also reads back a sample of the copies on each replica (1%, at least 100), decrypts them and compares them with the files they copy, since a listing only shows that a copy is there: a damaged copy is reported, deleted and made again from its backend.
 
 ```yaml
 backends:
