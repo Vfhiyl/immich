@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readFile, readdir, rm } from 'node:fs/promises';
+import { readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -9,7 +9,9 @@ import {
   LocalBackend,
   S3Service,
   TestEnvironment,
+  baseUrl,
   eventually,
+  runMobileUploadClient,
   serverPort,
   sha1,
   testAssetDir,
@@ -26,7 +28,7 @@ const photoPath = join(testAssetDir, 'formats/jpg/el_torcal_rocks.jpg');
 /** A JPEG larger than a few parts: decoders stop at its end marker and ignore what follows */
 const largePhoto = async (extra = 2 * PART + 12_345) => Buffer.concat([await readFile(photoPath), randomBytes(extra)]);
 
-const assetData = (filename: string) =>
+const assetData = (filename: string, extra: object = {}) =>
   Buffer.from(
     JSON.stringify({
       filename,
@@ -34,6 +36,7 @@ const assetData = (filename: string) =>
       fileModifiedAt: '2021-01-01T00:00:00.000Z',
       deviceAssetId: filename,
       deviceId: 'e2e',
+      ...extra,
     }),
   ).toString('base64url');
 
@@ -153,6 +156,48 @@ describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3 }) =
     await expectOriginal(body.id, content);
   });
 
+  it('should take a file from the client of the mobile app, resuming it after the connection was cut', async () => {
+    const content = await largePhoto(PART + 54_321);
+    const path = join(environment.root, 'mobile-upload.jpg');
+    await writeFile(path, content);
+
+    const outcome = await runMobileUploadClient([
+      baseUrl,
+      api.accessToken,
+      path,
+      '--part-size',
+      String(4 * 1024 * 1024),
+      '--cut-after',
+      String(1_000_000),
+    ]);
+
+    expect(outcome).toEqual({ result: 'created', id: expect.any(String) });
+    await expectOriginal(outcome.id!, content);
+    // the same file again is not sent again
+    await expect(runMobileUploadClient([baseUrl, api.accessToken, path])).resolves.toEqual({
+      result: 'duplicate',
+      id: outcome.id,
+    });
+  });
+
+  it('should keep what the app knows about the photo, as a single upload does', async () => {
+    const content = Buffer.concat([await readFile(photoPath), Buffer.from('metadata')]);
+    const metadata = [{ key: 'mobile-app', value: { iCloudId: 'icloud-1' } }];
+    const response = await create(
+      {
+        'Upload-Complete': '?1',
+        'Repr-Digest': digest(content),
+        'X-Immich-Asset-Data': assetData('metadata.jpg', { metadata }),
+      },
+      content,
+    );
+
+    const { id } = (await response.json()) as { id: string };
+    await expect(
+      environment.query(`select key, value from asset_metadata where "assetId" = $1`, [id]),
+    ).resolves.toEqual([{ key: 'mobile-app', value: { iCloudId: 'icloud-1' } }]);
+  });
+
   it('should take a file of several parts over several requests, and report its progress', async () => {
     const content = await largePhoto();
     const location = await begin(content, 'parts.jpg');
@@ -181,6 +226,7 @@ describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3 }) =
     const after = await head(location);
     expect(after.headers.get('upload-complete')).toBe('?1');
     expect(after.headers.get('upload-offset')).toBe(String(content.length));
+    expect(after.headers.get('x-immich-asset-id')).toBe(id);
   });
 
   it('should resume an upload whose request was cut off', async () => {

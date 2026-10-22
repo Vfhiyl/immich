@@ -349,6 +349,7 @@ class ForegroundUploadService {
               ? (bytes, totalBytes) => onProgress(asset.localId!, livePhotoTitle, bytes, totalBytes)
               : null,
           logContext: 'livePhotoVideo[${asset.localId}]',
+          resumeKey: '${asset.localId}:motion',
         );
 
         if (livePhotoResult.isSuccess && livePhotoResult.remoteAssetId != null) {
@@ -386,6 +387,7 @@ class ForegroundUploadService {
             ? (bytes, totalBytes) => onProgress(asset.localId!, originalFileName, bytes, totalBytes)
             : null,
         logContext: 'asset[${asset.localId}]',
+        resumeKey: asset.localId,
       );
 
       if (result.isSuccess && result.remoteAssetId != null) {
@@ -458,6 +460,7 @@ class ForegroundUploadService {
         cancelToken: cancelToken,
         onProgress: onProgress,
         logContext: 'shareIntent[$deviceAssetId]',
+        resumeKey: 'share:${file.path}',
       );
     } catch (e) {
       return UploadResult.error(errorMessage: e.toString());

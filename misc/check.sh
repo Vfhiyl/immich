@@ -6,8 +6,8 @@
 #
 # Usage: misc/check.sh [--quick]     --quick skips the medium, contract and end-to-end tests
 #
-# Needs: Node and pnpm with dependencies installed (`pnpm install`), ffmpeg, redis-server and oazapfts (the version
-# pinned in mise.toml) on PATH, and
+# Needs: Node and pnpm with dependencies installed (`pnpm install`), ffmpeg, redis-server, oazapfts (the version
+# pinned in mise.toml) and Flutter on PATH, OPENAPI_GENERATOR_JAR (the openapi-generator-cli jar), and
 # PostgreSQL with the vector extension at CHECK_POSTGRES_URL (a server URL without database name,
 # default postgres://postgres:postgres@localhost:5432). Nothing here needs Docker.
 
@@ -22,7 +22,18 @@ quick=false
 
 work="$(mktemp -d)"
 check_db="immich_check_$$"
-trap 'psql "$postgres/postgres" -qc "DROP DATABASE IF EXISTS $check_db WITH (FORCE)" >/dev/null 2>&1 || true; rm -rf "$work" "$server/.check"' EXIT
+trap 'psql "$postgres/postgres" -qc "DROP DATABASE IF EXISTS $check_db WITH (FORCE)" >/dev/null 2>&1 || true; rm -rf "$work" "$server/.check"; remove_orphans' EXIT
+
+# tests leave exiftool processes of this repository behind (upstream's medium tests end their workers without
+# stopping it): remove the ones whose parent is gone
+remove_orphans() {
+  local pid
+  for pid in $(pgrep -f "$repo/node_modules/.*/exiftool -stay_open" || true); do
+    if [[ "$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')" == "1" ]]; then
+      kill "$pid" 2>/dev/null || true
+    fi
+  done
+}
 
 results=()
 step() {
@@ -76,7 +87,8 @@ docs_format() { cd "$repo/docs" && "$(bin "$repo/docs" prettier)" --check docs/a
 # the web app, against the SDK built from the generated client (see open_api)
 web="$repo/web"
 web_format() { cd "$web" && "$(bin "$web" prettier)" --cache --check . && cd "$repo" && "$(bin "$repo" prettier)" --check i18n/; }
-web_lint() { cd "$web" && "$(bin "$web" eslint)" . --max-warnings 0 --concurrency 6; }
+# the tailwind rules wait for a worker (synckit), whose default timeout a busy machine exceeds
+web_lint() { cd "$web" && SYNCKIT_TIMEOUT=120000 "$(bin "$web" eslint)" . --max-warnings 0 --concurrency 6; }
 web_types() {
   cd "$repo" && pnpm --filter @immich/sdk build
   cd "$web"
@@ -86,6 +98,42 @@ web_types() {
 }
 # in English, which some tests expect dates and numbers in
 web_unit() { cd "$web" && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 "$(bin "$web" vitest)" --run; }
+
+# the mobile app, against the Dart client generated from the API description (not tracked, like upstream); needs
+# Flutter (the version pinned in mobile/mise.toml) and openapi-generator-cli on PATH
+mobile="$repo/mobile"
+mobile_codegen() {
+  # the generator jar of the version upstream pins (open-api/openapitools.json), never downloaded here
+  : "${OPENAPI_GENERATOR_JAR:?set OPENAPI_GENERATOR_JAR to openapi-generator-cli-<version>.jar}"
+  local tools="$work/openapi-generator"
+  mkdir -p "$tools"
+  printf '#!/usr/bin/env sh\nexec java -jar "%s" "$@"\n' "$OPENAPI_GENERATOR_JAR" >"$tools/openapi-generator-cli"
+  chmod +x "$tools/openapi-generator-cli"
+  cd "$repo/open-api" && PATH="$tools:$PATH" bash bin/generate-dart-sdk.sh
+  cd "$mobile"
+  flutter pub get --enforce-lockfile
+  dart run build_runner build --delete-conflicting-outputs
+  dart format lib/routing/router.gr.dart
+  dart run drift_dev make-migrations
+  dart run drift_dev schema generate --data-classes --companions drift_schemas/main/ test/drift/main/generated/
+  find pigeon -name '*.dart' -print0 | xargs -0 -n1 -P4 -I{} dart run pigeon --input {}
+  dart format lib/platform/
+  dart run easy_localization:generate -S ../i18n
+  dart format lib/generated/codegen_loader.g.dart
+  dart run bin/generate_keys.dart
+  dart format lib/generated/translations.g.dart
+  # nothing generated is tracked: what changed here is a change of the sources
+  git -C "$repo" diff --exit-code -- mobile
+}
+# what upstream formats (mise run format)
+mobile_format() {
+  cd "$mobile"
+  find lib tool -name '*.dart' -not -name '*.g.dart' -not -name '*.drift.dart' -not -name '*.gr.dart' -print0 |
+    xargs -0 dart format --set-exit-if-changed --output=none
+}
+mobile_analyze() { cd "$mobile" && dart analyze --fatal-infos; }
+# in English, like the web app
+mobile_unit() { cd "$mobile" && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 flutter test --reporter=compact; }
 
 # --- build, schema and generated SQL ---
 
@@ -136,7 +184,9 @@ contract() { cd "$server" && "$(bin "$server" vitest)" --config test/vitest.conf
 
 end_to_end() {
   cd "$e2e"
-  E2E_STORAGE_POSTGRES_URL="$postgres" "$(bin "$e2e" vitest)" --run --config vitest.storage-backends.config.ts
+  # the resumable upload client of the mobile app runs against the server too
+  E2E_DART="$(command -v dart)" E2E_STORAGE_POSTGRES_URL="$postgres" "$(bin "$e2e" vitest)" --run \
+    --config vitest.storage-backends.config.ts
 }
 
 step 'server: formatting' server_format
@@ -154,8 +204,13 @@ step 'web: formatting' web_format
 step 'web: lint' web_lint
 step 'web: types' web_types
 step 'web: unit tests' web_unit
+step 'mobile: generated code' mobile_codegen
+step 'mobile: formatting' mobile_format
+step 'mobile: analysis' mobile_analyze
+step 'mobile: unit tests' mobile_unit
 if [[ "$quick" == false ]]; then
   step 'server: medium tests' medium
+  remove_orphans
   step 'server: blob store contract tests' contract
   step 'e2e: storage backends' end_to_end
 fi

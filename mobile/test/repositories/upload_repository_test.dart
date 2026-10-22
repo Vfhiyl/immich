@@ -11,9 +11,12 @@ import 'package:immich_mobile/data/db/main/database.dart';
 import 'package:immich_mobile/domain/models/store.model.dart';
 import 'package:immich_mobile/domain/services/store.service.dart';
 import 'package:immich_mobile/entities/store.entity.dart';
+import 'package:immich_mobile/infrastructure/repositories/resumable_upload.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/store.repository.dart';
 import 'package:immich_mobile/repositories/upload.repository.dart';
 import 'package:mocktail/mocktail.dart';
+
+import '../infrastructure/repositories/fake_resumable_upload_server.dart';
 
 class _MockHttpClient extends Mock implements http.Client {}
 
@@ -123,5 +126,112 @@ void main() {
     expect(result.statusCode, 500);
     expect(result.errorMessage, 'boom');
     verify(() => client.send(any())).called(1);
+  });
+
+  group('resumable uploads', () {
+    late FakeResumableUploadServer server;
+    late InMemoryResumableUploadSessionStore sessions;
+
+    setUp(() {
+      UploadRepository.forgetResumableUploadOptions();
+      server = FakeResumableUploadServer();
+      sessions = InMemoryResumableUploadSessionStore();
+      sut = UploadRepository(resumableSessions: sessions);
+    });
+
+    Future<UploadResult> uploadResumable({http.Client? httpClient}) => sut.uploadFile(
+      file: file,
+      originalFileName: 'photo.jpg',
+      fields: const {
+        'deviceAssetId': 'a1',
+        'fileCreatedAt': '2026-10-22T10:00:00.000Z',
+        'fileModifiedAt': '2026-10-22T10:00:00.000Z',
+        'isFavorite': 'true',
+        'duration': '1500',
+      },
+      cancelToken: null,
+      logContext: 'a1',
+      httpClient: httpClient ?? server.client,
+      resumeKey: 'a1',
+    );
+
+    test('uploads in parts when the server takes resumable uploads', () async {
+      final result = await uploadResumable();
+
+      expect(result.isSuccess, isTrue);
+      expect(result.remoteAssetId, 'asset-upload-1');
+      expect(server.uploads['upload-1']!.received, file.readAsBytesSync());
+      expect(server.uploads['upload-1']!.assetData, {
+        'filename': 'photo.jpg',
+        'fileCreatedAt': '2026-10-22T10:00:00.000Z',
+        'fileModifiedAt': '2026-10-22T10:00:00.000Z',
+        'deviceAssetId': 'a1',
+        'isFavorite': true,
+        'duration': 1500,
+      });
+      // the server is only asked once what it takes
+      await uploadResumable();
+      expect(server.requests.where((request) => request.startsWith('OPTIONS')), hasLength(1));
+    });
+
+    test('uploads in one request to a server that does not take resumable uploads', () async {
+      server.supportsUploads = false;
+      final probed = await uploadResumable();
+      expect(probed.isSuccess, isFalse);
+      expect(server.requests, ['OPTIONS /api/upload', 'POST /api/assets']);
+    });
+
+    test('asks again when the server could not be asked', () async {
+      stubSend((_) => throw http.ClientException('No network'));
+      await uploadResumable(httpClient: client);
+
+      final result = await uploadResumable();
+
+      expect(result.isSuccess, isTrue);
+      expect(server.requests.first, 'OPTIONS /api/upload');
+    });
+
+    test('reports what the server rejected', () async {
+      server.failNextPart = 400;
+
+      final result = await uploadResumable();
+
+      expect(result.isSuccess, isFalse);
+      expect(result.statusCode, 400);
+      expect(result.errorMessage, 'The part failed');
+    });
+  });
+
+  test('describes a resumable upload like the form of an upload in one request', () {
+    expect(
+      toResumableAssetData('IMG_0001.HEIC', {
+        'deviceAssetId': 'local-1',
+        'deviceId': 'device',
+        'fileCreatedAt': '2026-10-22T10:00:00.000Z',
+        'fileModifiedAt': '2026-10-22T11:00:00.000Z',
+        'isFavorite': 'false',
+        'duration': '0',
+        'visibility': 'hidden',
+        'livePhotoVideoId': 'video-1',
+        'metadata': '[{"key":"mobile-app","value":{"iCloudId":"cloud-1"}}]',
+      }),
+      {
+        'filename': 'IMG_0001.HEIC',
+        'fileCreatedAt': '2026-10-22T10:00:00.000Z',
+        'fileModifiedAt': '2026-10-22T11:00:00.000Z',
+        'deviceAssetId': 'local-1',
+        'deviceId': 'device',
+        'duration': 0,
+        'isFavorite': false,
+        'visibility': 'hidden',
+        'livePhotoVideoId': 'video-1',
+        'metadata': [
+          {
+            'key': 'mobile-app',
+            'value': {'iCloudId': 'cloud-1'},
+          },
+        ],
+      },
+    );
   });
 }

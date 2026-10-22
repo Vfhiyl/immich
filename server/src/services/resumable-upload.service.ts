@@ -7,6 +7,7 @@ import { Readable } from 'node:stream';
 import z from 'zod';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
+import { AssetMetadataUpsertItemSchema } from 'src/dtos/asset.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   AssetVisibility,
@@ -71,6 +72,8 @@ const AssetDataSchema = z.object({
   isFavorite: z.boolean().optional(),
   visibility: z.enum(AssetVisibility).optional(),
   livePhotoVideoId: z.uuid().optional(),
+  // what the app knows about the photo, as with a single upload (e.g. its iCloud identifier)
+  metadata: z.array(AssetMetadataUpsertItemSchema).optional(),
 });
 
 export interface ResumableUploadRequest {
@@ -220,6 +223,8 @@ export class ResumableUploadService extends BaseService {
         'Upload-Offset': String(offset),
         ...Object.fromEntries([toUploadCompleteHeader(isComplete, version)]),
         ...(session.length !== null && { 'Upload-Length': String(session.length) }),
+        // a client that missed the response of the last request learns the asset it made
+        ...(isComplete && session.assetId && { 'X-Immich-Asset-Id': session.assetId }),
         'Upload-Limit': this.getUploadLimit(version, session),
         'Cache-Control': 'no-store',
       },
@@ -399,6 +404,7 @@ export class ResumableUploadService extends BaseService {
         isFavorite: assetData.isFavorite,
         visibility: assetData.visibility as AssetVisibility | undefined,
         livePhotoVideoId: assetData.livePhotoVideoId,
+        metadata: assetData.metadata,
       },
       { uuid: session.key, checksum, originalPath: assetData.path, originalName: assetData.filename, size },
       undefined,

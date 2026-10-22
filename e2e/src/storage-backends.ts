@@ -1,6 +1,6 @@
 import { ChildProcess, execFile, spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -51,7 +51,8 @@ export class S3Service {
     const secret = randomUUID();
     await writeFile(secretAccessKeyFile, secret);
 
-    const port = 20_000 + Math.floor(Math.random() * 20_000);
+    // below the ports the system hands out for outgoing connections (32768 and up on Linux)
+    const port = 22_000 + Math.floor(Math.random() * 10_000);
     const child = spawn(
       executable,
       ['--access', accessKeyId, '--secret', secret, '--port', `127.0.0.1:${port}`, 'posix', root],
@@ -312,6 +313,22 @@ export const runExportTool = async (args: string[]) => {
   }
 };
 
+/** The resumable upload client of the mobile app, run with Dart outside the app (E2E_DART, by default `dart`) */
+export const runMobileUploadClient = async (args: string[]) => {
+  const mobileRoot = resolve(serverRoot, '../mobile');
+  try {
+    const { stdout } = await execFileAsync(
+      process.env.E2E_DART ?? 'dart',
+      ['run', 'tool/resumable_upload.dart', ...args],
+      { cwd: mobileRoot, env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}` } },
+    );
+    return JSON.parse(stdout.trim().split('\n').at(-1)!) as { result: string; id?: string; message?: string };
+  } catch (error) {
+    const { stdout, stderr } = error as { stdout?: string; stderr?: string };
+    throw new Error(`The mobile upload client failed:\n${stdout}\n${stderr}`, { cause: error });
+  }
+};
+
 /** A running server; `start` resolves once both workers are ready, or rejects with the output if it exits */
 export class ImmichServer {
   static async start(environment: TestEnvironment, { backends = true }: { backends?: boolean } = {}) {
@@ -362,14 +379,53 @@ export class ImmichServer {
   }
 
   async stop() {
+    // processes of the server in groups of their own (exiftool) are not stopped with its group, and would stay
+    const descendants = this.process.pid ? await descendantsOf(this.process.pid) : [];
     if (this.exited === undefined && this.process.pid) {
       process.kill(-this.process.pid, 'SIGTERM');
     }
     for (let attempt = 0; attempt < 100 && this.exited === undefined; attempt++) {
       await sleep(100);
     }
+    for (const pid of descendants) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {
+        // gone already
+      }
+    }
   }
 }
+
+/** The processes below a process, from /proc (Linux) */
+const descendantsOf = async (root: number) => {
+  const parents = new Map<number, number>();
+  for (const entry of await readdirIfExists('/proc')) {
+    if (!/^\d+$/.test(entry)) {
+      continue;
+    }
+    try {
+      const stat = await readFile(`/proc/${entry}/stat`, 'utf8');
+      // pid (comm) state ppid …, where comm may hold spaces and parentheses
+      const [, ppid] = stat.slice(stat.lastIndexOf(')') + 2).split(' ', 2);
+      parents.set(Number(entry), Number(ppid));
+    } catch {
+      // the process ended meanwhile
+    }
+  }
+  const found: number[] = [];
+  const queue = [root];
+  while (queue.length > 0) {
+    const pid = queue.shift()!;
+    for (const [child, parent] of parents) {
+      if (parent === pid) {
+        found.push(child);
+        queue.push(child);
+      }
+    }
+  }
+  return found;
+};
 
 const isApiUp = async () => {
   try {
@@ -416,7 +472,7 @@ export class Api {
     return new this(accessToken);
   }
 
-  private constructor(private accessToken: string) {}
+  private constructor(readonly accessToken: string) {}
 
   private request(path: string, init: RequestInit = {}) {
     return fetch(`${baseUrl}${path}`, {

@@ -9,16 +9,19 @@ import 'package:immich_mobile/constants/constants.dart';
 import 'package:immich_mobile/domain/models/store.model.dart';
 import 'package:immich_mobile/entities/store.entity.dart';
 import 'package:immich_mobile/infrastructure/repositories/network.repository.dart';
+import 'package:immich_mobile/infrastructure/repositories/resumable_upload.repository.dart';
 import 'package:logging/logging.dart';
+import 'package:path_provider/path_provider.dart';
 
 final uploadRepositoryProvider = Provider((ref) => UploadRepository());
 
 class UploadRepository {
   final Logger logger = Logger('UploadRepository');
+  ResumableUploadSessionStore? _resumableSessions;
   void Function(TaskStatusUpdate)? onUploadStatus;
   void Function(TaskProgressUpdate)? onTaskProgress;
 
-  UploadRepository() {
+  UploadRepository({this._resumableSessions}) {
     FileDownloader().registerCallbacks(
       group: kBackupGroup,
       taskStatusCallback: (update) => onUploadStatus?.call(update),
@@ -57,6 +60,9 @@ class UploadRepository {
     return FileDownloader().start();
   }
 
+  /// Upload a file as a new asset. With a [resumeKey] (which identifies the file to upload, e.g. by its local asset), the
+  /// file is uploaded in parts when the server takes resumable uploads, and an interrupted upload continues where it
+  /// stopped, also after the app was stopped; otherwise it is sent in one request.
   Future<UploadResult> uploadFile({
     required File file,
     required String originalFileName,
@@ -65,8 +71,28 @@ class UploadRepository {
     void Function(int bytes, int totalBytes)? onProgress,
     required String logContext,
     Client? httpClient,
+    String? resumeKey,
   }) async {
     final String savedEndpoint = Store.get(StoreKey.serverEndpoint);
+    final client = httpClient ?? NetworkRepository.client;
+
+    if (resumeKey != null) {
+      final options = await _getResumableUploadOptions(savedEndpoint, client);
+      if (options != null) {
+        return _uploadResumable(
+          client: client,
+          endpoint: savedEndpoint,
+          file: file,
+          originalFileName: originalFileName,
+          fields: fields,
+          options: options,
+          resumeKey: resumeKey,
+          cancelToken: cancelToken,
+          onProgress: onProgress,
+          logContext: logContext,
+        );
+      }
+    }
 
     ProgressMultipartRequest buildRequest() {
       final request = ProgressMultipartRequest(
@@ -81,7 +107,6 @@ class UploadRepository {
     }
 
     try {
-      final client = httpClient ?? NetworkRepository.client;
       StreamedResponse response;
       try {
         response = await client.send(buildRequest());
@@ -128,6 +153,82 @@ class UploadRepository {
       return UploadResult.error(errorMessage: error.toString());
     }
   }
+
+  /// What servers allow for resumable uploads, by endpoint, as they answered (null: they do not take them)
+  static final _resumableUploadOptions = <String, ResumableUploadOptions?>{};
+
+  Future<ResumableUploadOptions?> _getResumableUploadOptions(String endpoint, Client client) async {
+    if (_resumableUploadOptions.containsKey(endpoint)) {
+      return _resumableUploadOptions[endpoint];
+    }
+    try {
+      final options = await ResumableUploadRepository(client, await _getResumableSessions()).getOptions(endpoint);
+      return _resumableUploadOptions[endpoint] = options;
+    } catch (error) {
+      // asked again next time; the upload in one request below fails the same way, or succeeds
+      logger.warning("Unable to learn whether the server takes resumable uploads: $error");
+      return null;
+    }
+  }
+
+  /// Uploads in progress, kept with the app so that they are resumed after it was stopped
+  Future<ResumableUploadSessionStore> _getResumableSessions() async => _resumableSessions ??=
+      FileResumableUploadSessionStore(Directory('${(await getApplicationSupportDirectory()).path}/resumable-uploads'));
+
+  /// The server may have been upgraded or replaced: ask it again
+  static void forgetResumableUploadOptions() => _resumableUploadOptions.clear();
+
+  Future<UploadResult> _uploadResumable({
+    required Client client,
+    required String endpoint,
+    required File file,
+    required String originalFileName,
+    required Map<String, String> fields,
+    required ResumableUploadOptions options,
+    required String resumeKey,
+    required Completer<void>? cancelToken,
+    required void Function(int bytes, int totalBytes)? onProgress,
+    required String logContext,
+  }) async {
+    final outcome = await ResumableUploadRepository(client, await _getResumableSessions()).upload(
+      endpoint: endpoint,
+      file: file,
+      assetData: toResumableAssetData(originalFileName, fields),
+      // the native clients of the app add authentication
+      headers: const {},
+      sessionKey: resumeKey,
+      options: options,
+      cancel: cancelToken?.future,
+      onProgress: onProgress,
+    );
+    switch (outcome) {
+      case ResumableUploadSucceeded(:final assetId):
+        return UploadResult.success(remoteAssetId: assetId);
+      case ResumableUploadCancelled():
+        logger.warning("Upload $logContext was cancelled");
+        return UploadResult.cancelled();
+      case ResumableUploadFailed(:final message, :final statusCode, :final canResume):
+        logger.warning("Upload $logContext failed${canResume ? ', it is resumed next time' : ''}: $message");
+        return UploadResult.error(statusCode: statusCode, errorMessage: message);
+    }
+  }
+}
+
+/// What describes an asset in a resumable upload, from the form fields of an upload in one request
+Map<String, Object?> toResumableAssetData(String originalFileName, Map<String, String> fields) {
+  final metadata = fields['metadata'];
+  return {
+    'filename': originalFileName,
+    'fileCreatedAt': fields['fileCreatedAt'],
+    'fileModifiedAt': fields['fileModifiedAt'],
+    if (fields['deviceAssetId'] != null) 'deviceAssetId': fields['deviceAssetId'],
+    if (fields['deviceId'] != null) 'deviceId': fields['deviceId'],
+    if (int.tryParse(fields['duration'] ?? '') != null) 'duration': int.parse(fields['duration']!),
+    if (fields['isFavorite'] != null) 'isFavorite': fields['isFavorite'] == 'true',
+    if (fields['visibility'] != null) 'visibility': fields['visibility'],
+    if (fields['livePhotoVideoId'] != null) 'livePhotoVideoId': fields['livePhotoVideoId'],
+    if (metadata != null) 'metadata': jsonDecode(metadata),
+  };
 }
 
 class ProgressMultipartRequest extends MultipartRequest with Abortable {

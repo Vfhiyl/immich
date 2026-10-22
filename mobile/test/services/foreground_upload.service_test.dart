@@ -78,6 +78,7 @@ void main() {
         cancelToken: any(named: 'cancelToken'),
         onProgress: any(named: 'onProgress'),
         logContext: any(named: 'logContext'),
+        resumeKey: any(named: 'resumeKey'),
       ),
     ).thenAnswer((invocation) async {
       final fields = invocation.namedArguments[#fields] as Map<String, String>;
@@ -97,6 +98,7 @@ void main() {
         cancelToken: any(named: 'cancelToken'),
         onProgress: any(named: 'onProgress'),
         logContext: any(named: 'logContext'),
+        resumeKey: any(named: 'resumeKey'),
       ),
     ).thenAnswer((invocation) async {
       captured.add(invocation.namedArguments[#originalFileName] as String);
@@ -104,6 +106,36 @@ void main() {
     });
     return captured;
   }
+
+  test('uploads the still and the motion part of a live photo so that each can be resumed', () async {
+    final keys = <String?>[];
+    when(
+      () => mockUploadRepository.uploadFile(
+        file: any(named: 'file'),
+        originalFileName: any(named: 'originalFileName'),
+        fields: any(named: 'fields'),
+        cancelToken: any(named: 'cancelToken'),
+        onProgress: any(named: 'onProgress'),
+        logContext: any(named: 'logContext'),
+        resumeKey: any(named: 'resumeKey'),
+      ),
+    ).thenAnswer((invocation) async {
+      keys.add(invocation.namedArguments[#resumeKey] as String?);
+      return UploadResult.success(remoteAssetId: 'remote-${keys.length}');
+    });
+    final asset = LocalAssetStub.image1;
+    final mockEntity = MockAssetEntity();
+    when(() => mockEntity.isLivePhoto).thenReturn(true);
+    when(() => mockStorageRepository.getAssetEntityForAsset(asset)).thenAnswer((_) async => mockEntity);
+    when(() => mockStorageRepository.isAssetAvailableLocally(asset.id)).thenAnswer((_) async => true);
+    when(() => mockStorageRepository.getFileForAsset(asset.id)).thenAnswer((_) async => File('/path/to/still.heic'));
+    when(() => mockStorageRepository.getMotionFileForAsset(asset)).thenAnswer((_) async => File('/path/to/motion.mov'));
+    when(() => mockAssetMediaRepository.getOriginalFilename(asset.id)).thenAnswer((_) async => 'live.heic');
+
+    await sut.uploadSingleAsset(asset, null, callbacks: const UploadCallbacks());
+
+    expect(keys, ['${asset.localId}:motion', asset.localId]);
+  });
 
   group('uploadSingleAsset', () {
     test('should upload the motion part hidden and keep the still image visible', () async {

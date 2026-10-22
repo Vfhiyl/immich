@@ -26,6 +26,7 @@ export type UploadAssetData = {
   isFavorite?: boolean;
   visibility?: string;
   livePhotoVideoId?: string;
+  metadata?: Array<{ key: string; value: Record<string, unknown> }>;
 };
 
 /**
