@@ -663,7 +663,7 @@
   "backup_options": "备份选项",
   "backup_settings_subtitle": "管理上传设置",
   "backward": "后退",
-  "battery_optimization_backup_reliability": "关闭优化电池充电可以提高后台备份的可靠性",
+  "battery_optimization_backup_reliability": "关闭电池优化可以提高后台备份的可靠性",
   "biometric_auth_enabled": "生物识别认证已启用",
   "biometric_locked_out": "您已被锁定，无法使用生物识别认证",
   "biometric_no_options": "无可用的生物识别选项",
