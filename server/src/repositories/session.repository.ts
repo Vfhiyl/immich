@@ -136,6 +136,15 @@ export class SessionRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
+  /**
+   * Make every client sync anew, e.g. after the database was restored from a backup: what they synced since the backup
+   * was taken is gone, and no records of deletions tell them so
+   */
+  @GenerateSql()
+  async markAllForSyncReset() {
+    await this.db.updateTable('session').set({ isPendingSyncReset: true }).execute();
+  }
+
   async resetSyncProgress(sessionId: string) {
     await this.db.transaction().execute((tx) => {
       return Promise.all([

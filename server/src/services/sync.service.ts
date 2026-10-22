@@ -3,7 +3,7 @@ import { Insertable } from 'kysely';
 import { DateTime, Duration } from 'luxon';
 import { Writable } from 'node:stream';
 import type { SyncAck } from 'src/types.js';
-import { OnJob } from 'src/decorators.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   SyncAckDeleteDto,
@@ -13,12 +13,21 @@ import {
   SyncStreamDto,
   syncAlbumV2ToV1,
 } from 'src/dtos/sync.dto.js';
-import { JobName, MemoryType, QueueName, SyncEntityType, SyncRequestType } from 'src/enum.js';
+import {
+  ImmichWorker,
+  JobName,
+  MemoryType,
+  QueueName,
+  SyncEntityType,
+  SyncRequestType,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { SyncQueryOptions } from 'src/repositories/sync.repository.js';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
+import { UPSTREAM_SYNC_DELETE_RETENTION_DAYS, getPruneBefore, withRetentionSetting } from 'src/utils/sync-retention.js';
 import { SerializeOptions, fromAck, serialize, toAck } from 'src/utils/sync.js';
 
 type CheckpointMap = Partial<Record<SyncEntityType, SyncAck>>;
@@ -30,6 +39,7 @@ type AssetLike = Omit<SyncAssetV2, 'checksum' | 'thumbhash'> & {
 const COMPLETE_ID = 'complete';
 const MAX_DAYS = 30;
 const MAX_DURATION = Duration.fromObject({ days: MAX_DAYS });
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const mapSyncAssetV2 = ({ checksum, thumbhash, ...data }: AssetLike): SyncAssetV2 => ({
   ...data,
@@ -177,7 +187,7 @@ export class SyncService extends BaseService {
     const checkpoints = await this.syncCheckpointRepository.getAll(session.id);
     const checkpointMap: CheckpointMap = Object.fromEntries(checkpoints.map(({ type, ack }) => [type, fromAck(ack)]));
 
-    if (this.needsFullSync(checkpointMap)) {
+    if (await this.needsFullSync(checkpointMap)) {
       await send(response, { type: SyncEntityType.SyncResetV1, ids: ['reset'], data: {} });
       response.end();
       return;
@@ -238,9 +248,44 @@ export class SyncService extends BaseService {
     response.end();
   }
 
+  /** Record the configured retention of the records of deletions, which only applies as far as it is longer */
+  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  async onBootstrap() {
+    const { deleteRetentionDays } = this.configRepository.getEnv().sync;
+    const now = new Date();
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.SyncDeleteRetention);
+    const updated = withRetentionSetting(state, deleteRetentionDays, now);
+    if (updated === state) {
+      return;
+    }
+
+    // before, upstream removed them after 31 days
+    updated.prunedBefore ??= new Date(now.getTime() - UPSTREAM_SYNC_DELETE_RETENTION_DAYS * DAY_MS).toISOString();
+    await this.systemMetadataRepository.set(SystemMetadataKey.SyncDeleteRetention, updated);
+  }
+
   @OnJob({ name: JobName.AuditTableCleanup, queue: QueueName.BackgroundTask })
   async onAuditTableCleanup() {
-    const pruneThreshold = MAX_DAYS + 1;
+    const now = new Date();
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.SyncDeleteRetention);
+    // until the configured retention is recorded, as upstream does
+    const before = state
+      ? getPruneBefore(state, now)
+      : new Date(now.getTime() - UPSTREAM_SYNC_DELETE_RETENTION_DAYS * DAY_MS);
+    if (!before) {
+      // kept forever
+      return;
+    }
+    // whole days, rounded down: a little more is kept rather than less
+    const pruneThreshold = Math.max(1, Math.floor((now.getTime() - before.getTime()) / DAY_MS));
+    const prunedBefore = new Date(now.getTime() - pruneThreshold * DAY_MS);
+    if (state && (!state.prunedBefore || new Date(state.prunedBefore) < prunedBefore)) {
+      // recorded first: a client that syncs meanwhile is sent a full sync rather than missing deletions
+      await this.systemMetadataRepository.set(SystemMetadataKey.SyncDeleteRetention, {
+        ...state,
+        prunedBefore: prunedBefore.toISOString(),
+      });
+    }
 
     await this.syncRepository.album.cleanupAuditTable(pruneThreshold);
     await this.syncRepository.albumUser.cleanupAuditTable(pruneThreshold);
@@ -260,15 +305,20 @@ export class SyncService extends BaseService {
     await this.syncRepository.assetOcr.cleanupAuditTable(pruneThreshold);
   }
 
-  private needsFullSync(checkpointMap: CheckpointMap) {
+  /** Whether records of deletions the client has not seen were removed, so that it must sync everything anew */
+  private async needsFullSync(checkpointMap: CheckpointMap) {
     const completeAck = checkpointMap[SyncEntityType.SyncCompleteV1];
     if (!completeAck) {
       return false;
     }
 
     const milliseconds = Number.parseInt(completeAck.updateId.replaceAll('-', '').slice(0, 12), 16);
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.SyncDeleteRetention);
+    if (!state) {
+      return DateTime.fromMillis(milliseconds) < DateTime.now().minus(MAX_DURATION);
+    }
 
-    return DateTime.fromMillis(milliseconds) < DateTime.now().minus(MAX_DURATION);
+    return !!state.prunedBefore && milliseconds < new Date(state.prunedBefore).getTime();
   }
 
   private async syncAuthUsersV1(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {

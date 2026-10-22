@@ -403,6 +403,7 @@ export enum SystemMetadataKey {
   License = 'license',
   IntegrityChecksumCheckpoint = 'integrity-checksum-checkpoint',
   StorageDeletionState = 'storage-deletion-state',
+  SyncDeleteRetention = 'sync-delete-retention',
 }
 
 export enum UserMetadataKey {

@@ -18,6 +18,7 @@ import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -48,6 +49,8 @@ export class DatabaseBackupService {
     private readonly jobRepository: JobRepository,
     @Optional()
     private readonly maintenanceHealthRepository: MaintenanceHealthRepository,
+    @Optional()
+    private readonly sessionRepository?: SessionRepository,
   ) {
     this.logger.setContext(this.constructor.name);
   }
@@ -430,6 +433,9 @@ export class DatabaseBackupService {
         }
 
         await this.maintenanceHealthRepository.checkApiHealth();
+
+        // clients synced what the backup does not have, and nothing tells them that it is gone
+        await this.sessionRepository?.markAllForSyncReset();
       } catch (error) {
         progressCb?.('rollback', 0);
 

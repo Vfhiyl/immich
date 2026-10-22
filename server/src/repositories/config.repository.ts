@@ -124,6 +124,11 @@ export interface EnvData {
     uploadMaxAppendSize?: number;
   };
 
+  sync: {
+    /** How long the records of deletions are kept for clients to sync, in days, or null to keep them forever */
+    deleteRetentionDays: number | null;
+  };
+
   workers: ImmichWorker[];
 
   plugins: {
@@ -150,6 +155,9 @@ const stagingKeys = {
   server:
     'LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUE3Sy8yd3ZLUS9NdU8ydi9MUm5saAoyUy9zTHhDOGJiTEw1UUlKOGowQ3BVZW40YURlY2dYMUpKUmtGNlpUVUtpNTdTbEhtS3RSM2JOTzJmdTBUUVg5Ck5WMEJzVzllZVB0MmlTMWl4VVFmTzRObjdvTjZzbEtac01qd29RNGtGRGFmM3VHTlZJc0dMb3UxVWRLUVhpeDEKUlRHcXVTb3NZVjNWRlk3Q1hGYTVWaENBL3poVXNsNGFuVXp3eEF6M01jUFVlTXBaenYvbVZiQlRKVzBPSytWZgpWQUJvMXdYMkVBanpBekVHVzQ3Vko4czhnMnQrNHNPaHFBNStMQjBKVzlORUg5QUpweGZzWE4zSzVtM00yNUJVClZXcTlRYStIdHRENnJ0bnAvcUFweXVkWUdwZk9HYTRCUlZTR1MxMURZM0xrb2FlRzYwUEU5NHpoYjduOHpMWkgKelFJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tDQo=',
 };
+
+/** Records of deletions are kept for a year by default, so that a phone not used for months only syncs what changed */
+const DEFAULT_SYNC_DELETE_RETENTION_DAYS = 365;
 
 const WORKER_TYPES = new Set(Object.values(ImmichWorker));
 const TELEMETRY_TYPES = new Set(Object.values(ImmichTelemetry));
@@ -365,6 +373,13 @@ const getEnv = (): EnvData => {
       mediaLocation: dto.IMMICH_MEDIA_LOCATION,
       backendsFile: dto.IMMICH_STORAGE_BACKENDS,
       uploadMaxAppendSize: dto.IMMICH_UPLOAD_MAX_APPEND_SIZE,
+    },
+
+    sync: {
+      deleteRetentionDays:
+        dto.IMMICH_SYNC_DELETE_RETENTION_DAYS === 'forever'
+          ? null
+          : (dto.IMMICH_SYNC_DELETE_RETENTION_DAYS ?? DEFAULT_SYNC_DELETE_RETENTION_DAYS),
     },
 
     telemetry: {

@@ -88,14 +88,7 @@ set
 where
   "userId" = $2
 
--- SessionRepository.resetSyncProgress
-begin
+-- SessionRepository.markAllForSyncReset
 update "session"
 set
   "isPendingSyncReset" = $1
-where
-  "id" = $2
-delete from "session_sync_checkpoint"
-where
-  "sessionId" = $1
-commit

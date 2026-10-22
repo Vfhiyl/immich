@@ -56,6 +56,8 @@ export const EnvSchema = z
       .int()
       .min(1024 * 1024)
       .optional(),
+    // days, or forever; at least as long as upstream allows a client to go without syncing
+    IMMICH_SYNC_DELETE_RETENTION_DAYS: z.union([z.literal('forever'), z.coerce.number().int().min(30)]).optional(),
     IMMICH_MICROSERVICES_METRICS_PORT: z.coerce.number().int().optional(),
     IMMICH_ALLOW_EXTERNAL_PLUGINS: stringBool.optional(),
     IMMICH_PLUGINS_INSTALL_FOLDER: absolutePath,

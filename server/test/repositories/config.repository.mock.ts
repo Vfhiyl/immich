@@ -88,6 +88,10 @@ export const envData: EnvData = {
     ignoreMountCheckErrors: false,
   },
 
+  sync: {
+    deleteRetentionDays: 365,
+  },
+
   telemetry: {
     apiPort: 8081,
     microservicesPort: 8082,

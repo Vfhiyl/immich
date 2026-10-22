@@ -6,6 +6,7 @@ import { AssetMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BaseSync, SyncRepository } from 'src/repositories/sync.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -16,7 +17,7 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   return newMediumService(SyncService, {
     database: db || defaultDatabase,
-    real: [DatabaseRepository, SyncRepository],
+    real: [DatabaseRepository, SyncRepository, SystemMetadataRepository],
     mock: [LoggingRepository],
   });
 };

@@ -703,6 +703,7 @@ describe(DatabaseBackupService.name, () => {
       mocks.storage.createWriteStream.mockReturnValue(new PassThrough());
       mocks.storage.createGzip.mockReturnValue(new PassThrough());
       mocks.storage.createGunzip.mockReturnValue(new PassThrough());
+      mocks.session.markAllForSyncReset.mockResolvedValue();
 
       const configMock = {
         getEnv: () => ({
@@ -733,6 +734,7 @@ describe(DatabaseBackupService.name, () => {
         mocks.cron as never,
         mocks.job as never,
         maintenanceHealthRepositoryMock,
+        mocks.session as never,
       );
     });
 
@@ -760,6 +762,8 @@ describe(DatabaseBackupService.name, () => {
       expect(progress).toHaveBeenCalledWith('migrations', 0.9);
 
       expect(maintenanceHealthRepositoryMock.checkApiHealth).toHaveBeenCalled();
+      // what clients synced since the backup was taken is gone
+      expect(mocks.session.markAllForSyncReset).toHaveBeenCalled();
       expect(mocks.process.spawnDuplexStream).toHaveBeenCalledTimes(3);
 
       expect(mocks.process.spawnDuplexStream).toHaveBeenLastCalledWith(
@@ -937,6 +941,8 @@ describe(DatabaseBackupService.name, () => {
       expect(mocks.user.hasAdmin).toHaveBeenCalled();
       expect(maintenanceHealthRepositoryMock.checkApiHealth).toHaveBeenCalled();
       expect(mocks.process.spawnDuplexStream).toHaveBeenCalledTimes(4);
+      // rolled back to what clients synced
+      expect(mocks.session.markAllForSyncReset).not.toHaveBeenCalled();
     });
   });
 });

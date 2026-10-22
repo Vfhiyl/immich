@@ -19,6 +19,7 @@ const resetEnv = () => {
     'IMMICH_MICROSERVICES_METRICS_PORT',
     'IMMICH_TELEMETRY_INCLUDE',
     'IMMICH_TELEMETRY_EXCLUDE',
+    'IMMICH_SYNC_DELETE_RETENTION_DAYS',
 
     'DB_URL',
     'DB_HOSTNAME',
@@ -99,6 +100,24 @@ describe('getEnv', () => {
     it('should throw an error for invalid value', () => {
       process.env.IMMICH_ALLOW_EXTERNAL_PLUGINS = 'invalid';
       expect(() => getEnv()).toThrowError('[IMMICH_ALLOW_EXTERNAL_PLUGINS] Invalid option: expected one of');
+    });
+  });
+
+  describe('IMMICH_SYNC_DELETE_RETENTION_DAYS', () => {
+    it('should keep the records of deletions for a year by default', () => {
+      expect(getEnv().sync).toEqual({ deleteRetentionDays: 365 });
+    });
+
+    it('should keep them for the configured days, or forever', () => {
+      process.env.IMMICH_SYNC_DELETE_RETENTION_DAYS = '730';
+      expect(getEnv().sync).toEqual({ deleteRetentionDays: 730 });
+      process.env.IMMICH_SYNC_DELETE_RETENTION_DAYS = 'forever';
+      expect(getEnv().sync).toEqual({ deleteRetentionDays: null });
+    });
+
+    it('should not keep them for less than a month', () => {
+      process.env.IMMICH_SYNC_DELETE_RETENTION_DAYS = '7';
+      expect(() => getEnv()).toThrowError('IMMICH_SYNC_DELETE_RETENTION_DAYS');
     });
   });
 
