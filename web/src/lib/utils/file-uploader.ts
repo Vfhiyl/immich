@@ -5,6 +5,7 @@ import {
   checkBulkUpload,
   getBaseUrl,
   type AssetMediaResponseDto,
+  UploadInterruptedError,
 } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { tick } from 'svelte';
@@ -17,7 +18,7 @@ import { uploadAssetsStore } from '$lib/stores/upload';
 import { UploadState } from '$lib/types';
 import { trackUpload, uploadRequest } from '$lib/utils';
 import { ExecutorQueue } from '$lib/utils/executor-queue';
-import { resumableUploader, UploadInterruptedError } from '$lib/utils/resumable-upload';
+import { resumableUploader } from '$lib/utils/resumable-upload';
 import { asQueryString } from '$lib/utils/shared-links';
 import { handleError } from './handle-error';
 

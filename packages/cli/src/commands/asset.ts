@@ -12,16 +12,18 @@ import {
   defaults,
   getAllAlbums,
   getSupportedMediaTypes,
+  type ResumableUploader,
 } from '@immich/sdk';
 import byteSize from 'byte-size';
 import { Matcher, watch as watchFs } from 'chokidar';
 import { MultiBar, Presets, SingleBar } from 'cli-progress';
 import { chunk } from 'lodash-es';
 import micromatch from 'micromatch';
-import { Stats, createReadStream, existsSync } from 'node:fs';
+import { Stats, createReadStream, existsSync, openAsBlob } from 'node:fs';
 import { stat, unlink } from 'node:fs/promises';
 import path, { basename } from 'node:path';
 import { Queue } from 'src/queue.js';
+import { createUploader } from 'src/resumable.js';
 import { BaseOptions, Batcher, authenticate, crawl, requirePermissions, s, sha1 } from 'src/utils.js';
 
 const UPLOAD_WATCH_BATCH_SIZE = 100;
@@ -47,6 +49,11 @@ export interface UploadOptionsDto {
   watch?: boolean;
   jsonOutput?: boolean;
 }
+
+/** Uploads in parts that go on where they stopped, for servers that take them; set by {@link upload} */
+const resumable: { uploader?: ResumableUploader } = {};
+/** The checksums of the files hashed to check for duplicates, which uploads in parts send along */
+const checksums = new Map<string, string>();
 
 class UploadFile extends File {
   constructor(
@@ -139,6 +146,7 @@ export const startWatch = async (
 export const upload = async (paths: string[], baseOptions: BaseOptions, options: UploadOptionsDto) => {
   await authenticate(baseOptions);
   await requirePermissions([Permission.AssetUpload]);
+  resumable.uploader = createUploader(baseOptions.configDirectory);
 
   const scanFiles = await scan(paths, options);
 
@@ -265,6 +273,7 @@ export const checkForDuplicates = async (files: string[], { concurrency, skipHas
       const dto = { id: filepath, checksum: await sha1(filepath) };
 
       results.push(dto);
+      checksums.set(filepath, dto.checksum);
       checkBulkUploadRequests.push(dto);
       if (checkBulkUploadRequests.length === 5000) {
         const batch = checkBulkUploadRequests;
@@ -404,6 +413,30 @@ const uploadFile = async (
   { visibility }: UploadOptionsDto,
 ): Promise<AssetMediaResponseDto> => {
   const { baseUrl, headers } = defaults;
+
+  // in parts, unless there is a sidecar (which uploads in parts do not take) or no checksum (--skip-hash)
+  const checksum = checksums.get(input);
+  const { uploader } = resumable;
+  if (uploader && checksum && !findSidecar(input) && (await uploader.getOptions(baseUrl))) {
+    const result = await uploader.upload({
+      baseUrl,
+      file: await openAsBlob(input),
+      checksum,
+      assetData: {
+        filename: basename(input),
+        fileCreatedAt: stats.mtime.toISOString(),
+        fileModifiedAt: stats.mtime.toISOString(),
+        isFavorite: false,
+        ...(visibility && { visibility }),
+      },
+      // the same file uploaded again goes on where its upload stopped
+      sessionKey: [baseUrl, path.resolve(input), stats.size, stats.mtimeMs].join('|'),
+    });
+    return {
+      id: result.id,
+      status: result.status === 'duplicate' ? AssetMediaStatus.Duplicate : AssetMediaStatus.Created,
+    };
+  }
 
   const formData = new FormData();
   formData.append('fileCreatedAt', stats.mtime.toISOString());

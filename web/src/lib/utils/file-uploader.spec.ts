@@ -1,5 +1,10 @@
 import * as sdk from '@immich/sdk';
-import { AssetMediaStatus, type AssetMediaResponseDto, type UserAdminResponseDto } from '@immich/sdk';
+import {
+  AssetMediaStatus,
+  UploadInterruptedError,
+  type AssetMediaResponseDto,
+  type UserAdminResponseDto,
+} from '@immich/sdk';
 import { get } from 'svelte/store';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -9,7 +14,7 @@ import { UploadState } from '$lib/types';
 import * as utils from '$lib/utils';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { fileUploadHandler } from './file-uploader';
-import { resumableUploader, UploadInterruptedError } from './resumable-upload';
+import { resumableUploader } from './resumable-upload';
 
 describe('fileUploader error handling', () => {
   const mockFile = new File(['content'], 'test.jpg', { type: 'image/jpeg' });

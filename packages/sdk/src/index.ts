@@ -3,6 +3,7 @@ import { MalformedResponseError } from './fetch-errors.js';
 
 export * from './fetch-client.js';
 export * from './fetch-errors.js';
+export * from './resumable-upload.js';
 
 export interface InitOptions {
   baseUrl: string;

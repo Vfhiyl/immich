@@ -329,6 +329,25 @@ export const runMobileUploadClient = async (args: string[]) => {
   }
 };
 
+/** The CLI (built in packages/cli/dist), with its configuration in `configDirectory` */
+export const runCli = async (args: string[], { configDirectory, key }: { configDirectory: string; key: string }) => {
+  const cli = resolve(serverRoot, '../packages/cli/dist/index.js');
+  try {
+    const { stdout } = await execFileAsync(process.execPath, [cli, ...args], {
+      env: {
+        PATH: process.env.PATH,
+        IMMICH_INSTANCE_URL: baseUrl,
+        IMMICH_API_KEY: key,
+        IMMICH_CONFIG_DIR: configDirectory,
+      },
+    });
+    return stdout;
+  } catch (error) {
+    const { stdout, stderr } = error as { stdout?: string; stderr?: string };
+    throw new Error(`The CLI failed:\n${stdout}\n${stderr}`, { cause: error });
+  }
+};
+
 /** A running server; `start` resolves once both workers are ready, or rejects with the output if it exits */
 export class ImmichServer {
   static async start(environment: TestEnvironment, { backends = true }: { backends?: boolean } = {}) {

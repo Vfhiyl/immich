@@ -149,6 +149,8 @@ By default, the upload command will hash the files before uploading them. This i
 immich upload --skip-hash --recursive directory/
 ```
 
+Large files are uploaded in parts. If an upload is interrupted (a broken connection, or the command stopped), running the same command again goes on where the upload stopped; uploads in progress are kept in `uploads.json` next to `auth.yml`. This needs the files to be hashed, and the server to take resumable uploads; files with a sidecar, files uploaded with `--skip-hash` and servers without resumable uploads are uploaded whole.
+
 You can automatically create albums based on the folder name by passing the `--album` option. This will automatically create albums for each uploaded asset based on the name of the folder they are in.
 
 ```bash

@@ -100,6 +100,17 @@ web_types() {
 # in English, which some tests expect dates and numbers in
 web_unit() { cd "$web" && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 "$(bin "$web" vitest)" --run; }
 
+# the CLI, against the SDK built for the web app; built for the end-to-end tests, which run it
+cli="$repo/packages/cli"
+cli_check() {
+  cd "$cli"
+  "$(bin "$cli" prettier)" --check .
+  "$(bin "$cli" eslint)" 'src/**/*.ts' --max-warnings 0
+  "$(bin "$cli" tsc)" --noEmit
+  "$(bin "$cli" vitest)" --run
+  "$(bin "$cli" vite)" build
+}
+
 # the mobile app, against the Dart client generated from the API description (not tracked, like upstream); needs
 # Flutter (the version pinned in mobile/mise.toml) and openapi-generator-cli on PATH
 mobile="$repo/mobile"
@@ -221,6 +232,7 @@ step 'web: formatting' web_format
 step 'web: lint' web_lint
 step 'web: types' web_types
 step 'web: unit tests' web_unit
+step 'cli: formatting, lint, types, unit tests and build' cli_check
 step 'mobile: generated code' mobile_codegen
 step 'mobile: formatting' mobile_format
 step 'mobile: analysis' mobile_analyze

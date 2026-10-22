@@ -1,5 +1,6 @@
+import { MemorySessionStore, NetworkError, ResumableUploader, type Transport } from '@immich/sdk';
 import { randomBytes } from 'node:crypto';
-import { readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -11,18 +12,13 @@ import {
   TestEnvironment,
   baseUrl,
   eventually,
+  runCli,
   runMobileUploadClient,
   serverPort,
   sha1,
   testAssetDir,
 } from 'src/storage-backends.js';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import {
-  MemorySessionStore,
-  NetworkError,
-  ResumableUploader,
-  type Transport,
-} from '../../../../web/src/lib/utils/resumable-upload.js';
 
 /**
  * Resumable uploads (draft-ietf-httpbis-resumable-upload) against a real server: without storage backends, with
@@ -251,6 +247,40 @@ describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3 }) =
     await expectOriginal(result.id, content);
     // the same file again is not sent again
     await expect(upload()).resolves.toEqual({ id: result.id, status: 'duplicate' });
+  });
+
+  it('should take a file from the CLI, going on with an upload of it that stopped', async () => {
+    const content = await largePhoto(PART + 54_321);
+    const directory = join(environment.root, 'cli');
+    await mkdir(directory, { recursive: true });
+    const path = join(directory, 'cli-upload.jpg');
+    await writeFile(path, content);
+    const { body: apiKey } = await api.json<{ secret: string }>('/api-keys', {
+      method: 'POST',
+      body: { name: 'cli', permissions: ['all'] },
+    });
+    const cli = { configDirectory: join(environment.root, 'cli-config'), key: apiKey!.secret };
+
+    // an earlier run sent the first part, then stopped
+    const location = await begin(content, 'cli-upload.jpg');
+    await append(location, 0, content.subarray(0, PART), false);
+    const { size, mtimeMs } = await stat(path);
+    await mkdir(cli.configDirectory, { recursive: true });
+    await writeFile(
+      join(cli.configDirectory, 'uploads.json'),
+      JSON.stringify({ [[baseUrl, path, size, mtimeMs].join('|')]: { location, size, checksum: sha1(content) } }),
+    );
+
+    const output = await runCli(['upload', '--no-progress', '--json-output', directory], cli);
+
+    // that upload went on, and made the asset
+    const state = await head(location);
+    expect(state.headers.get('upload-complete')).toBe('?1');
+    const id = state.headers.get('x-immich-asset-id')!;
+    expect(output).toContain(id);
+    await expectOriginal(id, content);
+    // done: nothing is kept to go on with
+    await expect(readFile(join(cli.configDirectory, 'uploads.json'), 'utf8')).resolves.toBe('{}');
   });
 
   it('should keep what the app knows about the photo, as a single upload does', async () => {
