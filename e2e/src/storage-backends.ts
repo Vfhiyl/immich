@@ -156,6 +156,10 @@ export class TestEnvironment {
     return join(this.root, 'immich-config.json');
   }
 
+  get databaseUrl() {
+    return `${postgresBase}/${this.database}`;
+  }
+
   get backendsFile() {
     return join(this.root, 'storage.yaml');
   }
@@ -288,6 +292,19 @@ export const runEncryptionTool = async (args: string[]) => {
     env: { PATH: `${dirname(process.execPath)}:/usr/bin:/bin` },
   });
   return stdout;
+};
+
+/** Run `immich-export`, which needs no running server; it exits with 1 when some originals could not be exported */
+export const runExportTool = async (args: string[]) => {
+  try {
+    const { stdout, stderr } = await execFileAsync(join(serverRoot, 'bin', 'immich-export'), args, {
+      env: { PATH: `${dirname(process.execPath)}:/usr/bin:/bin` },
+    });
+    return { code: 0, stdout, stderr };
+  } catch (error) {
+    const { code, stdout, stderr } = error as { code: number; stdout: string; stderr: string };
+    return { code, stdout, stderr };
+  }
 };
 
 /** A running server; `start` resolves once both workers are ready, or rejects with the output if it exits */

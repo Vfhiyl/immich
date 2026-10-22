@@ -10,6 +10,7 @@ import {
   TestEnvironment,
   eventually,
   runEncryptionTool,
+  runExportTool,
   sha1,
   testAssetDir,
 } from 'src/storage-backends.js';
@@ -698,6 +699,49 @@ describe('storage backends on an S3 service', () => {
     const replica = body.backends.find(({ backendId }) => backendId === 'replica');
     expect(replica?.days.some(({ requests }) => requests.write > 0)).toBe(true);
     expect(replica?.cost).toBeNull();
+  });
+
+  it('should export the originals with their metadata, from the database or from the objects alone', async () => {
+    const owner = await environment.query<{ email: string; localDateTime: Date }>(
+      `select u.email, a."localDateTime" from asset a join "user" u on u.id = a."ownerId" where a.id = $1`,
+      [assetId],
+    );
+    const day = owner[0].localDateTime.toISOString().slice(0, 10);
+    const output = join(environment.root, 'export');
+    const result = await runExportTool([
+      '--storage',
+      environment.backendsFile,
+      '--database',
+      environment.databaseUrl,
+      '--output',
+      output,
+    ]);
+    // the original damaged by the check above is reported, the others are exported
+    expect(result).toMatchObject({ code: 1, stdout: expect.stringMatching(/already exported 0, failed 1/) });
+    expect(result.stderr).toContain('failed integrity check');
+    // other uploads of the photo have the same name, and get a number
+    const folder = join(output, owner[0].email, day.slice(0, 4), day);
+    const names = await readdir(folder);
+    const descriptions = names.filter((name) => name.endsWith('.json'));
+    const descriptionsById = new Map<string, string>();
+    for (const name of descriptions) {
+      const { id } = JSON.parse(await readFile(join(folder, name), 'utf8'));
+      descriptionsById.set(id, name.slice(0, -'.json'.length));
+    }
+    const exportedName = descriptionsById.get(assetId)!;
+    expect(exportedName).toMatch(/^el_torcal_rocks( \(\d+\))?\.jpg$/);
+    await expect(readFile(join(folder, exportedName))).resolves.toEqual(photo);
+    await expect(readFile(join(folder, `${exportedName}.xmp`), 'utf8')).resolves.toContain('exif:DateTimeOriginal');
+
+    // without the database, the encrypted objects tell their file name and owner
+    const fromObjects = join(environment.root, 'export-objects');
+    await expect(
+      runExportTool(['--storage', environment.backendsFile, '--output', fromObjects]),
+    ).resolves.toMatchObject({
+      stdout: expect.stringMatching(/failed 1/),
+    });
+    const exported = await readdir(fromObjects, { recursive: true });
+    expect(exported.some((path) => /\/el_torcal_rocks( \(\d+\))?\.jpg$/.test(path))).toBe(true);
   });
 
   it('should remove every object of permanently deleted assets', async () => {
