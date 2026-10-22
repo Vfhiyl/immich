@@ -2,7 +2,10 @@ package app.alextran.immich.background
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
 import android.os.Build
 import android.os.Handler
@@ -10,6 +13,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.work.ForegroundInfo
 import androidx.work.ListenableWorker
 import androidx.work.WorkerParameters
@@ -57,6 +61,16 @@ class BackgroundWorker(context: Context, params: WorkerParameters) :
 
   private var foregroundFuture: ListenableFuture<Void>? = null
 
+  /// Stops the backup as soon as the phone is used or unplugged: in the background it runs only while neither is
+  /// the case. What was sent is kept, the next run resumes from there
+  private val interruptions = object : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+      Log.i(TAG, "Stopping background upload worker: ${intent.action}")
+      stop(Result.success())
+    }
+  }
+  private var isListening = false
+
   companion object {
     private const val NOTIFICATION_CHANNEL_ID = "immich::background_worker::notif"
     private const val NOTIFICATION_ID = 100
@@ -75,8 +89,25 @@ class BackgroundWorker(context: Context, params: WorkerParameters) :
       return Futures.immediateFuture(Result.success())
     }
 
+    val pause = BackgroundConditions.pauseReason(ctx)
+    if (pause != null) {
+      Log.i(TAG, "Not backing up in the background now: $pause")
+      activeWorker.compareAndSet(this, null)
+      return Futures.immediateFuture(Result.success())
+    }
+
     try {
       Log.i(TAG, "Starting background upload worker")
+      ContextCompat.registerReceiver(
+        ctx,
+        interruptions,
+        IntentFilter().apply {
+          addAction(Intent.ACTION_SCREEN_ON)
+          addAction(Intent.ACTION_POWER_DISCONNECTED)
+        },
+        ContextCompat.RECEIVER_NOT_EXPORTED
+      )
+      isListening = true
 
       if (!loader.initialized()) {
         loader.startInitialization(ctx)
@@ -119,6 +150,7 @@ class BackgroundWorker(context: Context, params: WorkerParameters) :
 
       return completionHandler
     } catch (error: Throwable) {
+      stopListening()
       activeWorker.compareAndSet(this, null)
       throw error
     }
@@ -162,6 +194,10 @@ class BackgroundWorker(context: Context, params: WorkerParameters) :
   }
 
   override fun close() {
+    stop(Result.failure())
+  }
+
+  private fun stop(result: Result) {
     if (isComplete) {
       return
     }
@@ -169,21 +205,21 @@ class BackgroundWorker(context: Context, params: WorkerParameters) :
     val api = flutterApi
     if (api == null) {
       Handler(Looper.getMainLooper()).postAtFrontOfQueue {
-        complete(Result.failure())
+        complete(result)
       }
       return
     }
 
     Handler(Looper.getMainLooper()).postAtFrontOfQueue {
       api.cancel {
-        complete(Result.failure())
+        complete(result)
       }
     }
 
     waitForForegroundPromotion()
 
     Handler(Looper.getMainLooper()).postDelayed({
-      complete(Result.failure())
+      complete(result)
     }, 5000)
   }
 
@@ -227,6 +263,7 @@ class BackgroundWorker(context: Context, params: WorkerParameters) :
   private fun complete(success: Result) {
     Log.d(TAG, "About to complete BackupWorker with result: $success")
     isComplete = true
+    stopListening()
     if (engine != null) {
       MainActivity.cancelPlugins(engine!!)
     }
@@ -238,6 +275,13 @@ class BackgroundWorker(context: Context, params: WorkerParameters) :
     activeWorker.compareAndSet(this, null)
     waitForForegroundPromotion()
     completionHandler.set(success)
+  }
+
+  private fun stopListening() {
+    if (isListening) {
+      ctx.unregisterReceiver(interruptions)
+      isListening = false
+    }
   }
 
   /**

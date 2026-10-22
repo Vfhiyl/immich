@@ -104,7 +104,12 @@ class BackgroundWorkerApiImpl(context: Context) : BackgroundWorkerFgHostApi {
     }
 
     fun enqueueBackgroundWorker(ctx: Context) {
-      val constraints = Constraints.Builder().setRequiresBatteryNotLow(true).build()
+      val settings = BackgroundWorkerPreferences(ctx).getSettings()
+      // also stops the worker when the phone is unplugged
+      val constraints = Constraints.Builder().apply {
+        setRequiresBatteryNotLow(true)
+        setRequiresCharging(settings.requiresCharging)
+      }.build()
       val work = OneTimeWorkRequestBuilder<BackgroundWorker>()
         .setConstraints(constraints)
         .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)

@@ -7,7 +7,8 @@
 # Usage: misc/check.sh [--quick]     --quick skips the medium, contract and end-to-end tests
 #
 # Needs: Node and pnpm with dependencies installed (`pnpm install`), ffmpeg, redis-server, oazapfts (the version
-# pinned in mise.toml) and Flutter on PATH, OPENAPI_GENERATOR_JAR (the openapi-generator-cli jar), and
+# pinned in mise.toml) and Flutter on PATH, OPENAPI_GENERATOR_JAR (the openapi-generator-cli jar), a JDK and the
+# Android SDK at ANDROID_HOME (Gradle downloads the rest from Maven Central, or a mirror set in an init script), and
 # PostgreSQL with the vector extension at CHECK_POSTGRES_URL (a server URL without database name,
 # default postgres://postgres:postgres@localhost:5432). Nothing here needs Docker.
 
@@ -109,6 +110,8 @@ mobile_codegen() {
   mkdir -p "$tools"
   printf '#!/usr/bin/env sh\nexec java -jar "%s" "$@"\n' "$OPENAPI_GENERATOR_JAR" >"$tools/openapi-generator-cli"
   chmod +x "$tools/openapi-generator-cli"
+  local before="$work/mobile-before.diff"
+  mobile_changes >"$before"
   cd "$repo/open-api" && PATH="$tools:$PATH" bash bin/generate-dart-sdk.sh
   cd "$mobile"
   flutter pub get --enforce-lockfile
@@ -122,8 +125,13 @@ mobile_codegen() {
   dart format lib/generated/codegen_loader.g.dart
   dart run bin/generate_keys.dart
   dart format lib/generated/translations.g.dart
-  # nothing generated is tracked: what changed here is a change of the sources
-  git -C "$repo" diff --exit-code -- mobile
+  # nothing generated is tracked: what generating changed is a change of the sources
+  mobile_changes | diff -u "$before" - >&2
+}
+# the changes of the mobile app's tracked files, and its untracked files, against the last commit
+mobile_changes() {
+  git -C "$repo" diff --binary -- mobile
+  git -C "$repo" status --porcelain --untracked-files=all -- mobile
 }
 # what upstream formats (mise run format)
 mobile_format() {
@@ -134,6 +142,11 @@ mobile_format() {
 mobile_analyze() { cd "$mobile" && dart analyze --fatal-infos; }
 # in English, like the web app
 mobile_unit() { cd "$mobile" && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 flutter test --reporter=compact; }
+# the native code of the Android app: its unit tests, and the app built (with the Dart code compiled into it)
+mobile_android() {
+  : "${ANDROID_HOME:?set ANDROID_HOME to the Android SDK}"
+  cd "$mobile/android" && ./gradlew --quiet :app:testDebugUnitTest :app:assembleDebug
+}
 
 # --- build, schema and generated SQL ---
 
@@ -208,6 +221,7 @@ step 'mobile: generated code' mobile_codegen
 step 'mobile: formatting' mobile_format
 step 'mobile: analysis' mobile_analyze
 step 'mobile: unit tests' mobile_unit
+step 'mobile: Android app' mobile_android
 if [[ "$quick" == false ]]; then
   step 'server: medium tests' medium
   remove_orphans

@@ -29,6 +29,7 @@ android {
 
   sourceSets {
     main.java.srcDirs += 'src/main/kotlin'
+    test.java.srcDirs += 'src/test/kotlin'
   }
 
   buildFeatures {
@@ -116,6 +117,8 @@ dependencies {
   implementation libs.compose.material3
   implementation libs.lifecycle.runtime.ktx
   implementation libs.material
+
+  testImplementation libs.junit
 }
 
 // This is uncommented in F-Droid build script
