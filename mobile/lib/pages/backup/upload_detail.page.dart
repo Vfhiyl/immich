@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
+import 'package:immich_mobile/domain/models/store.model.dart';
+import 'package:immich_mobile/entities/store.entity.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/presentation/widgets/images/thumbnail.widget.dart';
@@ -154,6 +158,11 @@ class _UploadDetailPageState extends ConsumerState<UploadDetailPage> {
               title: context.t.errors_text,
               count: failedItems.length,
               color: context.colorScheme.error,
+              action: TextButton.icon(
+                onPressed: _retryFailed,
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: Text(context.t.retry),
+              ),
             ),
           ),
           SliverPadding(
@@ -173,11 +182,24 @@ class _UploadDetailPageState extends ConsumerState<UploadDetailPage> {
     );
   }
 
-  Widget _buildSectionHeader(BuildContext context, {required String title, int? count, required Color color}) {
+  void _retryFailed() {
+    final user = Store.tryGet(StoreKey.currentUser);
+    if (user != null) {
+      unawaited(ref.read(backupProvider.notifier).retryFailed(user.id));
+    }
+  }
+
+  Widget _buildSectionHeader(
+    BuildContext context, {
+    required String title,
+    int? count,
+    required Color color,
+    Widget? action,
+  }) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
             title,
@@ -197,6 +219,7 @@ class _UploadDetailPageState extends ConsumerState<UploadDetailPage> {
                   ),
                 )
               : const SizedBox.shrink(),
+          if (action != null) ...[const Spacer(), action],
         ],
       ),
     );

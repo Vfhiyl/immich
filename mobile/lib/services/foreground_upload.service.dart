@@ -34,7 +34,10 @@ class UploadCallbacks {
   final void Function(String id, String errorMessage)? onError;
   final void Function(String id, double progress)? onICloudProgress;
 
-  const UploadCallbacks({this.onProgress, this.onSuccess, this.onError, this.onICloudProgress});
+  /// How many of the assets to back up wait for Wi-Fi (the settings do not allow mobile data for them)
+  final void Function(int count)? onWaitingForWifi;
+
+  const UploadCallbacks({this.onProgress, this.onSuccess, this.onError, this.onICloudProgress, this.onWaitingForWifi});
 }
 
 final foregroundUploadServiceProvider = Provider((ref) {
@@ -97,6 +100,8 @@ class ForegroundUploadService {
     final networkCapabilities = await _connectivityApi.getCapabilities();
     final hasWifi = networkCapabilities.isUnmetered;
     _logger.info('Network capabilities: $networkCapabilities, hasWifi/isUnmetered: $hasWifi');
+    // not uploaded now: told, so that the app can say why
+    callbacks.onWaitingForWifi?.call(hasWifi ? 0 : candidates.where(_shouldRequireWiFi).length);
 
     if (useSequentialUpload) {
       await _uploadSequentially(items: candidates, cancelToken: cancelToken, hasWifi: hasWifi, callbacks: callbacks);

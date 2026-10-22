@@ -136,6 +136,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
                   const _TotalCard(),
                   const _BackupCard(),
                   const _RemainderCard(),
+                  const _WaitingForWifi(),
                   const Divider(),
                   BackupToggleButton(
                     onStart: () async => await startBackup(),
@@ -410,6 +411,24 @@ class _BackupAlbumSelectionCard extends ConsumerWidget {
           child: Text(context.t.select, style: const TextStyle(fontWeight: FontWeight.bold)),
         ),
       ),
+    );
+  }
+}
+
+/// Why some assets are not backed up now
+class _WaitingForWifi extends ConsumerWidget {
+  const _WaitingForWifi();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(backupProvider.select((p) => p.waitingForWifiCount));
+    if (count == 0) {
+      return const SizedBox.shrink();
+    }
+    return ListTile(
+      leading: Icon(Icons.wifi_off_rounded, color: context.colorScheme.onSurfaceVariant),
+      title: Text(context.t.backup_waiting_for_wifi(count: count), style: context.textTheme.bodyMedium),
+      onTap: () => unawaited(context.pushRoute(const BackupOptionsRoute())),
     );
   }
 }

@@ -43,6 +43,9 @@ abstract class BackupState with _$BackupState {
     required int processingCount,
     required bool isSyncing,
     @Default(BackupError.none) BackupError error,
+
+    /// Assets to back up that wait for Wi-Fi, as the settings do not allow mobile data for them
+    @Default(0) int waitingForWifiCount,
     required Map<String, UploadStatus> uploadItems,
     @Default({}) Map<String, double> iCloudDownloadProgress,
   }) = _BackupState;
@@ -171,6 +174,7 @@ class BackupNotifier extends StateNotifier<BackupState> {
           onSuccess: _handleForegroundBackupSuccess,
           onError: _handleForegroundBackupError,
           onICloudProgress: _handleICloudProgress,
+          onWaitingForWifi: _handleWaitingForWifi,
         ),
       );
     } finally {
@@ -180,6 +184,20 @@ class BackupNotifier extends StateNotifier<BackupState> {
         _endBackgroundJob();
       }
     }
+  }
+
+  void _handleWaitingForWifi(int count) {
+    if (mounted) {
+      state = state.copyWith(waitingForWifiCount: count);
+    }
+  }
+
+  /// Backs up again what failed (and what is left)
+  Future<void> retryFailed(String userId) {
+    state = state.copyWith(
+      uploadItems: Map.fromEntries(state.uploadItems.entries.where((item) => item.value.isFailed != true)),
+    );
+    return startForegroundBackup(userId);
   }
 
   void _endBackgroundJob() {
@@ -197,7 +215,7 @@ class BackupNotifier extends StateNotifier<BackupState> {
     _cancelToken = null;
     _endBackgroundJob();
     _uploadSpeedManager.clear();
-    state = state.copyWith(uploadItems: {}, iCloudDownloadProgress: {});
+    state = state.copyWith(uploadItems: {}, iCloudDownloadProgress: {}, waitingForWifiCount: 0);
   }
 
   void _handleICloudProgress(String localAssetId, double progress) {

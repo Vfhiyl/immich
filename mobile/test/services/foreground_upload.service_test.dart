@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNotNull, isNull;
@@ -10,6 +11,7 @@ import 'package:immich_mobile/domain/services/store.service.dart';
 import 'package:immich_mobile/entities/store.entity.dart';
 import 'package:immich_mobile/infrastructure/repositories/settings.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/store.repository.dart';
+import 'package:immich_mobile/platform/connectivity_api.g.dart';
 import 'package:immich_mobile/repositories/upload.repository.dart';
 import 'package:immich_mobile/services/foreground_upload.service.dart';
 import 'package:mocktail/mocktail.dart';
@@ -290,6 +292,43 @@ void main() {
       verify(() => mockAssetService.stackEditedUpload(asset.localId!, 'remote', 'sha')).called(1);
       verifyZeroInteractions(mockStorageRepository);
       verifyZeroInteractions(mockUploadRepository);
+    });
+  });
+
+  group('uploadCandidates', () {
+    test('tells how many assets wait for Wi-Fi, and does not upload them on mobile data', () async {
+      when(
+        () => mockBackupRepository.getCandidates('user-1'),
+      ).thenAnswer((_) async => [LocalAssetStub.image1, LocalAssetStub.image2]);
+      when(() => mockConnectivityApi.getCapabilities()).thenAnswer((_) async => [NetworkCapability.cellular]);
+      when(() => mockStorageRepository.clearCache()).thenAnswer((_) async {});
+      final waiting = <int>[];
+
+      await sut.uploadCandidates(
+        'user-1',
+        Completer<void>(),
+        callbacks: UploadCallbacks(onWaitingForWifi: waiting.add),
+      );
+
+      // mobile data is not allowed by default
+      expect(waiting, [2]);
+      verifyZeroInteractions(mockUploadRepository);
+    });
+
+    test('tells that nothing waits on Wi-Fi', () async {
+      when(() => mockBackupRepository.getCandidates('user-1')).thenAnswer((_) async => [LocalAssetStub.image1]);
+      when(() => mockConnectivityApi.getCapabilities()).thenAnswer((_) async => [NetworkCapability.unmetered]);
+      when(() => mockStorageRepository.clearCache()).thenAnswer((_) async {});
+      when(() => mockStorageRepository.getAssetEntityForAsset(LocalAssetStub.image1)).thenAnswer((_) async => null);
+      final waiting = <int>[];
+
+      await sut.uploadCandidates(
+        'user-1',
+        Completer<void>(),
+        callbacks: UploadCallbacks(onWaitingForWifi: waiting.add),
+      );
+
+      expect(waiting, [0]);
     });
   });
 }

@@ -212,4 +212,42 @@ void main() {
       verify(() => userUploadJob.finish()).called(1);
     });
   });
+
+  group('why assets wait, and trying again', () {
+    test('tells how many assets wait for Wi-Fi, until the backup stops', () async {
+      mockCounts(total: 3, remainder: 3);
+      when(() => foregroundUploadService.uploadCandidates(any(), any(), callbacks: any(named: 'callbacks'))).thenAnswer(
+        (invocation) async => (invocation.namedArguments[#callbacks] as UploadCallbacks).onWaitingForWifi?.call(2),
+      );
+
+      await notifier.startForegroundBackup('user-1');
+      expect(notifier.state.waitingForWifiCount, 2);
+
+      notifier.stopForegroundBackup(reason: 'test');
+      expect(notifier.state.waitingForWifiCount, 0);
+    });
+
+    test('tries again what failed, without the failures shown any longer', () async {
+      mockCounts(total: 3, remainder: 3);
+      var runs = 0;
+      when(() => foregroundUploadService.uploadCandidates(any(), any(), callbacks: any(named: 'callbacks'))).thenAnswer(
+        (invocation) async {
+          runs++;
+          if (runs == 1) {
+            final callbacks = invocation.namedArguments[#callbacks] as UploadCallbacks;
+            callbacks.onError?.call('asset-1', 'server error');
+            callbacks.onProgress?.call('asset-2', 'b.jpg', 10, 100);
+          }
+        },
+      );
+      await notifier.startForegroundBackup('user-1');
+      expect(notifier.state.errorCount, 1);
+
+      await notifier.retryFailed('user-1');
+
+      expect(runs, 2);
+      expect(notifier.state.errorCount, 0);
+      expect(notifier.state.uploadItems.keys, ['asset-2']);
+    });
+  });
 }
