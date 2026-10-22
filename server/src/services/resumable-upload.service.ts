@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { createReadStream, existsSync } from 'node:fs';
+import { mkdir, open, readFile, readdir, rm, stat, truncate } from 'node:fs/promises';
 import { IncomingHttpHeaders } from 'node:http';
 import { extname, join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -356,6 +357,7 @@ export class ResumableUploadService extends BaseService {
     const number = session.parts.length + 1;
     const part = await store.uploadPart(session.key, upload, { number, data });
 
+    await this.writeCopy(session, Number(session.committedOffset), data);
     const offset = Number(session.committedOffset) + data.length;
     hash.update(data);
     // the rest is in place before the offset moves, so a crash in between loses nothing
@@ -401,12 +403,17 @@ export class ResumableUploadService extends BaseService {
       await this.storageBackendRepository.registerWrite(session.backendId, session.key);
     }
     await store.completeUpload(session.key, upload, [...session.parts, last]);
+    const copy = await this.finishCopy(session, data, size, checksum);
     await rm(path, { force: true });
 
     // on a backend the original is stored already; without one it is at its upload path, as an upload always was
     const stored: StoredFile | undefined = this.isBuiltin(session)
       ? undefined
       : { backendId: session.backendId, key: session.key, size, checksum, encryption: session.encryption };
+    // processing reads the copy instead of downloading the original again, as for a single upload
+    if (stored && copy && !(await this.storageBackendRepository.keepLocalCopy(stored, copy))) {
+      await rm(copy, { force: true });
+    }
     const owner = await this.userRepository.get(session.ownerId, { withDeleted: false });
     if (!owner) {
       throw new NotFoundException('The owner of the upload no longer exists');
@@ -591,6 +598,71 @@ export class ResumableUploadService extends BaseService {
     const tail = await Tail.open(this.tailPath(id, offset));
     await tail.write(data);
     return tail;
+  }
+
+  /** The upload as it arrived, kept as the local copy for processing where it may be (removed with the tails) */
+  private copyPath(id: string) {
+    return join(this.tailFolder, `${id}.copy`);
+  }
+
+  /**
+   * Write received content to the copy at its offset (a part sent again after a crash is written again): whether there
+   * is a copy is decided when the content starts, by its declared length
+   */
+  private async writeCopy(session: Session, position: number, data: Buffer) {
+    if (this.isBuiltin(session)) {
+      return;
+    }
+    const path = this.copyPath(session.id);
+    try {
+      if (position === 0) {
+        const location = { backendId: session.backendId!, key: session.key };
+        if (
+          session.length === null ||
+          !(await this.storageBackendRepository.canKeepLocalCopy(location, session.length))
+        ) {
+          return;
+        }
+      } else if (!existsSync(path)) {
+        return;
+      }
+      const file = await open(path, position === 0 ? 'w' : 'r+');
+      try {
+        await file.write(data, 0, data.length, position);
+      } finally {
+        await file.close();
+      }
+    } catch (error) {
+      // only a shortcut: processing downloads the original instead
+      this.logger.debug(`Unable to write the local copy of upload ${session.id}: ${error}`);
+      await rm(path, { force: true });
+    }
+  }
+
+  /**
+   * The copy with the last content, if it is the file that was uploaded: it is only a cache of what was received, which
+   * a crash may have left incomplete
+   */
+  private async finishCopy(session: Session, data: Buffer, size: number, checksum: Buffer) {
+    await this.writeCopy(session, Number(session.committedOffset), data);
+    const path = this.copyPath(session.id);
+    if (!existsSync(path)) {
+      return;
+    }
+    try {
+      await truncate(path, size);
+      const hash = createHash('sha1');
+      for await (const chunk of createReadStream(path)) {
+        hash.update(chunk as Buffer);
+      }
+      if (hash.digest().equals(checksum)) {
+        return path;
+      }
+      this.logger.warn(`The local copy of upload ${session.id} does not match what was uploaded, not using it`);
+    } catch (error) {
+      this.logger.debug(`Unable to check the local copy of upload ${session.id}: ${error}`);
+    }
+    await rm(path, { force: true });
   }
 
   private async removeTails(id: string) {

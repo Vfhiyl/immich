@@ -486,6 +486,12 @@ export class StorageBackendRepository {
    * it afterwards. Resolves false, leaving the file to the caller, when no copy is needed (the stored file can be read
    * where it is) or none can be kept.
    */
+  /** Whether a copy of a file about to be stored there, of this size, would be kept for the processing that follows */
+  async canKeepLocalCopy(location: StorageLocation, size: number): Promise<boolean> {
+    const file: StoredFile = { ...location, size, checksum: null, encryption: null };
+    return this.isReadThroughStore(file) && (await this.getLocalCopies().canKeep(size));
+  }
+
   async keepLocalCopy(stored: StoredFile, path: string): Promise<boolean> {
     if (!this.isReadThroughStore(stored)) {
       return false;

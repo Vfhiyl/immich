@@ -283,6 +283,30 @@ describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3 }) =
     await expect(readFile(join(cli.configDirectory, 'uploads.json'), 'utf8')).resolves.toBe('{}');
   });
 
+  it.runIf(withS3)('should process a file uploaded in parts without downloading it again', async () => {
+    const content = await largePhoto(PART + 1000);
+    const location = await begin(content, 'processed-locally.jpg');
+    await append(location, 0, content.subarray(0, PART), false);
+    const response = await append(location, PART, content.subarray(PART), true);
+    const { id } = (await response.json()) as { id: string };
+
+    // the thumbnails are made, and the requests of that are counted (every few seconds)
+    await eventually(async () => {
+      const rows = await environment.query<{ count: string }>(
+        `select count(*) from storage_request_usage where "backendId" = 'derived' and purpose = 'AssetGenerateThumbnails'`,
+      );
+      expect(Number(rows[0].count)).toBeGreaterThan(0);
+    });
+
+    // metadata and thumbnails came from the copy kept of the upload
+    const reads = await environment.query<{ purpose: string; operation: string }>(
+      `select purpose, operation from storage_request_usage
+       where "backendId" = 'originals' and operation = 'GetObject' and purpose <> 'api'`,
+    );
+    expect(reads).toEqual([]);
+    await expectOriginal(id, content);
+  });
+
   it('should keep what the app knows about the photo, as a single upload does', async () => {
     const content = Buffer.concat([await readFile(photoPath), Buffer.from('metadata')]);
     const metadata = [{ key: 'mobile-app', value: { iCloudId: 'icloud-1' } }];

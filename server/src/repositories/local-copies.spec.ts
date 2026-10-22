@@ -61,6 +61,13 @@ describe(LocalCopies.name, () => {
     await expect(sut.drop(location('missing'))).resolves.toBeUndefined();
   });
 
+  it('should tell whether a copy of a size would be kept', async () => {
+    await expect(create({ maxBytes: 100 }).canKeep(100)).resolves.toBe(true);
+    await expect(create({ maxBytes: 100 }).canKeep(101)).resolves.toBe(false);
+    await expect(create({ minFreeShare: 1 }).canKeep(1)).resolves.toBe(false);
+    await expect(create().canKeep(Infinity)).resolves.toBe(false);
+  });
+
   it('should not keep a copy when the filesystem would run short of space', async () => {
     const sut = create({ minFreeShare: 1 });
     const upload = await writeUpload('upload.jpg', 'photo');

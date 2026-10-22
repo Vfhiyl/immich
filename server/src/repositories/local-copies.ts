@@ -75,6 +75,21 @@ export class LocalCopies {
    * Move a local file into the copies of a stored file. Resolves false, leaving the file where it is, when there is not
    * enough space or the file cannot be moved (e.g. it is on another filesystem).
    */
+  /** Whether a copy of this size would be kept now, under the limits (the space may still run out meanwhile) */
+  async canKeep(size: number): Promise<boolean> {
+    try {
+      await mkdir(this.root, { recursive: true });
+      const filesystem = await statfs(this.root);
+      const total = filesystem.blocks * filesystem.bsize;
+      const freeAfter = (filesystem.bavail * filesystem.bsize - size) / total;
+      return (
+        size <= Math.min(this.limits.maxBytes, this.limits.maxShare * total) && freeAfter >= this.limits.minFreeShare
+      );
+    } catch {
+      return false;
+    }
+  }
+
   async keep(location: StorageLocation, path: string): Promise<boolean> {
     const target = this.pathOf(location);
     try {
