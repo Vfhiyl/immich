@@ -41,6 +41,7 @@ import { StorageCheckService } from 'src/services/storage-check.service.js';
 import { StorageDeletionService } from 'src/services/storage-deletion.service.js';
 import { StorageReplicaService } from 'src/services/storage-replica.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
+import { StorageUsageService } from 'src/services/storage-usage.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
@@ -100,6 +101,7 @@ export const services = [
   StorageCheckService,
   StorageDeletionService,
   StorageReplicaService,
+  StorageUsageService,
   StorageService,
   StorageTemplateService,
   SyncService,

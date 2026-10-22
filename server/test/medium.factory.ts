@@ -63,6 +63,7 @@ import { StorageBackendRepository } from 'src/repositories/storage-backend.repos
 import { StorageCheckRepository } from 'src/repositories/storage-check.repository.js';
 import { StorageDeletionRepository } from 'src/repositories/storage-deletion.repository.js';
 import { StorageReplicaRepository } from 'src/repositories/storage-replica.repository.js';
+import { StorageUsageRepository } from 'src/repositories/storage-usage.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
@@ -525,6 +526,7 @@ const newRealRepository = <T extends BaseServiceDeps[number]>(key: T, db: Kysely
     case StorageCheckRepository:
     case StorageDeletionRepository:
     case StorageReplicaRepository:
+    case StorageUsageRepository:
     case SyncRepository:
     case SyncCheckpointRepository:
     case SystemMetadataRepository:
@@ -600,6 +602,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
     case StorageCheckRepository:
     case StorageDeletionRepository:
     case StorageReplicaRepository:
+    case StorageUsageRepository:
     case SystemMetadataRepository:
     case UploadSessionRepository:
     case UserRepository:

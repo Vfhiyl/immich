@@ -373,6 +373,26 @@ export type AdminConfigServerDto = {
     /** Public users */
     publicUsers: boolean;
 };
+export type AdminConfigStorageBackendPricingDto = {
+    /** Id of the storage backend */
+    backendId: string;
+    /** Currency of the prices, e.g. CNY */
+    currency: string;
+    /** Price of 10,000 delete requests */
+    deleteRequests10k: number;
+    /** Price of reading 1 GiB from the service to the server */
+    egressGb: number;
+    /** Price of 10,000 read requests (GET, HEAD) */
+    readRequests10k: number;
+    /** Price of storing 1 GiB for a month */
+    storageGbMonth: number;
+    /** Price of 10,000 write and list requests (PUT, POST, LIST) */
+    writeRequests10k: number;
+};
+export type AdminConfigStoragePricingDto = {
+    /** Prices of the storage backends, as the deployment pays them; used for estimates only */
+    backends: AdminConfigStorageBackendPricingDto[];
+};
 export type AdminConfigStorageTemplateDto = {
     /** Enabled */
     enabled: boolean;
@@ -424,6 +444,7 @@ export type AdminConfigDto = {
     passwordLogin: AdminConfigPasswordLoginDto;
     reverseGeocoding: AdminConfigReverseGeocodingDto;
     server: AdminConfigServerDto;
+    storagePricing: AdminConfigStoragePricingDto;
     storageTemplate: AdminConfigStorageTemplateDto;
     templates: AdminConfigTemplatesDto;
     theme: AdminConfigThemeDto;
@@ -706,6 +727,68 @@ export type StorageReplicaFailingResponseDto = {
 export type StorageReplicaRetryResponseDto = {
     /** Copies that are tried again now */
     count: number;
+};
+export type StorageCostDto = {
+    /** Currency of the prices */
+    currency: string;
+    /** Estimated cost of reading from the service */
+    egress: number;
+    /** Estimated cost of the requests */
+    requests: number;
+    /** Estimated cost of storing */
+    storage: number;
+    /** Estimated cost in all */
+    total: number;
+};
+export type StorageRequestCountsDto = {
+    /** Delete requests */
+    "delete": number;
+    /** Read requests (GET, HEAD) */
+    read: number;
+    /** Write and list requests (PUT, POST, LIST) */
+    write: number;
+};
+export type StorageStoredAmountDto = {
+    bytes: number;
+    objects: number;
+};
+export type StorageDailyUsageDto = {
+    /** Bytes read from the service */
+    bytesReceived: number;
+    /** Bytes sent to the service */
+    bytesSent: number;
+    cost: (StorageCostDto) | null;
+    /** UTC day (YYYY-MM-DD) */
+    day: string;
+    requests: StorageRequestCountsDto;
+    /** What is stored, by category */
+    stored: {
+        [key: string]: StorageStoredAmountDto;
+    };
+    /** Bytes stored, estimated from the records of the files */
+    storedBytes: number;
+    /** Objects stored, as recorded that night; 0 if not recorded */
+    storedObjects: number;
+};
+export type StoragePurposeUsageDto = {
+    bytesReceived: number;
+    bytesSent: number;
+    cost: (StorageCostDto) | null;
+    /** The job that made the requests, or api for requests of users */
+    purpose: string;
+    requests: StorageRequestCountsDto;
+};
+export type StorageBackendUsageDto = {
+    backendId: string;
+    cost: (StorageCostDto) | null;
+    days: StorageDailyUsageDto[];
+    /** Requests over the whole range, by what made them */
+    purposes: StoragePurposeUsageDto[];
+};
+export type StorageUsageResponseDto = {
+    backends: StorageBackendUsageDto[];
+    "from": string;
+    to: string;
 };
 export type UserLicense = {
     /** Activation date */
@@ -4575,6 +4658,23 @@ export function retryStorageReplicaCopies({ id }: {
     }>(`/admin/storage/replicas/${encodeURIComponent(id)}/retry`, {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Get the storage usage
+ */
+export function getStorageUsage({ $from, to }: {
+    $from?: string;
+    to?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageUsageResponseDto;
+    }>(`/admin/storage/usage${QS.query(QS.explode({
+        "from": $from,
+        to
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -8853,6 +8953,7 @@ export enum JobName {
     StorageVerify = "StorageVerify",
     StorageReplicate = "StorageReplicate",
     StorageReplicaReconcile = "StorageReplicaReconcile",
+    StorageUsageSnapshot = "StorageUsageSnapshot",
     AssetGenerateThumbnailsQueueAll = "AssetGenerateThumbnailsQueueAll",
     AssetGenerateThumbnails = "AssetGenerateThumbnails",
     AuditTableCleanup = "AuditTableCleanup",

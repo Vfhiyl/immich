@@ -11,6 +11,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
+import { withStoragePurpose } from 'src/utils/storage-metering.js';
 
 type JobMapItem = {
   jobName: JobName;
@@ -141,7 +142,8 @@ export class JobRepository {
       return JobStatus.Skipped;
     }
 
-    return item.handler(data);
+    // storage requests are counted for the job that makes them
+    return withStoragePurpose(name, () => item.handler(data));
   }
 
   setConcurrency(queueName: QueueName, concurrency: number) {

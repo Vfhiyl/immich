@@ -43,6 +43,7 @@ export const newStorageBackendRepositoryMock = (): Mocked<RepositoryInterface<St
     keepLocalCopy: vitest.fn((stored, path) => real.keepLocalCopy(stored, path)),
     dropLocalCopy: vitest.fn((file) => real.dropLocalCopy(file)),
     sweepLocalCopies: vitest.fn(() => real.sweepLocalCopies()),
+    drainRequestUsage: vitest.fn(() => real.drainRequestUsage()),
     getRegistered: vitest.fn().mockResolvedValue([
       { id: 'host', driver: 'local' },
       { id: 'media', driver: 'local' },

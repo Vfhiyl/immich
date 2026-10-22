@@ -23,8 +23,9 @@ import { KeyProvider, MasterKeys } from 'src/repositories/key-provider.js';
 import { LocalBlobStore } from 'src/repositories/local-blob-store.js';
 import { DERIVED_CACHE_LIMITS, LOCAL_COPY_LIMITS, LocalCopies } from 'src/repositories/local-copies.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { S3BlobStore, createS3Client } from 'src/repositories/s3-blob-store.js';
+import { S3BlobStore, createS3Client, meterS3Client } from 'src/repositories/s3-blob-store.js';
 import { DB } from 'src/schema/index.js';
+import { StorageMeter } from 'src/utils/storage-metering.js';
 
 /** A file as recorded in the database: its path, and its location once one has been recorded */
 export interface RecordedFile {
@@ -174,6 +175,7 @@ export class StorageBackendRepository {
   private databaseBackupsKeepLast = DEFAULT_DATABASE_BACKUPS_KEEP_LAST;
   private roles = new Map<StorageBackendRole, string>();
   protected readRetryDelays = READ_RETRY_DELAYS;
+  private meter = new StorageMeter();
 
   constructor(
     @InjectKysely() private db: Kysely<DB>,
@@ -259,7 +261,7 @@ export class StorageBackendRepository {
 
     let store = this.deletionStores.get(backendId);
     if (!store) {
-      const client = createS3Client({ ...config, credentials: config.deletionCredentials });
+      const client = this.createS3Client(backendId, { ...config, credentials: config.deletionCredentials });
       store = new S3BlobStore(client, config.bucket, config.prefix);
       this.deletionStores.set(backendId, store);
     }
@@ -316,10 +318,10 @@ export class StorageBackendRepository {
 
       case StorageBackendDriver.S3: {
         const prefix = `${config.prefix}${sourceBackendId}/`;
-        const write = new S3BlobStore(createS3Client(config), config.bucket, prefix);
+        const write = new S3BlobStore(this.createS3Client(config.id, config), config.bucket, prefix);
         const deletion = config.deletionCredentials
           ? new S3BlobStore(
-              createS3Client({ ...config, credentials: config.deletionCredentials }),
+              this.createS3Client(config.id, { ...config, credentials: config.deletionCredentials }),
               config.bucket,
               prefix,
             )
@@ -700,6 +702,16 @@ export class StorageBackendRepository {
     return rows[0].inUse;
   }
 
+  /** A client whose requests are counted for the backend */
+  private createS3Client(backendId: string, config: Parameters<typeof createS3Client>[0]) {
+    return meterS3Client(createS3Client(config), (request) => this.meter.record(backendId, request));
+  }
+
+  /** The requests to storage services counted since the last call, to be written to the database */
+  drainRequestUsage() {
+    return this.meter.drain();
+  }
+
   private createStore(backend: StorageBackendConfig): BlobStore {
     switch (backend.driver) {
       case StorageBackendDriver.Local: {
@@ -707,7 +719,7 @@ export class StorageBackendRepository {
       }
 
       case StorageBackendDriver.S3: {
-        return new S3BlobStore(createS3Client(backend), backend.bucket, backend.prefix);
+        return new S3BlobStore(this.createS3Client(backend.id, backend), backend.bucket, backend.prefix);
       }
     }
   }

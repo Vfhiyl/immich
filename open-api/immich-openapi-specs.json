@@ -2359,6 +2359,76 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/storage/usage": {
+      "get": {
+        "description": "Per storage backend and UTC day: what is stored, the requests made and by what, and the estimated cost by the prices in the settings",
+        "operationId": "getStorageUsage",
+        "parameters": [
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First UTC day (YYYY-MM-DD), by default 29 days before the last",
+            "schema": {
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last UTC day (YYYY-MM-DD), by default today",
+            "schema": {
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageUsageResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the storage usage",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/users": {
       "get": {
         "description": "Search for users.",
@@ -19618,6 +19688,9 @@
           "server": {
             "$ref": "#/components/schemas/AdminConfigServerDto"
           },
+          "storagePricing": {
+            "$ref": "#/components/schemas/AdminConfigStoragePricingDto"
+          },
           "storageTemplate": {
             "$ref": "#/components/schemas/AdminConfigStorageTemplateDto"
           },
@@ -19652,6 +19725,7 @@
           "passwordLogin",
           "reverseGeocoding",
           "server",
+          "storagePricing",
           "storageTemplate",
           "templates",
           "theme",
@@ -20619,6 +20693,75 @@
           "port",
           "secure",
           "username"
+        ],
+        "type": "object"
+      },
+      "AdminConfigStorageBackendPricingDto": {
+        "properties": {
+          "backendId": {
+            "description": "Id of the storage backend",
+            "minLength": 1,
+            "type": "string"
+          },
+          "currency": {
+            "description": "Currency of the prices, e.g. CNY",
+            "minLength": 1,
+            "type": "string"
+          },
+          "deleteRequests10k": {
+            "description": "Price of 10,000 delete requests",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "egressGb": {
+            "description": "Price of reading 1 GiB from the service to the server",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "readRequests10k": {
+            "description": "Price of 10,000 read requests (GET, HEAD)",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "storageGbMonth": {
+            "description": "Price of storing 1 GiB for a month",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "writeRequests10k": {
+            "description": "Price of 10,000 write and list requests (PUT, POST, LIST)",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "backendId",
+          "currency",
+          "deleteRequests10k",
+          "egressGb",
+          "readRequests10k",
+          "storageGbMonth",
+          "writeRequests10k"
+        ],
+        "type": "object"
+      },
+      "AdminConfigStoragePricingDto": {
+        "properties": {
+          "backends": {
+            "description": "Prices of the storage backends, as the deployment pays them; used for estimates only",
+            "items": {
+              "$ref": "#/components/schemas/AdminConfigStorageBackendPricingDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "backends"
         ],
         "type": "object"
       },
@@ -23786,6 +23929,7 @@
           "StorageVerify",
           "StorageReplicate",
           "StorageReplicaReconcile",
+          "StorageUsageSnapshot",
           "AssetGenerateThumbnailsQueueAll",
           "AssetGenerateThumbnails",
           "AuditTableCleanup",
@@ -30950,6 +31094,41 @@
         },
         "type": "object"
       },
+      "StorageBackendUsageDto": {
+        "properties": {
+          "backendId": {
+            "type": "string"
+          },
+          "cost": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageCostDto"
+              }
+            ],
+            "nullable": true
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/StorageDailyUsageDto"
+            },
+            "type": "array"
+          },
+          "purposes": {
+            "description": "Requests over the whole range, by what made them",
+            "items": {
+              "$ref": "#/components/schemas/StoragePurposeUsageDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "backendId",
+          "cost",
+          "days",
+          "purposes"
+        ],
+        "type": "object"
+      },
       "StorageCheckKind": {
         "description": "Kind of storage check",
         "enum": [
@@ -31130,6 +31309,108 @@
           "lastVerify",
           "months",
           "openIssues"
+        ],
+        "type": "object"
+      },
+      "StorageCostDto": {
+        "description": "Estimated by the prices in the settings; null without prices for the backend",
+        "properties": {
+          "currency": {
+            "description": "Currency of the prices",
+            "type": "string"
+          },
+          "egress": {
+            "description": "Estimated cost of reading from the service",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "requests": {
+            "description": "Estimated cost of the requests",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "storage": {
+            "description": "Estimated cost of storing",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "total": {
+            "description": "Estimated cost in all",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "currency",
+          "egress",
+          "requests",
+          "storage",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StorageDailyUsageDto": {
+        "properties": {
+          "bytesReceived": {
+            "description": "Bytes read from the service",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "bytesSent": {
+            "description": "Bytes sent to the service",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cost": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageCostDto"
+              }
+            ],
+            "nullable": true
+          },
+          "day": {
+            "description": "UTC day (YYYY-MM-DD)",
+            "type": "string"
+          },
+          "requests": {
+            "$ref": "#/components/schemas/StorageRequestCountsDto"
+          },
+          "stored": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/StorageStoredAmountDto"
+            },
+            "description": "What is stored, by category",
+            "type": "object"
+          },
+          "storedBytes": {
+            "description": "Bytes stored, estimated from the records of the files",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "storedObjects": {
+            "description": "Objects stored, as recorded that night; 0 if not recorded",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytesReceived",
+          "bytesSent",
+          "cost",
+          "day",
+          "requests",
+          "stored",
+          "storedBytes",
+          "storedObjects"
         ],
         "type": "object"
       },
@@ -31364,6 +31645,43 @@
         ],
         "type": "object"
       },
+      "StoragePurposeUsageDto": {
+        "properties": {
+          "bytesReceived": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "bytesSent": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cost": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageCostDto"
+              }
+            ],
+            "nullable": true
+          },
+          "purpose": {
+            "description": "The job that made the requests, or api for requests of users",
+            "type": "string"
+          },
+          "requests": {
+            "$ref": "#/components/schemas/StorageRequestCountsDto"
+          }
+        },
+        "required": [
+          "bytesReceived",
+          "bytesSent",
+          "cost",
+          "purpose",
+          "requests"
+        ],
+        "type": "object"
+      },
       "StorageReplicaFailingResponseDto": {
         "properties": {
           "items": {
@@ -31508,6 +31826,75 @@
         },
         "required": [
           "count"
+        ],
+        "type": "object"
+      },
+      "StorageRequestCountsDto": {
+        "properties": {
+          "delete": {
+            "description": "Delete requests",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "read": {
+            "description": "Read requests (GET, HEAD)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "write": {
+            "description": "Write and list requests (PUT, POST, LIST)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "delete",
+          "read",
+          "write"
+        ],
+        "type": "object"
+      },
+      "StorageStoredAmountDto": {
+        "properties": {
+          "bytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "objects": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "objects"
+        ],
+        "type": "object"
+      },
+      "StorageUsageResponseDto": {
+        "properties": {
+          "backends": {
+            "items": {
+              "$ref": "#/components/schemas/StorageBackendUsageDto"
+            },
+            "type": "array"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "backends",
+          "from",
+          "to"
         ],
         "type": "object"
       },

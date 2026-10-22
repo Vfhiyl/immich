@@ -660,6 +660,46 @@ describe('storage backends on an S3 service', () => {
     await expect(readFile(stored)).resolves.toEqual(damaged);
   });
 
+  it('should count the requests to the service by what made them, and estimate their cost', async () => {
+    type Usage = {
+      backends: Array<{
+        backendId: string;
+        days: Array<{ requests: { write: number; read: number }; bytesSent: number }>;
+        purposes: Array<{ purpose: string }>;
+        cost: { currency: string; total: number } | null;
+      }>;
+    };
+    // the prices are part of the system settings, here in the configuration file
+    const config = JSON.parse(await readFile(environment.configFile, 'utf8'));
+    const prices = { currency: 'CNY', storageGbMonth: 0.1, writeRequests10k: 0.01, readRequests10k: 0.01 };
+    await writeFile(
+      environment.configFile,
+      JSON.stringify({
+        ...config,
+        storagePricing: { backends: [{ backendId: 'originals', ...prices, deleteRequests10k: 0, egressGb: 0.5 }] },
+      }),
+    );
+    await server.stop();
+    server = await ImmichServer.start(environment);
+    await api.upload(otherPhotoPath, Buffer.concat([await readFile(otherPhotoPath), randomBytes(100)]));
+
+    // counted requests are written to the database every few seconds
+    const body = await eventually(async () => {
+      const { body } = await api.json<Usage>('/admin/storage/usage');
+      const originals = body.backends.find(({ backendId }) => backendId === 'originals');
+      expect(originals?.purposes.map(({ purpose }) => purpose)).toEqual(
+        expect.arrayContaining(['api', 'StorageReplicate']),
+      );
+      return body;
+    });
+    const originals = body.backends.find(({ backendId }) => backendId === 'originals');
+    expect(originals?.days.some(({ requests, bytesSent }) => requests.write > 0 && bytesSent > 0)).toBe(true);
+    expect(originals?.cost).toMatchObject({ currency: 'CNY', total: expect.any(Number) });
+    const replica = body.backends.find(({ backendId }) => backendId === 'replica');
+    expect(replica?.days.some(({ requests }) => requests.write > 0)).toBe(true);
+    expect(replica?.cost).toBeNull();
+  });
+
   it('should remove every object of permanently deleted assets', async () => {
     await eventually(
       async () => {

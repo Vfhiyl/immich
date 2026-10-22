@@ -14,6 +14,7 @@ import {
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
+import type { StorageRequest } from 'src/utils/storage-metering.js';
 import {
   BlobDeleteResult,
   BlobGetOptions,
@@ -78,6 +79,36 @@ export const createS3Client = (options: S3BackendOptions, overrides: Partial<S3C
     requestHandler: { connectionTimeout: 10_000, socketTimeout: 120_000 },
     ...overrides,
   });
+};
+
+const contentLength = (message: unknown) => {
+  const headers = (message as { headers?: Record<string, string | undefined> } | undefined)?.headers ?? {};
+  const value = Number(headers['content-length'] ?? headers['Content-Length']);
+  return Number.isFinite(value) ? value : 0;
+};
+
+/**
+ * Report every request a client sends, attempts that are retried included, with the bytes it sent and received
+ * (from the content length): what services charge for. Failed requests count too.
+ */
+export const meterS3Client = (client: S3Client, onRequest: (request: StorageRequest) => void) => {
+  client.middlewareStack.add(
+    (next, context) => async (args) => {
+      const operation = (context.commandName ?? 'Unknown').replace(/Command$/, '');
+      const bytesSent = contentLength((args as { request?: unknown }).request);
+      try {
+        const result = await next(args);
+        onRequest({ operation, bytesSent, bytesReceived: contentLength(result.response) });
+        return result;
+      } catch (error) {
+        onRequest({ operation, bytesSent, bytesReceived: 0 });
+        throw error;
+      }
+    },
+    // the deserialize step runs once for every attempt, inside the retries of the finalize step
+    { step: 'deserialize', name: 'immichStorageMetering' },
+  );
+  return client;
 };
 
 const errorName = (error: unknown) => (error as { name?: string } | undefined)?.name ?? '';

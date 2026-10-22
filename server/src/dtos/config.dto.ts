@@ -147,6 +147,9 @@ const AdminConfigSmtpSchema = z
   })
   .meta({ id: 'AdminConfigSmtpDto' });
 
+/** A price from the price list of a service, filled in by the deployment: Immich has no prices of its own */
+const price = z.number().nonnegative().meta({ format: 'double' });
+
 const AdminConfigSchemaWithVisibility = z
   .object({
     backup: z
@@ -366,6 +369,25 @@ const AdminConfigSchemaWithVisibility = z
         syncQuotaUsage: configBool.describe('Sync quota usage'),
       })
       .meta({ id: 'AdminConfigNightlyTasksDto' }),
+    storagePricing: z
+      .object({
+        backends: z
+          .array(
+            z
+              .object({
+                backendId: z.string().min(1).describe('Id of the storage backend'),
+                currency: z.string().min(1).describe('Currency of the prices, e.g. CNY'),
+                storageGbMonth: price.describe('Price of storing 1 GiB for a month'),
+                writeRequests10k: price.describe('Price of 10,000 write and list requests (PUT, POST, LIST)'),
+                readRequests10k: price.describe('Price of 10,000 read requests (GET, HEAD)'),
+                deleteRequests10k: price.describe('Price of 10,000 delete requests'),
+                egressGb: price.describe('Price of reading 1 GiB from the service to the server'),
+              })
+              .meta({ id: 'AdminConfigStorageBackendPricingDto' }),
+          )
+          .describe('Prices of the storage backends, as the deployment pays them; used for estimates only'),
+      })
+      .meta({ id: 'AdminConfigStoragePricingDto' }),
     trash: z
       .object({
         enabled: configBool.describe('Enabled').meta({ visibility: User }),
@@ -717,6 +739,9 @@ export const defaults = Object.freeze<SystemConfig>({
   newVersionCheck: {
     enabled: true,
     channel: ReleaseChannel.Stable,
+  },
+  storagePricing: {
+    backends: [],
   },
   nightlyTasks: {
     startTime: '00:00',

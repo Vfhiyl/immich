@@ -38,6 +38,7 @@ import { StorageBackupAdminController } from 'src/controllers/storage-backup-adm
 import { StorageCheckAdminController } from 'src/controllers/storage-check-admin.controller.js';
 import { StorageDeletionAdminController } from 'src/controllers/storage-deletion-admin.controller.js';
 import { StorageReplicaAdminController } from 'src/controllers/storage-replica-admin.controller.js';
+import { StorageUsageAdminController } from 'src/controllers/storage-usage-admin.controller.js';
 import { SyncController } from 'src/controllers/sync.controller.js';
 import { SystemConfigController } from 'src/controllers/system-config.controller.js';
 import { SystemMetadataController } from 'src/controllers/system-metadata.controller.js';
@@ -90,6 +91,7 @@ export const controllers = [
   StorageBackupAdminController,
   StorageCheckAdminController,
   StorageReplicaAdminController,
+  StorageUsageAdminController,
   StorageDeletionAdminController,
   SyncController,
   SystemConfigController,

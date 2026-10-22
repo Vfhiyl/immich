@@ -700,6 +700,17 @@ export enum StorageIssueKind {
   Unreadable = 'unreadable',
 }
 
+export enum StorageUsageCategory {
+  /** Files that are recorded */
+  Files = 'files',
+  /** Deleted files that wait for their deletion delay */
+  PendingDeletion = 'pending_deletion',
+  /** Parts of uploads that are not complete yet */
+  Uploading = 'uploading',
+  /** Copies of the files of other backends, on a replica */
+  Copies = 'copies',
+}
+
 export enum UploadSessionStatus {
   /** Receiving the file */
   Receiving = 'receiving',
@@ -957,6 +968,7 @@ export enum JobName {
   StorageVerify = 'StorageVerify',
   StorageReplicate = 'StorageReplicate',
   StorageReplicaReconcile = 'StorageReplicaReconcile',
+  StorageUsageSnapshot = 'StorageUsageSnapshot',
   AssetGenerateThumbnailsQueueAll = 'AssetGenerateThumbnailsQueueAll',
   AssetGenerateThumbnails = 'AssetGenerateThumbnails',
 

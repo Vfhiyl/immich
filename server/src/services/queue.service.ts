@@ -273,6 +273,7 @@ export class QueueService extends BaseService {
       { name: JobName.UploadSessionCleanup },
       // runs every two weeks, which it keeps track of itself
       { name: JobName.StorageReplicaReconcile },
+      { name: JobName.StorageUsageSnapshot },
     ];
 
     if (config.nightlyTasks.databaseCleanup) {

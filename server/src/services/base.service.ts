@@ -55,6 +55,7 @@ import { StorageBackendRepository, isBuiltinStorageBackend } from 'src/repositor
 import { StorageCheckRepository } from 'src/repositories/storage-check.repository.js';
 import { OriginalRecovery, StorageDeletionRepository } from 'src/repositories/storage-deletion.repository.js';
 import { StorageReplicaRepository } from 'src/repositories/storage-replica.repository.js';
+import { StorageUsageRepository } from 'src/repositories/storage-usage.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
@@ -128,6 +129,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   StorageCheckRepository,
   StorageDeletionRepository,
   StorageReplicaRepository,
+  StorageUsageRepository,
   StorageRepository,
   SyncRepository,
   SyncCheckpointRepository,
@@ -196,6 +198,7 @@ export class BaseService {
     protected storageCheckRepository: StorageCheckRepository,
     protected storageDeletionRepository: StorageDeletionRepository,
     protected storageReplicaRepository: StorageReplicaRepository,
+    protected storageUsageRepository: StorageUsageRepository,
     protected storageRepository: StorageRepository,
     protected syncRepository: SyncRepository,
     protected syncCheckpointRepository: SyncCheckpointRepository,
@@ -273,6 +276,7 @@ export class BaseService {
       ctx.storageCheckRepository,
       ctx.storageDeletionRepository,
       ctx.storageReplicaRepository,
+      ctx.storageUsageRepository,
       ctx.storageRepository,
       ctx.syncRepository,
       ctx.syncCheckpointRepository,

@@ -142,6 +142,9 @@ const updatedConfig = Object.freeze<SystemConfig>({
     lightStyle: 'https://tiles.immich.cloud/v1/style/light.json',
     darkStyle: 'https://tiles.immich.cloud/v1/style/dark.json',
   },
+  storagePricing: {
+    backends: [],
+  },
   nightlyTasks: {
     startTime: '00:00',
     databaseCleanup: true,
