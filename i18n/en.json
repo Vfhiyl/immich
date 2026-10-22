@@ -2239,6 +2239,7 @@
   "sync": "Sync",
   "sync_albums": "Sync albums",
   "sync_local": "Sync Local",
+  "sync_progress_first_sync": "Syncing your library: {count} photos and videos so far. Not everything is shown yet.",
   "sync_remote": "Sync Remote",
   "sync_status": "Sync Status",
   "sync_status_subtitle": "View and manage the sync system",

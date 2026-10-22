@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:isolate';
+import 'dart:ui';
 
 import 'package:immich_mobile/domain/utils/migrate_cloud_ids.dart' as m;
 import 'package:immich_mobile/domain/utils/sync_linked_album.dart';
@@ -10,10 +12,41 @@ typedef SyncCallback = void Function();
 typedef SyncCallbackWithResult<T> = void Function(T result);
 typedef SyncErrorCallback = void Function(String error);
 
+/// Passes the progress of the remote sync, which runs in an isolate of its own, to the isolate that started it
+class RemoteSyncProgressRelay {
+  static const portName = 'immich-remote-sync-progress';
+
+  final ReceivePort _port = ReceivePort();
+
+  /// Receive the progress of the next remote sync, in place of any relay before
+  RemoteSyncProgressRelay(void Function(int assetsReceived) onProgress) {
+    _port.listen((assetsReceived) {
+      if (assetsReceived is int) {
+        onProgress(assetsReceived);
+      }
+    });
+    IsolateNameServer.removePortNameMapping(portName);
+    IsolateNameServer.registerPortWithName(_port.sendPort, portName);
+  }
+
+  /// In the isolate of the sync: what reports its progress, if anyone listens
+  static void Function(int assetsReceived)? reporter() => IsolateNameServer.lookupPortByName(portName)?.send;
+
+  void close() {
+    _port.close();
+    if (IsolateNameServer.lookupPortByName(portName) == _port.sendPort) {
+      IsolateNameServer.removePortNameMapping(portName);
+    }
+  }
+}
+
 class BackgroundSyncManager {
   final SyncCallback? onRemoteSyncStart;
   final SyncCallbackWithResult<bool?>? onRemoteSyncComplete;
   final SyncErrorCallback? onRemoteSyncError;
+
+  /// The photos and videos received so far by a remote sync that is running
+  final SyncCallbackWithResult<int>? onRemoteSyncProgress;
 
   final SyncCallback? onLocalSyncStart;
   final SyncCallback? onLocalSyncComplete;
@@ -39,6 +72,7 @@ class BackgroundSyncManager {
     this.onRemoteSyncStart,
     this.onRemoteSyncComplete,
     this.onRemoteSyncError,
+    this.onRemoteSyncProgress,
     this.onLocalSyncStart,
     this.onLocalSyncComplete,
     this.onLocalSyncError,
@@ -165,10 +199,12 @@ class BackgroundSyncManager {
 
     onRemoteSyncStart?.call();
 
+    final progress = RemoteSyncProgressRelay((assetsReceived) => onRemoteSyncProgress?.call(assetsReceived));
     final task = _syncTask = runInIsolateGentle(
-      computation: (ref) => ref.read(syncStreamServiceProvider).sync(),
+      computation: (ref) => ref.read(syncStreamServiceProvider).sync(onProgress: RemoteSyncProgressRelay.reporter()),
       debugLabel: 'remote-sync',
     );
+    unawaited(task.future.whenComplete(progress.close).catchError((_) => null));
     return task
         .then((result) {
           final success = result ?? false;

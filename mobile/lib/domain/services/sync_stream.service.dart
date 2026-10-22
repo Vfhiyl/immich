@@ -29,6 +29,14 @@ enum SyncMigrationTask {
   v20260701_ResetAlbumsV1, // Album user migration dropped the owner. Sync fresh albums from the server to re-populate them.
 }
 
+/// The events of photos and videos, which the progress of a sync counts
+const _assetTypes = {
+  SyncEntityType.assetV1,
+  SyncEntityType.assetV2,
+  SyncEntityType.partnerAssetV1,
+  SyncEntityType.partnerAssetV2,
+};
+
 class SyncStreamService {
   final Logger _logger = Logger('SyncStreamService');
 
@@ -56,7 +64,14 @@ class SyncStreamService {
 
   bool get isCancelled => _cancellation?.isCompleted ?? false;
 
-  Future<bool> sync() async {
+  /// The photos and videos received in this sync so far, and who wants to know
+  int _assetsReceived = 0;
+  void Function(int assetsReceived)? _onProgress;
+
+  /// Sync with the server. [onProgress] is told how many photos and videos were received so far, after each batch.
+  Future<bool> sync({void Function(int assetsReceived)? onProgress}) async {
+    _assetsReceived = 0;
+    _onProgress = onProgress;
     _logger.info("Remote sync request for user");
     final serverVersion = await _api.serverInfoApi.getServerVersion();
     if (serverVersion == null) {
@@ -186,6 +201,10 @@ class SyncStreamService {
     final type = batch.first.type;
     await _handleSyncData(type, batch.map((e) => e.data));
     await _syncApiRepository.ack([batch.last.ack]);
+    if (_assetTypes.contains(type)) {
+      _assetsReceived += batch.length;
+      _onProgress?.call(_assetsReceived);
+    }
     batch.clear();
   }
 

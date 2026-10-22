@@ -24,6 +24,7 @@ final backgroundSyncProvider = Provider<BackgroundSyncManager>((ref) {
       }
     },
     onRemoteSyncError: syncStatusNotifier.errorRemoteSync,
+    onRemoteSyncProgress: syncStatusNotifier.setRemoteSyncProgress,
     onLocalSyncStart: syncStatusNotifier.startLocalSync,
     onLocalSyncComplete: syncStatusNotifier.completeLocalSync,
     onLocalSyncError: syncStatusNotifier.errorLocalSync,

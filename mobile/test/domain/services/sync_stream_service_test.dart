@@ -179,6 +179,44 @@ void main() {
     await handleEventsCallback(events, mockAbortCallbackWrapper.call, mockResetCallbackWrapper.call);
   }
 
+  group("SyncStreamService - progress", () {
+    test("counts the photos and videos received, after each batch", () async {
+      final progress = <int>[];
+      await sut.sync(onProgress: progress.add);
+
+      await handleEventsCallback(
+        [
+          SyncStreamStub.assetModified(id: 'a1', checksum: 'c1', ack: '1'),
+          SyncStreamStub.assetModified(id: 'a2', checksum: 'c2', ack: '2'),
+          SyncStreamStub.userV1Admin,
+          SyncStreamStub.assetModified(id: 'a3', checksum: 'c3', ack: '3'),
+        ],
+        mockAbortCallbackWrapper.call,
+        mockResetCallbackWrapper.call,
+      );
+
+      expect(progress, [2, 3]);
+    });
+
+    test("starts counting again with every sync", () async {
+      final progress = <int>[];
+      await sut.sync(onProgress: progress.add);
+      await handleEventsCallback(
+        [SyncStreamStub.assetModified(id: 'a1', checksum: 'c1', ack: '1')],
+        mockAbortCallbackWrapper.call,
+        mockResetCallbackWrapper.call,
+      );
+      await sut.sync(onProgress: progress.add);
+      await handleEventsCallback(
+        [SyncStreamStub.assetModified(id: 'a2', checksum: 'c2', ack: '2')],
+        mockAbortCallbackWrapper.call,
+        mockResetCallbackWrapper.call,
+      );
+
+      expect(progress, [1, 1]);
+    });
+  });
+
   group("SyncStreamService - _handleEvents", () {
     test("processes events and acks successfully when handlers succeed", () async {
       final events = [

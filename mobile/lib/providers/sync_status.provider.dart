@@ -15,6 +15,8 @@ abstract class SyncStatusState with _$SyncStatusState {
     @Default(SyncStatus.idle) SyncStatus localSyncStatus,
     @Default(SyncStatus.idle) SyncStatus hashJobStatus,
     @Default(SyncStatus.idle) SyncStatus cloudIdSyncStatus,
+    // the photos and videos the running remote sync received so far
+    @Default(0) int remoteSyncedAssets,
     String? errorMessage,
   }) = _SyncStatusState;
 
@@ -49,7 +51,12 @@ class SyncStatusNotifier extends Notifier<SyncStatusState> {
     );
   }
 
-  void startRemoteSync() => setRemoteSyncStatus(SyncStatus.syncing);
+  void startRemoteSync() {
+    state = state.copyWith(remoteSyncedAssets: 0);
+    setRemoteSyncStatus(SyncStatus.syncing);
+  }
+
+  void setRemoteSyncProgress(int assets) => state = state.copyWith(remoteSyncedAssets: assets);
   void completeRemoteSync() => setRemoteSyncStatus(SyncStatus.success);
   void errorRemoteSync(String error) => setRemoteSyncStatus(SyncStatus.error, error);
 
