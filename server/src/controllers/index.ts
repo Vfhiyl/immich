@@ -34,6 +34,7 @@ import { ServerController } from 'src/controllers/server.controller.js';
 import { SessionController } from 'src/controllers/session.controller.js';
 import { SharedLinkController } from 'src/controllers/shared-link.controller.js';
 import { StackController } from 'src/controllers/stack.controller.js';
+import { StorageAdminController } from 'src/controllers/storage-admin.controller.js';
 import { StorageBackupAdminController } from 'src/controllers/storage-backup-admin.controller.js';
 import { StorageCheckAdminController } from 'src/controllers/storage-check-admin.controller.js';
 import { StorageDeletionAdminController } from 'src/controllers/storage-deletion-admin.controller.js';
@@ -88,6 +89,7 @@ export const controllers = [
   SessionController,
   SharedLinkController,
   StackController,
+  StorageAdminController,
   StorageBackupAdminController,
   StorageCheckAdminController,
   StorageReplicaAdminController,

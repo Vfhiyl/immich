@@ -566,6 +566,30 @@ export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
 };
+export type StorageConfigurationResponseDto = {
+    backends: {
+        driver: StorageBackendDriver;
+        /** Whether new files are encrypted */
+        encrypted: boolean;
+        /** Whether only separate credentials may delete files */
+        hasDeletionCredentials: boolean;
+        /** Id of the storage backend */
+        id: string;
+        /** Where files are: the endpoint, bucket and prefix, or the folder */
+        location: string;
+        /** For a replica, the roles whose backends it copies */
+        replicaOf: StorageReplicatedRole[] | null;
+        role: StorageBackendRole;
+    }[];
+    /** How many database backups the backend for backups keeps */
+    databaseBackupsKeepLast: number;
+    /** How long deleted originals are kept before they are deleted */
+    deletionDelayDays: number;
+    /** Id of the master key that encrypts new files */
+    masterKeyId: string | null;
+    /** How long records of deletions are kept, null for forever */
+    syncDeleteRetentionDays: number | null;
+};
 export type StorageCheckRunDto = {
     /** Storage backends the run checked */
     backends: string[];
@@ -703,7 +727,7 @@ export type StorageReplicaListResponseDto = {
         /** Files waiting to be copied */
         pending: number;
         /** Roles whose backends the replica copies */
-        replicaOf: ReplicaOf[];
+        replicaOf: StorageReplicatedRole[];
         /** Originals on the backends the replica copies */
         sourceFiles: number;
     }[];
@@ -4431,6 +4455,17 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
         method: "POST",
         body: adminConfigSmtpDto
     })));
+}
+/**
+ * Get the storage configuration
+ */
+export function getStorageConfiguration(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageConfigurationResponseDto;
+    }>("/admin/storage", {
+        ...opts
+    }));
 }
 /**
  * Get the data health summary
@@ -8565,6 +8600,20 @@ export enum NotificationType {
     ClusterGroupRequest = "ClusterGroupRequest",
     Custom = "Custom"
 }
+export enum StorageBackendDriver {
+    Local = "local",
+    S3 = "s3"
+}
+export enum StorageReplicatedRole {
+    Originals = "originals",
+    Backup = "backup"
+}
+export enum StorageBackendRole {
+    Originals = "originals",
+    Derived = "derived",
+    Backup = "backup",
+    Replica = "replica"
+}
 export enum StorageCheckKind {
     Reconcile = "reconcile",
     Verify = "verify",
@@ -8587,10 +8636,6 @@ export enum StorageIssueKind {
 export enum AssetMediaStatus {
     Created = "created",
     Duplicate = "duplicate"
-}
-export enum ReplicaOf {
-    Originals = "originals",
-    Backup = "backup"
 }
 export enum UserStatus {
     Active = "active",

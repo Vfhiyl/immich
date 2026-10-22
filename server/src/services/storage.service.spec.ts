@@ -415,6 +415,67 @@ describe(StorageService.name, () => {
     });
   });
 
+  describe('getConfiguration', () => {
+    it('should describe the backends without their credentials', () => {
+      mocks.storageBackend.configure(
+        [
+          {
+            id: 'originals',
+            driver: StorageBackendDriver.S3,
+            role: StorageBackendRole.Originals,
+            endpoint: 'https://storage.example.com',
+            region: 'region-1',
+            bucket: 'photos',
+            prefix: 'immich/',
+            addressing: 'virtual-host',
+            credentials: { type: 'chain', profile: 'reader-profile' },
+            deletionCredentials: { type: 'chain', profile: 'deleter-profile' },
+            encrypted: false,
+          },
+          {
+            id: 'derived',
+            driver: StorageBackendDriver.Local,
+            role: StorageBackendRole.Derived,
+            root: '/d',
+            encrypted: false,
+          },
+        ],
+        undefined,
+        { delayDays: 720 },
+      );
+
+      const configuration = sut.getConfiguration();
+
+      expect(configuration).toEqual({
+        backends: [
+          {
+            id: 'originals',
+            role: 'originals',
+            driver: 's3',
+            encrypted: false,
+            replicaOf: null,
+            location: 'https://storage.example.com photos/immich/',
+            hasDeletionCredentials: true,
+          },
+          {
+            id: 'derived',
+            role: 'derived',
+            driver: 'local',
+            encrypted: false,
+            replicaOf: null,
+            location: '/d',
+            hasDeletionCredentials: false,
+          },
+        ],
+        masterKeyId: null,
+        deletionDelayDays: 720,
+        databaseBackupsKeepLast: 14,
+        syncDeleteRetentionDays: 365,
+      });
+      expect(JSON.stringify(configuration)).not.toMatch(/profile/);
+    });
+  });
+
   describe('handleLocalCopyCleanup', () => {
     it('should remove local copies that are too old or too many', async () => {
       mocks.storageBackend.sweepLocalCopies.mockResolvedValue();

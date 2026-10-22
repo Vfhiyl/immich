@@ -1,10 +1,10 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { REPLICATED_ROLES } from 'src/dtos/storage-backend-config.dto.js';
+import { ReplicatedRoleSchema } from 'src/dtos/storage-backend.dto.js';
 
 const StorageReplicaSchema = z.object({
   id: z.string().describe('Id of the storage backend of the replica'),
-  replicaOf: z.array(z.enum(REPLICATED_ROLES)).describe('Roles whose backends the replica copies'),
+  replicaOf: z.array(ReplicatedRoleSchema).describe('Roles whose backends the replica copies'),
   sourceFiles: z.int().nonnegative().describe('Originals on the backends the replica copies'),
   copied: z.int().nonnegative().describe('Files copied to the replica'),
   copiedBytes: z.int().nonnegative().describe('Bytes copied to the replica'),

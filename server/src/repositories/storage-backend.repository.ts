@@ -337,6 +337,30 @@ export class StorageBackendRepository {
     }
   }
 
+  /** What is configured, as administrators may see it: where each backend is, without credentials */
+  describeConfiguration() {
+    return {
+      backends: this.configs
+        .values()
+        .map((config) => ({
+          id: config.id,
+          role: config.role,
+          driver: config.driver,
+          encrypted: config.encrypted,
+          replicaOf: config.replicaOf ?? null,
+          location:
+            config.driver === StorageBackendDriver.S3
+              ? `${config.endpoint} ${config.bucket}/${config.prefix}`
+              : config.root,
+          hasDeletionCredentials: config.driver === StorageBackendDriver.S3 && !!config.deletionCredentials,
+        }))
+        .toArray(),
+      masterKeyId: this.keys?.currentKeyId.toString('hex') ?? null,
+      deletionDelayDays: this.originalsDeletionDelayDays,
+      databaseBackupsKeepLast: this.databaseBackupsKeepLast,
+    };
+  }
+
   /** The configured backends, with their role */
   getConfiguredBackends(): Array<{ id: string; role: StorageBackendRole }> {
     return this.configs

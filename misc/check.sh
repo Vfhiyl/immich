@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Runs every check of a change in one go and stops at the first failure:
-#   formatting, lint and types; database schema and generated SQL; unit, medium, contract and end-to-end tests.
+#   formatting, lint and types; database schema and generated SQL; unit, medium, contract and end-to-end tests; the web
+#   app.
 #
 # Usage: misc/check.sh [--quick]     --quick skips the medium, contract and end-to-end tests
 #
@@ -72,6 +73,20 @@ e2e_lint() { cd "$e2e" && "$(bin "$e2e" eslint)" "${e2e_files[@]}" --max-warning
 # the documentation of storage backends (the other pages are upstream's); its examples are checked by the unit tests
 docs_format() { cd "$repo/docs" && "$(bin "$repo/docs" prettier)" --check docs/administration/storage-backends.md; }
 
+# the web app, against the SDK built from the generated client (see open_api)
+web="$repo/web"
+web_format() { cd "$web" && "$(bin "$web" prettier)" --cache --check . && cd "$repo" && "$(bin "$repo" prettier)" --check i18n/; }
+web_lint() { cd "$web" && "$(bin "$web" eslint)" . --max-warnings 0 --concurrency 6; }
+web_types() {
+  cd "$repo" && pnpm --filter @immich/sdk build
+  cd "$web"
+  "$(bin "$web" svelte-kit)" sync
+  "$(bin "$web" tsc)" --noEmit
+  "$(bin "$web" svelte-check)" --no-tsconfig --fail-on-warnings --compiler-warnings 'state_referenced_locally:ignore'
+}
+# in English, which some tests expect dates and numbers in
+web_unit() { cd "$web" && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 "$(bin "$web" vitest)" --run; }
+
 # --- build, schema and generated SQL ---
 
 server_build() { cd "$server" && "$(bin "$server" nest)" build; }
@@ -135,6 +150,10 @@ step 'schema: migrations and drift' schema
 step 'server: generated SQL is up to date' generated_sql
 step 'open-api: specification and SDK are up to date' open_api
 step 'server: unit tests' unit
+step 'web: formatting' web_format
+step 'web: lint' web_lint
+step 'web: types' web_types
+step 'web: unit tests' web_unit
 if [[ "$quick" == false ]]; then
   step 'server: medium tests' medium
   step 'server: blob store contract tests' contract

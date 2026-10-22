@@ -127,6 +127,11 @@ export const Route = {
   systemMaintenanceIntegrityReport: ({ reportType }: { reportType: IntegrityReport }) =>
     `/admin/maintenance/integrity-report/${reportType}`,
 
+  // storage backends
+  storage: () => '/admin/storage',
+  storageIssues: () => '/admin/storage/issues',
+  storageDeletedOriginals: () => '/admin/storage/deleted',
+
   // tags
   tags: (params?: { path?: string }) => '/tags' + asQueryString(params),
 

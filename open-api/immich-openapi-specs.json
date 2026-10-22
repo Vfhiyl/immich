@@ -1369,6 +1369,53 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/storage": {
+      "get": {
+        "description": "The configured storage backends without their credentials, and the settings of storing files",
+        "operationId": "getStorageConfiguration",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageConfigurationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the storage configuration",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/storage/checks": {
       "get": {
         "description": "Open problems by kind, the last runs of each check and the last 12 months",
@@ -31094,6 +31141,24 @@
         },
         "type": "object"
       },
+      "StorageBackendDriver": {
+        "description": "How files are stored",
+        "enum": [
+          "local",
+          "s3"
+        ],
+        "type": "string"
+      },
+      "StorageBackendRole": {
+        "description": "What a storage backend holds",
+        "enum": [
+          "originals",
+          "derived",
+          "backup",
+          "replica"
+        ],
+        "type": "string"
+      },
       "StorageBackendUsageDto": {
         "properties": {
           "backendId": {
@@ -31309,6 +31374,89 @@
           "lastVerify",
           "months",
           "openIssues"
+        ],
+        "type": "object"
+      },
+      "StorageConfigurationResponseDto": {
+        "properties": {
+          "backends": {
+            "items": {
+              "properties": {
+                "driver": {
+                  "$ref": "#/components/schemas/StorageBackendDriver"
+                },
+                "encrypted": {
+                  "description": "Whether new files are encrypted",
+                  "type": "boolean"
+                },
+                "hasDeletionCredentials": {
+                  "description": "Whether only separate credentials may delete files",
+                  "type": "boolean"
+                },
+                "id": {
+                  "description": "Id of the storage backend",
+                  "type": "string"
+                },
+                "location": {
+                  "description": "Where files are: the endpoint, bucket and prefix, or the folder",
+                  "type": "string"
+                },
+                "replicaOf": {
+                  "description": "For a replica, the roles whose backends it copies",
+                  "items": {
+                    "$ref": "#/components/schemas/StorageReplicatedRole"
+                  },
+                  "nullable": true,
+                  "type": "array"
+                },
+                "role": {
+                  "$ref": "#/components/schemas/StorageBackendRole"
+                }
+              },
+              "required": [
+                "id",
+                "role",
+                "driver",
+                "encrypted",
+                "replicaOf",
+                "location",
+                "hasDeletionCredentials"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "databaseBackupsKeepLast": {
+            "description": "How many database backups the backend for backups keeps",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "deletionDelayDays": {
+            "description": "How long deleted originals are kept before they are deleted",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "masterKeyId": {
+            "description": "Id of the master key that encrypts new files",
+            "nullable": true,
+            "type": "string"
+          },
+          "syncDeleteRetentionDays": {
+            "description": "How long records of deletions are kept, null for forever",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "backends",
+          "databaseBackupsKeepLast",
+          "deletionDelayDays",
+          "masterKeyId",
+          "syncDeleteRetentionDays"
         ],
         "type": "object"
       },
@@ -31779,11 +31927,7 @@
                 "replicaOf": {
                   "description": "Roles whose backends the replica copies",
                   "items": {
-                    "enum": [
-                      "originals",
-                      "backup"
-                    ],
-                    "type": "string"
+                    "$ref": "#/components/schemas/StorageReplicatedRole"
                   },
                   "type": "array"
                 },
@@ -31828,6 +31972,14 @@
           "count"
         ],
         "type": "object"
+      },
+      "StorageReplicatedRole": {
+        "description": "A role whose backends replicas can copy",
+        "enum": [
+          "originals",
+          "backup"
+        ],
+        "type": "string"
       },
       "StorageRequestCountsDto": {
         "properties": {

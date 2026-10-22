@@ -8,6 +8,7 @@ import { ErrorMessages } from 'src/constants.js';
 import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { StorageBackendConfig, StorageBackendsConfig } from 'src/dtos/storage-backend-config.dto.js';
+import { StorageConfigurationResponseDto } from 'src/dtos/storage-backend.dto.js';
 import {
   BootstrapEventPriority,
   BuiltinStorageBackend,
@@ -227,6 +228,14 @@ export class StorageService extends BaseService {
     if (backends.length > 0) {
       this.logger.log(`Using storage backends: ${backends.map(({ id, role }) => `${id} (${role})`).join(', ')}`);
     }
+  }
+
+  /** The storage configuration, as administrators may see it */
+  getConfiguration(): StorageConfigurationResponseDto {
+    return {
+      ...this.storageBackendRepository.describeConfiguration(),
+      syncDeleteRetentionDays: this.configRepository.getEnv().sync.deleteRetentionDays,
+    };
   }
 
   /** Check that a backend accepts writes and returns what was written (encrypted, if it encrypts), then remove the probe */
