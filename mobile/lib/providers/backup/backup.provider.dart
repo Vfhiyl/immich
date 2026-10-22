@@ -6,7 +6,9 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/constants/constants.dart';
 import 'package:immich_mobile/domain/models/album/local_album.model.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
+import 'package:immich_mobile/domain/services/user_upload_job.service.dart';
 import 'package:immich_mobile/providers/infrastructure/db.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/platform.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/services/background_upload.service.dart';
 import 'package:immich_mobile/services/foreground_upload.service.dart';
@@ -53,12 +55,17 @@ final backupProvider = StateNotifierProvider<BackupNotifier, BackupState>((ref) 
     ref.watch(foregroundUploadServiceProvider),
     ref.watch(backgroundUploadServiceProvider),
     UploadSpeedManager(),
+    ref.watch(userUploadJobServiceProvider),
   );
 });
 
 class BackupNotifier extends StateNotifier<BackupState> {
-  BackupNotifier(this._foregroundUploadService, this._backgroundUploadService, this._uploadSpeedManager)
-    : super(
+  BackupNotifier(
+    this._foregroundUploadService,
+    this._backgroundUploadService,
+    this._uploadSpeedManager,
+    this._userUploadJob,
+  ) : super(
         const BackupState(
           totalCount: 0,
           backupCount: 0,
@@ -73,7 +80,15 @@ class BackupNotifier extends StateNotifier<BackupState> {
   final ForegroundUploadService _foregroundUploadService;
   final BackgroundUploadService _backgroundUploadService;
   final UploadSpeedManager _uploadSpeedManager;
+  final UserUploadJobService _userUploadJob;
   Completer<void>? _cancelToken;
+  bool _continuesInBackground = false;
+
+  /// Whether a backup runs now
+  bool get isBackingUp => _cancelToken != null;
+
+  /// Whether the backup that runs now goes on when the user leaves the app
+  bool get continuesInBackground => _continuesInBackground;
 
   final _logger = Logger("BackupNotifier");
 
@@ -137,16 +152,41 @@ class BackupNotifier extends StateNotifier<BackupState> {
     // otherwise a resume counts duplicate successes against the old baseline (#26215).
     await getBackupStatus(userId);
 
-    return _foregroundUploadService.uploadCandidates(
-      userId,
-      cancelToken,
-      callbacks: UploadCallbacks(
-        onProgress: _handleForegroundBackupProgress,
-        onSuccess: _handleForegroundBackupSuccess,
-        onError: _handleForegroundBackupError,
-        onICloudProgress: _handleICloudProgress,
-      ),
-    );
+    if (state.remainderCount > 0 && !cancelToken.isCompleted) {
+      final continues = await _userUploadJob.start();
+      if (identical(_cancelToken, cancelToken)) {
+        _continuesInBackground = continues;
+      } else if (continues) {
+        // stopped meanwhile
+        await _userUploadJob.finish();
+      }
+    }
+
+    try {
+      await _foregroundUploadService.uploadCandidates(
+        userId,
+        cancelToken,
+        callbacks: UploadCallbacks(
+          onProgress: _handleForegroundBackupProgress,
+          onSuccess: _handleForegroundBackupSuccess,
+          onError: _handleForegroundBackupError,
+          onICloudProgress: _handleICloudProgress,
+        ),
+      );
+    } finally {
+      // done, unless it was stopped or another one started meanwhile
+      if (identical(_cancelToken, cancelToken)) {
+        _cancelToken = null;
+        _endBackgroundJob();
+      }
+    }
+  }
+
+  void _endBackgroundJob() {
+    if (_continuesInBackground) {
+      _continuesInBackground = false;
+      unawaited(_userUploadJob.finish());
+    }
   }
 
   void stopForegroundBackup({required String reason}) {
@@ -155,6 +195,7 @@ class BackupNotifier extends StateNotifier<BackupState> {
     }
     _cancelToken?.complete();
     _cancelToken = null;
+    _endBackgroundJob();
     _uploadSpeedManager.clear();
     state = state.copyWith(uploadItems: {}, iCloudDownloadProgress: {});
   }

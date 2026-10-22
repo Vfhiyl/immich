@@ -80,7 +80,25 @@ class TestWebsocketNotifier extends WebsocketNotifier {
 }
 
 class TestDriftBackupNotifier extends BackupNotifier {
-  TestDriftBackupNotifier() : super(MockForegroundUploadService(), MockBackgroundUploadService(), UploadSpeedManager());
+  TestDriftBackupNotifier()
+    : super(
+        MockForegroundUploadService(),
+        MockBackgroundUploadService(),
+        UploadSpeedManager(),
+        MockUserUploadJobService(),
+      );
+
+  bool continues = false;
+  final stopReasons = <String>[];
+
+  @override
+  bool get continuesInBackground => continues;
+
+  @override
+  void stopForegroundBackup({required String reason}) {
+    stopReasons.add(reason);
+    super.stopForegroundBackup(reason: reason);
+  }
 }
 
 class TestNotificationPermissionNotifier extends NotificationPermissionNotifier {
@@ -105,6 +123,7 @@ void main() {
   late ProviderContainer container;
   late TestWebsocketNotifier websocket;
   late AppLifeCycleNotifier lifeCycle;
+  late TestDriftBackupNotifier backup;
   late int serverVersionCount;
   late int memoryLaneBuilds;
 
@@ -152,7 +171,7 @@ void main() {
         websocketProvider.overrideWith((ref) {
           return websocket = TestWebsocketNotifier(ref);
         }),
-        backupProvider.overrideWith((_) => TestDriftBackupNotifier()),
+        backupProvider.overrideWith((_) => backup = TestDriftBackupNotifier()),
         backgroundWorkerLockServiceProvider.overrideWithValue(lockService),
         backgroundWorkerFgServiceProvider.overrideWithValue(fgService),
         backgroundSyncProvider.overrideWithValue(backgroundSync),
@@ -292,6 +311,23 @@ void main() {
     await lifeCycle.handleAppResume();
 
     verify(() => backgroundSync.syncLocal(full: true)).called(1);
+  });
+
+  test('leaving the app stops the backup', () async {
+    container.read(backupProvider);
+
+    await lifeCycle.handleAppPause();
+
+    expect(backup.stopReasons, ['the app being sent to the background']);
+  });
+
+  test('leaving the app does not stop a backup that goes on in the background', () async {
+    container.read(backupProvider);
+    backup.continues = true;
+
+    await lifeCycle.handleAppPause();
+
+    expect(backup.stopReasons, isEmpty);
   });
 
   test('first resume is skipped on a normal launch', () async {

@@ -8,6 +8,8 @@ import app.alextran.immich.background.BackgroundEngineLock
 import app.alextran.immich.background.BackgroundWorkerApiImpl
 import app.alextran.immich.background.BackgroundWorkerFgHostApi
 import app.alextran.immich.background.BackgroundWorkerLockApi
+import app.alextran.immich.background.UserUploadApi
+import app.alextran.immich.background.UserUploadApiImpl
 import app.alextran.immich.connectivity.ConnectivityApi
 import app.alextran.immich.connectivity.ConnectivityApiImpl
 import app.alextran.immich.core.HttpClientManager
@@ -47,6 +49,7 @@ class MainActivity : FlutterFragmentActivity() {
       val messenger = flutterEngine.dartExecutor.binaryMessenger
       val backgroundEngineLockImpl = BackgroundEngineLock(ctx)
       BackgroundWorkerLockApi.setUp(messenger, backgroundEngineLockImpl)
+      UserUploadApi.setUp(messenger, UserUploadApiImpl(ctx))
       val nativeSyncApiImpl =
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || SdkExtensions.getExtensionVersion(Build.VERSION_CODES.R) < 1) {
           NativeSyncApiImpl26(ctx)

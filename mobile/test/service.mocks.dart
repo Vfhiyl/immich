@@ -6,6 +6,7 @@ import 'package:immich_mobile/domain/services/partner.service.dart';
 import 'package:immich_mobile/domain/services/remote_album.service.dart';
 import 'package:immich_mobile/domain/services/store.service.dart';
 import 'package:immich_mobile/domain/services/user.service.dart';
+import 'package:immich_mobile/domain/services/user_upload_job.service.dart';
 import 'package:immich_mobile/domain/utils/background_sync.dart';
 import 'package:immich_mobile/platform/native_sync_api.g.dart';
 import 'package:immich_mobile/services/api.service.dart';
@@ -63,5 +64,7 @@ class MockWidgetService extends Mock implements WidgetService {}
 class MockBackgroundUploadService extends Mock implements BackgroundUploadService {}
 
 class MockBackgroundWorkerLockService extends Mock implements BackgroundWorkerLockService {}
+
+class MockUserUploadJobService extends Mock implements UserUploadJobService {}
 
 class MockBackgroundWorkerFgService extends Mock implements BackgroundWorkerFgService {}

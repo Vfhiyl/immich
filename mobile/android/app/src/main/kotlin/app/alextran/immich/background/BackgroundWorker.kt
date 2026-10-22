@@ -72,7 +72,7 @@ class BackgroundWorker(context: Context, params: WorkerParameters) :
   private var isListening = false
 
   companion object {
-    private const val NOTIFICATION_CHANNEL_ID = "immich::background_worker::notif"
+    const val NOTIFICATION_CHANNEL_ID = "immich::background_worker::notif"
     private const val NOTIFICATION_ID = 100
     private val activeWorker = AtomicReference<BackgroundWorker?>(null)
   }
@@ -80,6 +80,12 @@ class BackgroundWorker(context: Context, params: WorkerParameters) :
   override fun startWork(): ListenableFuture<Result> {
     if (!activeWorker.compareAndSet(null, this)) {
       Log.i(TAG, "Another background worker is running, skipping")
+      return Futures.immediateFuture(Result.success())
+    }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && UserUploadJobService.isRunning) {
+      Log.i(TAG, "The app's own backup goes on in the background, skipping background worker")
+      activeWorker.compareAndSet(this, null)
       return Futures.immediateFuture(Result.success())
     }
 

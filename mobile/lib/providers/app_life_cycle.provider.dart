@@ -166,7 +166,8 @@ class AppLifeCycleNotifier extends StateNotifier<AppLifeCycleEnum> {
   Future<void> _resumeBackup() async {
     final isEnableBackup = _ref.read(appConfigProvider).backup.enabled;
 
-    if (isEnableBackup) {
+    // a backup that went on while the app was in the background goes on
+    if (isEnableBackup && !_ref.read(backupProvider.notifier).isBackingUp) {
       final currentUser = Store.tryGet(StoreKey.currentUser);
       if (currentUser != null) {
         await _safeRun(
@@ -221,7 +222,10 @@ class AppLifeCycleNotifier extends StateNotifier<AppLifeCycleEnum> {
 
   Future<void> _performPause() {
     if (_ref.read(authProvider).isAuthenticated) {
-      _ref.read(backupProvider.notifier).stopForegroundBackup(reason: "the app being sent to the background");
+      final backup = _ref.read(backupProvider.notifier);
+      if (!backup.continuesInBackground) {
+        backup.stopForegroundBackup(reason: "the app being sent to the background");
+      }
 
       _ref.read(websocketProvider.notifier).disconnect();
     }
