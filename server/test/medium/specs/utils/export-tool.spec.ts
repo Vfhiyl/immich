@@ -12,7 +12,7 @@ import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { Exporter } from 'src/utils/export-tool.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getKyselyDB } from 'test/utils.js';
+import { getTestKyselyDB } from 'test/utils.js';
 
 describe(Exporter.name, () => {
   let root: string;
@@ -28,7 +28,7 @@ describe(Exporter.name, () => {
   });
 
   const setup = async () => {
-    const db: Kysely<DB> = await getKyselyDB();
+    const db: Kysely<DB> = await getTestKyselyDB();
     const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
     const backends = new StorageBackendRepository(db, LoggingRepository.create());
     await backends.register([{ id: 'originals', driver: StorageBackendDriver.Local }]);

@@ -12,7 +12,7 @@ import { ZodSerializerInterceptor, ZodValidationPipe } from 'nestjs-zod';
 import { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { Duplex, Readable, Writable } from 'node:stream';
 import { PNG } from 'pngjs';
-import { Mock, Mocked, assert, vitest } from 'vitest';
+import { Mock, Mocked, assert, onTestFinished, vitest } from 'vitest';
 import type { RepositoryInterface } from 'src/types.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
 import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor.js';
@@ -525,6 +525,13 @@ export const getKyselyDB = async (suffix?: string): Promise<Kysely<DB>> => {
   await sql.unsafe(`CREATE DATABASE ${dbName} WITH TEMPLATE ${templateName} OWNER postgres;`);
 
   return new Kysely<DB>(getKyselyConfig({ connectionType: 'url', url: withDatabase(testUrl, dbName) }));
+};
+
+/** A database of its own for one test, closed when the test ends */
+export const getTestKyselyDB = async (): Promise<Kysely<DB>> => {
+  const db = await getKyselyDB();
+  onTestFinished(() => db.destroy());
+  return db;
 };
 
 export const newRandomImage = () => {

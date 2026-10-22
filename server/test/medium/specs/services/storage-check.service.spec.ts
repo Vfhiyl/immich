@@ -28,7 +28,7 @@ import { DB } from 'src/schema/index.js';
 import { StorageCheckService } from 'src/services/storage-check.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
-import { getKyselyDB } from 'test/utils.js';
+import { getTestKyselyDB } from 'test/utils.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const ago = (days: number) => new Date(Date.now() - days * DAY);
@@ -37,7 +37,7 @@ describe(StorageCheckService.name, () => {
   let root: string;
 
   const setup = async ({ encrypted = false } = {}) => {
-    const db: Kysely<DB> = await getKyselyDB();
+    const db: Kysely<DB> = await getTestKyselyDB();
     const { sut, ctx } = newMediumService(StorageCheckService, {
       database: db,
       real: [

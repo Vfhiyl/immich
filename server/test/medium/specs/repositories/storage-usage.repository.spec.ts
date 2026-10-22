@@ -8,7 +8,7 @@ import { StorageUsageRepository } from 'src/repositories/storage-usage.repositor
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getKyselyDB } from 'test/utils.js';
+import { getTestKyselyDB } from 'test/utils.js';
 
 const usage = (day: string, requests: number, purpose = 'api') => ({
   day,
@@ -21,7 +21,7 @@ const usage = (day: string, requests: number, purpose = 'api') => ({
 });
 
 const setup = async () => {
-  const db: Kysely<DB> = await getKyselyDB();
+  const db: Kysely<DB> = await getTestKyselyDB();
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   await ctx.get(StorageBackendRepository).register([
     { id: 'originals', driver: StorageBackendDriver.Local },

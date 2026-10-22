@@ -12,14 +12,14 @@ import {
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getKyselyDB } from 'test/utils.js';
+import { getTestKyselyDB } from 'test/utils.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const ago = (days: number) => new Date(Date.now() - days * DAY);
 const source = { replicaBackendId: 'copy', sourceBackendId: 'originals' };
 
 const setup = async ({ withSource = true } = {}) => {
-  const db: Kysely<DB> = await getKyselyDB();
+  const db: Kysely<DB> = await getTestKyselyDB();
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   await ctx.get(StorageBackendRepository).register([
     { id: 'originals', driver: StorageBackendDriver.Local },

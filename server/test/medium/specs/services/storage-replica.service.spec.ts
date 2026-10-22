@@ -26,7 +26,7 @@ import { StorageDeletionService } from 'src/services/storage-deletion.service.js
 import { StorageReplicaService } from 'src/services/storage-replica.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
-import { getKyselyDB } from 'test/utils.js';
+import { getTestKyselyDB } from 'test/utils.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const ago = (days: number) => new Date(Date.now() - days * DAY);
@@ -43,7 +43,7 @@ describe(StorageReplicaService.name, () => {
   let root: string;
 
   const setup = async () => {
-    const db: Kysely<DB> = await getKyselyDB();
+    const db: Kysely<DB> = await getTestKyselyDB();
     const { sut, ctx } = newMediumService(StorageReplicaService, {
       database: db,
       real: [

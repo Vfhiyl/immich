@@ -5,10 +5,10 @@ import { UploadSessionRepository } from 'src/repositories/upload-session.reposit
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getKyselyDB } from 'test/utils.js';
+import { getTestKyselyDB } from 'test/utils.js';
 
 const setup = async () => {
-  const db: Kysely<DB> = await getKyselyDB();
+  const db: Kysely<DB> = await getTestKyselyDB();
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   return { ctx, sut: ctx.get(UploadSessionRepository) };
 };

@@ -18,13 +18,13 @@ import { DB } from 'src/schema/index.js';
 import { StorageDeletionService } from 'src/services/storage-deletion.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
-import { getKyselyDB } from 'test/utils.js';
+import { getTestKyselyDB } from 'test/utils.js';
 
 describe(StorageDeletionService.name, () => {
   let root: string;
 
   const setup = async () => {
-    const db: Kysely<DB> = await getKyselyDB();
+    const db: Kysely<DB> = await getTestKyselyDB();
     const { sut, ctx } = newMediumService(StorageDeletionService, {
       database: db,
       real: [
