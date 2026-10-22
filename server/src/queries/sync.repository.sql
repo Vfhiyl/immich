@@ -442,6 +442,55 @@ where
 order by
   "asset"."updateId" asc
 
+-- SyncRepository.asset.getSnapshot
+select
+  to_char(
+    "asset"."fileCreatedAt" at time zone 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+  ) || ',' || "asset"."id" as "snapshotPosition",
+  "asset"."id",
+  "asset"."ownerId",
+  "asset"."originalFileName",
+  "asset"."thumbhash",
+  "asset"."checksum",
+  "asset"."fileCreatedAt",
+  "asset"."fileModifiedAt",
+  "asset"."createdAt",
+  "asset"."localDateTime",
+  "asset"."type",
+  "asset"."deletedAt",
+  "asset"."isFavorite",
+  "asset"."visibility",
+  "asset"."duration",
+  "asset"."livePhotoVideoId",
+  "asset"."stackId",
+  "asset"."libraryId",
+  "asset"."width",
+  "asset"."height",
+  "asset"."isEdited"
+from
+  "asset"
+where
+  "asset"."updateId" < $1
+  and ("asset"."fileCreatedAt", "asset"."id") < ($2::timestamptz, $3::uuid)
+  and "ownerId" = $4
+order by
+  "asset"."fileCreatedAt" desc,
+  "asset"."id" desc
+
+-- SyncRepository.asset.getSnapshotEnd
+select
+  "asset"."updateId"
+from
+  "asset"
+where
+  "asset"."updateId" < $1
+  and "ownerId" = $2
+order by
+  "asset"."updateId" desc
+limit
+  $3
+
 -- SyncRepository.assetExif.getUpserts
 select
   "asset_exif"."assetId",
@@ -950,6 +999,69 @@ where
   )
 order by
   "asset"."updateId" asc
+
+-- SyncRepository.partnerAsset.getSnapshot
+select
+  to_char(
+    "asset"."fileCreatedAt" at time zone 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+  ) || ',' || "asset"."id" as "snapshotPosition",
+  "asset"."id",
+  "asset"."ownerId",
+  "asset"."originalFileName",
+  "asset"."thumbhash",
+  "asset"."checksum",
+  "asset"."fileCreatedAt",
+  "asset"."fileModifiedAt",
+  "asset"."localDateTime",
+  "asset"."createdAt",
+  "asset"."type",
+  "asset"."deletedAt",
+  "asset"."visibility",
+  "asset"."duration",
+  "asset"."livePhotoVideoId",
+  "asset"."stackId",
+  "asset"."libraryId",
+  "asset"."width",
+  "asset"."height",
+  "asset"."isEdited",
+  $1 as "isFavorite"
+from
+  "asset"
+where
+  "asset"."updateId" < $2
+  and ("asset"."fileCreatedAt", "asset"."id") < ($3::timestamptz, $4::uuid)
+  and "ownerId" in (
+    select
+      "sharedById"
+    from
+      "partner"
+    where
+      "sharedWithId" = $5
+  )
+order by
+  "asset"."fileCreatedAt" desc,
+  "asset"."id" desc
+
+-- SyncRepository.partnerAsset.getSnapshotEnd
+select
+  "asset"."updateId"
+from
+  "asset"
+where
+  "asset"."updateId" < $1
+  and "ownerId" in (
+    select
+      "sharedById"
+    from
+      "partner"
+    where
+      "sharedWithId" = $2
+  )
+order by
+  "asset"."updateId" desc
+limit
+  $3
 
 -- SyncRepository.partnerAssetExif.getBackfill
 select

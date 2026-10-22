@@ -67,6 +67,51 @@ export const send = async <T extends keyof SyncItem, D extends SyncItem[T]>(
   }
 };
 
+/**
+ * A first sync of assets (no checkpoint yet), or one in progress (a checkpoint with the position of the last asset
+ * sent): it sends the assets as they were when it started, newest first, so that the newest photos show first. The
+ * checkpoint keeps when it started, and the changes since then follow in the order of change once it is done
+ */
+const isSnapshot = (checkpoint: SyncAck | undefined) => !checkpoint || !!checkpoint.extraId;
+
+/**
+ * Sends a snapshot: each asset with its position, the last one with the last change of the assets of the snapshot
+ * instead, which completes it, as upstream's checkpoint after the same assets (and as many items as upstream sends, so
+ * its clients see no difference but the order). Returns where the changes go on from, and whether they must complete
+ * it: when nothing was left of a snapshot in progress (the assets after its position changed since, and follow as
+ * changes), the first change completes it, or a separate ack if there is none (an ack of the same type before the
+ * changes could be applied after them by a client that sends the last ack of each type)
+ */
+const sendSnapshot = async (
+  response: Writable,
+  type: SyncEntityType.AssetV2 | SyncEntityType.PartnerAssetV2,
+  { beforeUpdateId, after }: { beforeUpdateId: string; after?: string },
+  snapshot: AsyncIterable<AssetLike & { snapshotPosition: string }>,
+  getEnd: () => Promise<string | undefined>,
+): Promise<{ ack?: SyncAck; mustComplete: boolean }> => {
+  let previous: { position: string; data: SyncAssetV2 } | undefined;
+  for await (const { snapshotPosition, ...data } of snapshot) {
+    if (previous) {
+      await send(response, { type, ids: [beforeUpdateId, previous.position], data: previous.data });
+    }
+    previous = { position: snapshotPosition, data: mapSyncAssetV2(data) };
+  }
+
+  if (!previous && !after) {
+    // nothing to sync yet: no checkpoint, as upstream
+    return { mustComplete: false };
+  }
+  const end = (await getEnd()) ?? beforeUpdateId;
+  if (previous) {
+    await send(response, { type, ids: [end], data: previous.data });
+  }
+  return { ack: { type, updateId: end }, mustComplete: !previous };
+};
+
+const sendSnapshotCompleteAck = async (response: Writable, { type, updateId }: SyncAck) => {
+  await send(response, { type: SyncEntityType.SyncAckV1, data: {}, ackType: type, ids: [updateId] });
+};
+
 const sendEntityBackfillCompleteAck = async (response: Writable, ackType: SyncEntityType, id: string) => {
   await send(response, { type: SyncEntityType.SyncAckV1, data: {}, ackType, ids: [id, COMPLETE_ID] });
 };
@@ -389,9 +434,27 @@ export class SyncService extends BaseService {
     }
 
     const upsertType = SyncEntityType.AssetV2;
-    const upserts = this.syncRepository.asset.getUpserts({ ...options, ack: checkpointMap[upsertType] });
+    let ack = checkpointMap[upsertType];
+    let mustComplete = false;
+    if (isSnapshot(ack)) {
+      const position = { beforeUpdateId: ack?.updateId ?? options.nowId, after: ack?.extraId };
+      const snapshotOptions = { userId: options.userId, ...position };
+      ({ ack, mustComplete } = await sendSnapshot(
+        response,
+        upsertType,
+        position,
+        this.syncRepository.asset.getSnapshot(snapshotOptions),
+        () => this.syncRepository.asset.getSnapshotEnd(snapshotOptions),
+      ));
+    }
+
+    const upserts = this.syncRepository.asset.getUpserts({ ...options, ack });
     for await (const { updateId, ...data } of upserts) {
       await send(response, { type: upsertType, ids: [updateId], data: mapSyncAssetV2(data) });
+      mustComplete = false;
+    }
+    if (mustComplete && ack) {
+      await sendSnapshotCompleteAck(response, ack);
     }
   }
 
@@ -420,8 +483,9 @@ export class SyncService extends BaseService {
       afterCreateId: backfillCheckpoint?.updateId,
     });
     const upsertType = SyncEntityType.PartnerAssetV2;
-    const upsertCheckpoint = checkpointMap[upsertType];
-    if (upsertCheckpoint) {
+    let upsertCheckpoint = checkpointMap[upsertType];
+    let mustComplete = false;
+    if (upsertCheckpoint && !isSnapshot(upsertCheckpoint)) {
       const endId = upsertCheckpoint.updateId;
 
       for (const partner of partners) {
@@ -446,17 +510,37 @@ export class SyncService extends BaseService {
 
         await sendEntityBackfillCompleteAck(response, backfillType, createId);
       }
-    } else if (partners.length > 0) {
-      await this.upsertBackfillCheckpoint({
-        type: backfillType,
-        sessionId,
-        createId: partners.at(-1)!.createId,
-      });
+    } else {
+      // the partners of now are in the snapshot; the ones added while it is in progress are backfilled after it
+      if (!upsertCheckpoint && partners.length > 0) {
+        await this.upsertBackfillCheckpoint({
+          type: backfillType,
+          sessionId,
+          createId: partners.at(-1)!.createId,
+        });
+      }
+
+      const position = {
+        beforeUpdateId: upsertCheckpoint?.updateId ?? options.nowId,
+        after: upsertCheckpoint?.extraId,
+      };
+      const snapshotOptions = { userId: options.userId, ...position };
+      ({ ack: upsertCheckpoint, mustComplete } = await sendSnapshot(
+        response,
+        upsertType,
+        position,
+        this.syncRepository.partnerAsset.getSnapshot(snapshotOptions),
+        () => this.syncRepository.partnerAsset.getSnapshotEnd(snapshotOptions),
+      ));
     }
 
-    const upserts = this.syncRepository.partnerAsset.getUpserts({ ...options, ack: checkpointMap[upsertType] });
+    const upserts = this.syncRepository.partnerAsset.getUpserts({ ...options, ack: upsertCheckpoint });
     for await (const { updateId, ...data } of upserts) {
       await send(response, { type: upsertType, ids: [updateId], data: mapSyncAssetV2(data) });
+      mustComplete = false;
+    }
+    if (mustComplete && upsertCheckpoint) {
+      await sendSnapshotCompleteAck(response, upsertCheckpoint);
     }
   }
 

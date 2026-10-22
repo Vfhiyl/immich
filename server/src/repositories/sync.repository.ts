@@ -31,6 +31,22 @@ const dummyCreateAfterOptions = {
   afterCreateId: DummyValue.UUID,
 };
 
+/**
+ * The photos as of `beforeUpdateId`, newest first (by the time they were taken, then id), after the position `after`
+ * (`snapshotPosition` of the last one sent): a first sync shows the newest photos first
+ */
+export type SyncSnapshotOptions = {
+  userId: string;
+  beforeUpdateId: string;
+  after?: string;
+};
+
+const dummySnapshotOptions = {
+  userId: DummyValue.UUID,
+  beforeUpdateId: DummyValue.UUID,
+  after: `2024-01-01T00:00:00.000000Z,${DummyValue.UUID}`,
+};
+
 export type SyncQueryOptions = {
   nowId: string;
   userId: string;
@@ -111,6 +127,37 @@ export class BaseSync {
       .where(updateIdRef, '<=', beforeUpdateId)
       .$if(!!afterUpdateId, (qb) => qb.where(updateIdRef, '>', afterUpdateId!))
       .orderBy(updateIdRef, 'asc');
+  }
+
+  /**
+   * Assets in the order of a snapshot; the position is the exact time (in microseconds, which a JavaScript date would
+   * round) and the id
+   */
+  protected snapshotQuery({ beforeUpdateId, after }: SyncSnapshotOptions) {
+    const [time, id] = after?.split(',') ?? [];
+    return this.db
+      .selectFrom('asset')
+      .select(
+        sql<string>`to_char("asset"."fileCreatedAt" at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') || ',' || "asset"."id"`.as(
+          'snapshotPosition',
+        ),
+      )
+      .where('asset.updateId', '<', beforeUpdateId)
+      .$if(!!after, (qb) =>
+        qb.where(sql<boolean>`("asset"."fileCreatedAt", "asset"."id") < (${time}::timestamptz, ${id}::uuid)`),
+      )
+      .orderBy('asset.fileCreatedAt', 'desc')
+      .orderBy('asset.id', 'desc');
+  }
+
+  /** The last change of the assets of a snapshot: where the changes since go on from once it is complete */
+  protected snapshotEndQuery({ beforeUpdateId }: SyncSnapshotOptions) {
+    return this.db
+      .selectFrom('asset')
+      .select('asset.updateId')
+      .where('asset.updateId', '<', beforeUpdateId)
+      .orderBy('asset.updateId', 'desc')
+      .limit(1);
   }
 
   protected auditQuery<T extends keyof DB>(t: T, { nowId, ack }: SyncQueryOptions) {
@@ -408,6 +455,17 @@ class AssetSync extends BaseSync {
       .where('ownerId', '=', options.userId)
       .stream();
   }
+
+  @GenerateSql({ params: [dummySnapshotOptions], stream: true })
+  getSnapshot(options: SyncSnapshotOptions) {
+    return this.snapshotQuery(options).select(columns.syncAsset).where('ownerId', '=', options.userId).stream();
+  }
+
+  @GenerateSql({ params: [dummySnapshotOptions] })
+  async getSnapshotEnd(options: SyncSnapshotOptions) {
+    const end = await this.snapshotEndQuery(options).where('ownerId', '=', options.userId).executeTakeFirst();
+    return end?.updateId;
+  }
 }
 
 class AuthUserSync extends BaseSync {
@@ -689,6 +747,27 @@ class PartnerAssetsSync extends BaseSync {
         eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
       )
       .stream();
+  }
+
+  @GenerateSql({ params: [dummySnapshotOptions], stream: true })
+  getSnapshot(options: SyncSnapshotOptions) {
+    return this.snapshotQuery(options)
+      .select(columns.syncPartnerAsset)
+      .select(sql.val(false).as('isFavorite'))
+      .where('ownerId', 'in', (eb) =>
+        eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
+      )
+      .stream();
+  }
+
+  @GenerateSql({ params: [dummySnapshotOptions] })
+  async getSnapshotEnd(options: SyncSnapshotOptions) {
+    const end = await this.snapshotEndQuery(options)
+      .where('ownerId', 'in', (eb) =>
+        eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
+      )
+      .executeTakeFirst();
+    return end?.updateId;
   }
 }
 
