@@ -11,7 +11,10 @@ export const newStorageBackendRepositoryMock = (): Mocked<RepositoryInterface<St
     undefined as unknown as Kysely<DB>,
     { setContext: () => {}, warn: () => {}, debug: () => {} } as unknown as LoggingRepository,
   );
+  // there is no database: writes are not registered
+  real.registerWrite = () => Promise.resolve();
   return {
+    registerWrite: vitest.fn().mockResolvedValue(undefined),
     readConfig: vitest.fn(),
     readMasterKeys: vitest.fn(),
     configure: vitest.fn((backends, keys, deletion, databaseBackups) =>
@@ -43,6 +46,7 @@ export const newStorageBackendRepositoryMock = (): Mocked<RepositoryInterface<St
     keepLocalCopy: vitest.fn((stored, path) => real.keepLocalCopy(stored, path)),
     dropLocalCopy: vitest.fn((file) => real.dropLocalCopy(file)),
     sweepLocalCopies: vitest.fn(() => real.sweepLocalCopies()),
+    sweepTemporaryFiles: vitest.fn((before) => real.sweepTemporaryFiles(before)),
     drainRequestUsage: vitest.fn(() => real.drainRequestUsage()),
     getRegistered: vitest.fn().mockResolvedValue([
       { id: 'host', driver: 'local' },

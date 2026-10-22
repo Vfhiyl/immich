@@ -20,6 +20,7 @@ const due = (id: string, key: string, backendId = 'originals') => ({
   key,
   notBefore: new Date(),
   isOriginal: true,
+  isWrite: false,
   createdAt: new Date(),
   attempts: 0,
   lastError: null,

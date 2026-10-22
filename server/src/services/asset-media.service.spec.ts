@@ -204,6 +204,7 @@ const deleted = (overrides = {}) => ({
   key: 'old-key',
   notBefore: new Date(),
   isOriginal: true,
+  isWrite: false,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   attempts: 0,
   lastError: null,

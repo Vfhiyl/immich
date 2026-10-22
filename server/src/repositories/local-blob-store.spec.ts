@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { buffer } from 'node:stream/consumers';
-import { BlobExistsError, BlobIntegrityError, BlobNotFoundError, BlobRangeError } from 'src/repositories/blob-store.js';
+import {
+  BlobExistsError,
+  BlobIntegrityError,
+  BlobNotFoundError,
+  BlobRangeError,
+  BlobUploadNotFoundError,
+} from 'src/repositories/blob-store.js';
 import { LOCAL_BLOB_TEMP_SUFFIX, LocalBlobStore } from 'src/repositories/local-blob-store.js';
 
 const sha1 = (value: string | Buffer) => createHash('sha1').update(value).digest();
@@ -214,6 +220,31 @@ describe(LocalBlobStore.name, () => {
 
     it('should reject an invalid key', () => {
       expect(() => sut.getLocalPath('../outside')).toThrow('Invalid blob key');
+    });
+  });
+
+  describe('sweepTemporaryFiles', () => {
+    it('should remove what writes that were cut off left, once it is old enough, and nothing else', async () => {
+      await sut.put('a/blob', toStream('kept'));
+      const upload = await sut.createUpload('a/uploading', { partSize: 5 });
+      await sut.uploadPart('a/uploading', upload, { number: 1, data: Buffer.from('12345') });
+      const leftover = join(root, 'a', `blob.${'0'.repeat(8)}.immich-tmp`);
+      await fs.writeFile(leftover, 'cut off');
+      const old = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      await fs.utimes(leftover, old, old);
+
+      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+      await expect(sut.sweepTemporaryFiles(twoDaysAgo)).resolves.toBe(1);
+      await expect(fs.stat(leftover)).rejects.toThrow('ENOENT');
+      // an upload in progress is kept
+      await expect(sut.uploadPart('a/uploading', upload, { number: 2, data: Buffer.from('6') })).resolves.toBeDefined();
+      await expect(listAll(sut)).resolves.toEqual([{ key: 'a/blob', size: 4, lastModified: expect.any(Date) }]);
+
+      // an upload nobody completed or dropped goes too
+      await expect(sut.sweepTemporaryFiles(new Date(Date.now() + 1000))).resolves.toBe(1);
+      await expect(sut.uploadPart('a/uploading', upload, { number: 3, data: Buffer.from('7') })).rejects.toThrow(
+        BlobUploadNotFoundError,
+      );
     });
   });
 

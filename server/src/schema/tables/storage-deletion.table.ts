@@ -40,6 +40,14 @@ export class StorageDeletionTable {
   @Column({ type: 'boolean' })
   isOriginal!: boolean;
 
+  /**
+   * Registered before the file was written, in case it is never recorded (e.g. the process is killed in between): the
+   * cleanup then deletes it, and drops the registration once the file is recorded. A deletion registered later for the
+   * same file replaces it.
+   */
+  @Column({ type: 'boolean', default: false })
+  isWrite!: Generated<boolean>;
+
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;
 

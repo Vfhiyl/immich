@@ -221,6 +221,41 @@ export class LocalBlobStore implements BlobStore {
     }
   }
 
+  /**
+   * Remove what writes left behind that were cut off (e.g. the process was killed) before `before`: temporary files,
+   * and the parts of uploads that were neither completed nor dropped. Writes in progress are younger.
+   */
+  async sweepTemporaryFiles(before: Date, directory = this.root): Promise<number> {
+    let entries;
+    try {
+      entries = await fs.readdir(directory, { withFileTypes: true });
+    } catch (error) {
+      if (hasErrorCode(error, NOT_FOUND_CODES)) {
+        return 0;
+      }
+      throw error;
+    }
+
+    let removed = 0;
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      if (!entry.name.endsWith(LOCAL_BLOB_TEMP_SUFFIX)) {
+        if (entry.isDirectory()) {
+          removed += await this.sweepTemporaryFiles(before, path);
+        }
+        continue;
+      }
+      const stat = await fs.lstat(path).catch(() => null);
+      if (!(stat && stat.mtime < before)) {
+        continue;
+      }
+
+      await fs.rm(path, { recursive: true, force: true });
+      removed++;
+    }
+    return removed;
+  }
+
   private toPath(key: string) {
     assertValidBlobKey(key);
     return join(this.root, ...key.split('/'));

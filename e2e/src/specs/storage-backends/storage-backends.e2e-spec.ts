@@ -205,7 +205,10 @@ describe('storage backends for originals and derived files', () => {
 
     await eventually(async () => {
       await expect(environment.query(`select id from asset`)).resolves.toEqual([]);
-      const registered = await environment.query<{ key: string }>(`select key from storage_deletion`);
+      // files are also registered before they are written, in case they are never recorded
+      const registered = await environment.query<{ key: string }>(
+        `select key from storage_deletion where not "isWrite"`,
+      );
       expect(registered.map(({ key }) => key)).toEqual(expect.arrayContaining(stored));
       expect(registered).toHaveLength(stored.length);
     });

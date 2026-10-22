@@ -367,7 +367,8 @@ export class AssetService extends BaseService {
       }
     }
 
-    await this.assetRepository.remove(asset);
+    // the files as they were when the asset was deleted: files recorded since it was read are included
+    const removed = await this.assetRepository.remove(asset);
     if (!asset.libraryId) {
       await this.userRepository.updateUsage(asset.ownerId, -(asset.exifInfo?.fileSizeInByte || 0));
     }
@@ -385,7 +386,7 @@ export class AssetService extends BaseService {
       }
     }
 
-    const assetFiles = getAssetFiles(asset.files ?? []);
+    const assetFiles = getAssetFiles(removed.files);
     const files: Array<RecordedFile | undefined> = [
       assetFiles.thumbnailFile,
       assetFiles.previewFile,
@@ -398,7 +399,7 @@ export class AssetService extends BaseService {
 
     if (deleteOnDisk && !asset.isOffline) {
       files.push(assetFiles.sidecarFile);
-      const original = asset.originalFile;
+      const original = removed.originalFile;
       if (original && !isBuiltinStorageBackend(original.backendId)) {
         // kept for the deletion delay, with what recovering it as a new photo needs
         await this.registerDeletions([

@@ -59,6 +59,8 @@ describe(StorageBackendRepository.name, () => {
     StorageCore.setMediaLocation('/data');
     logger = { setContext: vi.fn(), warn: vi.fn(), debug: vi.fn() };
     sut = new StorageBackendRepository(undefined as unknown as Kysely<DB>, logger as unknown as LoggingRepository);
+    // there is no database: writes are not registered (see the medium tests)
+    vi.spyOn(sut, 'registerWrite').mockResolvedValue();
   });
 
   afterEach(() => {

@@ -86,6 +86,7 @@ describe('export tool', () => {
 
     it('should export the originals by what their encrypted objects describe, once', async () => {
       const backends = new StorageBackendRepository(undefined as never, LoggingRepository.create());
+      vi.spyOn(backends, 'registerWrite').mockResolvedValue();
       backends.configure(
         [
           {

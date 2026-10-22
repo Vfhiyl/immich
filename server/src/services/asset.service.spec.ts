@@ -637,6 +637,16 @@ describe(AssetService.name, () => {
   });
 
   describe('handleAssetDeletion', () => {
+    beforeEach(() => {
+      // the files recorded when the asset is deleted, here those it was read with
+      mocks.asset.remove.mockImplementation((asset) =>
+        Promise.resolve({
+          files: (asset as ReturnType<typeof getForAssetDeletion>).files ?? [],
+          originalFile: (asset as ReturnType<typeof getForAssetDeletion>).originalFile ?? null,
+        } as never),
+      );
+    });
+
     it('should clean up files', async () => {
       const asset = AssetFactory.from()
         .file({ type: AssetFileType.Thumbnail })

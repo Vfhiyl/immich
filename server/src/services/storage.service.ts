@@ -25,6 +25,8 @@ import { STORAGE_PROBE_PREFIX, isBuiltinStorageBackend } from 'src/repositories/
 import { BaseService } from 'src/services/base.service.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 
+/** What a write that was cut off left on a local backend is removed after this long */
+const TEMPORARY_FILE_MAX_AGE_MS = 2 * 24 * 60 * 60 * 1000;
 /** Number of asset files given a storage location per database round trip */
 const FILE_LOCATION_BATCH_SIZE = 5000;
 /** Where startup checks write their probes in each configured storage backend */
@@ -266,6 +268,12 @@ export class StorageService extends BaseService {
   @OnJob({ name: JobName.LocalCopyCleanup, queue: QueueName.BackgroundTask })
   async handleLocalCopyCleanup(): Promise<JobStatus> {
     await this.storageBackendRepository.sweepLocalCopies();
+    // writes in progress, and uploads that are resumed within their day, are younger
+    const before = new Date(Date.now() - TEMPORARY_FILE_MAX_AGE_MS);
+    const removed = await this.storageBackendRepository.sweepTemporaryFiles(before);
+    if (removed > 0) {
+      this.logger.log(`Removed ${removed} files left by writes to storage backends that were cut off`);
+    }
     return JobStatus.Success;
   }
 

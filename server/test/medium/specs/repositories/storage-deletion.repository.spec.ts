@@ -39,6 +39,40 @@ describe(StorageDeletionRepository.name, () => {
     });
   });
 
+  describe('writes', () => {
+    it('should register a file before it is written, and replace that by a deletion', async () => {
+      const { ctx, sut, db } = await setup();
+      const backends = ctx.get(StorageBackendRepository);
+      await backends.registerWrite('originals', 'a');
+      await backends.registerWrite('originals', 'a');
+
+      let rows = await db.selectFrom('storage_deletion').selectAll().execute();
+      expect(rows).toEqual([expect.objectContaining({ key: 'a', isWrite: true, isOriginal: false })]);
+      expect(rows[0].notBefore.getTime()).toBeGreaterThan(daysFromNow(0.9).getTime());
+      // not a deletion anyone asked for
+      await expect(sut.countPending()).resolves.toEqual({ originals: 0, files: 0 });
+
+      await sut.register([
+        {
+          backendId: 'originals',
+          key: 'a',
+          notBefore: daysFromNow(360),
+          isOriginal: true,
+          originalFileName: 'IMG_0001.jpg',
+        },
+      ]);
+      rows = await db.selectFrom('storage_deletion').selectAll().execute();
+      expect(rows).toEqual([
+        expect.objectContaining({ isWrite: false, isOriginal: true, originalFileName: 'IMG_0001.jpg' }),
+      ]);
+      expect(rows[0].notBefore.getTime()).toBeGreaterThan(daysFromNow(359).getTime());
+
+      // a deletion is not replaced by a write
+      await backends.registerWrite('originals', 'a');
+      await expect(sut.countPending()).resolves.toEqual({ originals: 1, files: 1 });
+    });
+  });
+
   describe('getDue', () => {
     it('should return files whose time has come, the longest waiting first', async () => {
       const { sut } = await setup();

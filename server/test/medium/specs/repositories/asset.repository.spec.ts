@@ -64,6 +64,58 @@ const keyframeRow = (assetId: string, n: number) => ({
 });
 
 describe(AssetRepository.name, () => {
+  describe('remove', () => {
+    it('should return the files of the asset, also one being recorded while it is deleted', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Thumbnail, path: '/thumbnail.jpg' });
+
+      // a job records a preview, and has not committed yet when the asset is deleted
+      let commit!: () => void;
+      const committed = new Promise<void>((resolve) => (commit = resolve));
+      let recorded!: () => void;
+      const isRecorded = new Promise<void>((resolve) => (recorded = resolve));
+      const recording = defaultDatabase.transaction().execute(async (tx) => {
+        await tx
+          .insertInto('asset_file')
+          .values({ assetId: asset.id, type: AssetFileType.Preview, path: '/preview.jpg' })
+          .execute();
+        recorded();
+        await committed;
+      });
+      await isRecorded;
+      const removing = sut.remove(asset);
+      commit();
+      await recording;
+
+      const { files } = await removing;
+      expect(files.map(({ type }) => type).toSorted()).toEqual([AssetFileType.Preview, AssetFileType.Thumbnail]);
+      await expect(
+        defaultDatabase.selectFrom('asset').select('id').where('id', '=', asset.id).execute(),
+      ).resolves.toEqual([]);
+    });
+
+    it('should make a file recorded after the asset was deleted fail to be recorded', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await sut.remove(asset);
+
+      await expect(
+        sut.upsertFiles([
+          {
+            assetId: asset.id,
+            type: AssetFileType.Preview,
+            path: '/preview.jpg',
+            backendId: 'media',
+            key: 'preview.jpg',
+          },
+        ]),
+      ).rejects.toThrow('foreign key');
+    });
+  });
+
   describe('getTimeBucket', () => {
     it('should order assets by local day first and fileCreatedAt within each day', async () => {
       const { ctx, sut } = setup();

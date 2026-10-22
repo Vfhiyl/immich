@@ -309,6 +309,36 @@ set
 where
   "id" = any ($1::uuid[])
 
+-- AssetRepository.remove
+begin
+select
+  "id"
+from
+  "asset"
+where
+  "id" = $1::uuid
+for update
+select
+  *
+from
+  "asset_file"
+where
+  "assetId" = $1::uuid
+select
+  "backendId",
+  "key",
+  "size",
+  "checksum",
+  "encryption"
+from
+  "asset_original_file"
+where
+  "assetId" = $1::uuid
+delete from "asset"
+where
+  "id" = $1::uuid
+commit
+
 -- AssetRepository.getByChecksum
 select
   "asset".*

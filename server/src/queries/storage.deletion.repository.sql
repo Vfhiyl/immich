@@ -34,7 +34,23 @@ from
 where
   "asset"."ownerId" = $3
   and "asset_original_file"."backendId" not in ($4, $5)
-on conflict ("backendId", "key") do nothing
+on conflict ("backendId", "key") do update
+set
+  "notBefore" = "excluded"."notBefore",
+  "isOriginal" = "excluded"."isOriginal",
+  "isWrite" = $6,
+  "createdAt" = "excluded"."createdAt",
+  "attempts" = $7,
+  "lastError" = $8,
+  "ownerId" = "excluded"."ownerId",
+  "originalFileName" = "excluded"."originalFileName",
+  "originalPath" = "excluded"."originalPath",
+  "fileCreatedAt" = "excluded"."fileCreatedAt",
+  "size" = "excluded"."size",
+  "checksum" = "excluded"."checksum",
+  "encryption" = "excluded"."encryption"
+where
+  "storage_deletion"."isWrite" = $9
 insert into
   "storage_deletion" ("backendId", "key", "notBefore", "isOriginal")
 select
@@ -51,7 +67,23 @@ from
 where
   "asset"."ownerId" = $5
   and "asset_file"."backendId" not in ($6, $7)
-on conflict ("backendId", "key") do nothing
+on conflict ("backendId", "key") do update
+set
+  "notBefore" = "excluded"."notBefore",
+  "isOriginal" = "excluded"."isOriginal",
+  "isWrite" = $8,
+  "createdAt" = "excluded"."createdAt",
+  "attempts" = $9,
+  "lastError" = $10,
+  "ownerId" = "excluded"."ownerId",
+  "originalFileName" = "excluded"."originalFileName",
+  "originalPath" = "excluded"."originalPath",
+  "fileCreatedAt" = "excluded"."fileCreatedAt",
+  "size" = "excluded"."size",
+  "checksum" = "excluded"."checksum",
+  "encryption" = "excluded"."encryption"
+where
+  "storage_deletion"."isWrite" = $11
 insert into
   "storage_deletion" ("backendId", "key", "notBefore", "isOriginal")
 select
@@ -67,7 +99,23 @@ from
 where
   "ownerId" = $5
   and "backendId" not in ($6, $7)
-on conflict ("backendId", "key") do nothing
+on conflict ("backendId", "key") do update
+set
+  "notBefore" = "excluded"."notBefore",
+  "isOriginal" = "excluded"."isOriginal",
+  "isWrite" = $8,
+  "createdAt" = "excluded"."createdAt",
+  "attempts" = $9,
+  "lastError" = $10,
+  "ownerId" = "excluded"."ownerId",
+  "originalFileName" = "excluded"."originalFileName",
+  "originalPath" = "excluded"."originalPath",
+  "fileCreatedAt" = "excluded"."fileCreatedAt",
+  "size" = "excluded"."size",
+  "checksum" = "excluded"."checksum",
+  "encryption" = "excluded"."encryption"
+where
+  "storage_deletion"."isWrite" = $11
 insert into
   "storage_deletion" ("backendId", "key", "notBefore", "isOriginal")
 select
@@ -83,7 +131,23 @@ from
 where
   "userId" = $5
   and "backendId" not in ($6, $7)
-on conflict ("backendId", "key") do nothing
+on conflict ("backendId", "key") do update
+set
+  "notBefore" = "excluded"."notBefore",
+  "isOriginal" = "excluded"."isOriginal",
+  "isWrite" = $8,
+  "createdAt" = "excluded"."createdAt",
+  "attempts" = $9,
+  "lastError" = $10,
+  "ownerId" = "excluded"."ownerId",
+  "originalFileName" = "excluded"."originalFileName",
+  "originalPath" = "excluded"."originalPath",
+  "fileCreatedAt" = "excluded"."fileCreatedAt",
+  "size" = "excluded"."size",
+  "checksum" = "excluded"."checksum",
+  "encryption" = "excluded"."encryption"
+where
+  "storage_deletion"."isWrite" = $11
 commit
 
 -- StorageDeletionRepository.get
@@ -103,6 +167,8 @@ select
   count(*) as "files"
 from
   "storage_deletion"
+where
+  "isWrite" = $2
 
 -- StorageDeletionRepository.listOriginals
 select

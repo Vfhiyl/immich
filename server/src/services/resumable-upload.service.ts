@@ -374,6 +374,10 @@ export class ResumableUploadService extends BaseService {
       data,
       last: { size, sha1: checksum, manifest },
     });
+    if (!this.isBuiltin(session)) {
+      // deleted unless it is recorded, in case recording it below never happens
+      await this.storageBackendRepository.registerWrite(session.backendId, session.key);
+    }
     await store.completeUpload(session.key, upload, [...session.parts, last]);
     await rm(path, { force: true });
 

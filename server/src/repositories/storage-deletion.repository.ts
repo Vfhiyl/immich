@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, sql } from 'kysely';
+import { Insertable, Kysely, OnConflictBuilder, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { RecordedFile } from 'src/repositories/storage-backend.repository.js';
 import { StorageLocation } from 'src/cores/storage.core.js';
@@ -53,6 +53,30 @@ export const toDeletedOriginalFile = (row: {
 
 const builtinBackends = Object.values(BuiltinStorageBackend);
 
+/**
+ * A file is registered once, however often its deletion is requested; a registration made before the file was written
+ * is replaced by the deletion, which may keep it longer and with what recovering it needs
+ */
+const replaceWriteRegistration = (oc: OnConflictBuilder<DB, 'storage_deletion'>) =>
+  oc
+    .columns(['backendId', 'key'])
+    .doUpdateSet((eb) => ({
+      notBefore: eb.ref('excluded.notBefore'),
+      isOriginal: eb.ref('excluded.isOriginal'),
+      isWrite: false,
+      createdAt: eb.ref('excluded.createdAt'),
+      attempts: 0,
+      lastError: null,
+      ownerId: eb.ref('excluded.ownerId'),
+      originalFileName: eb.ref('excluded.originalFileName'),
+      originalPath: eb.ref('excluded.originalPath'),
+      fileCreatedAt: eb.ref('excluded.fileCreatedAt'),
+      size: eb.ref('excluded.size'),
+      checksum: eb.ref('excluded.checksum'),
+      encryption: eb.ref('excluded.encryption'),
+    }))
+    .where('storage_deletion.isWrite', '=', true);
+
 @Injectable()
 export class StorageDeletionRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
@@ -63,11 +87,7 @@ export class StorageDeletionRepository {
       return;
     }
 
-    await this.db
-      .insertInto('storage_deletion')
-      .values(requests)
-      .onConflict((oc) => oc.columns(['backendId', 'key']).doNothing())
-      .execute();
+    await this.db.insertInto('storage_deletion').values(requests).onConflict(replaceWriteRegistration).execute();
   }
 
   /**
@@ -119,7 +139,7 @@ export class StorageDeletionRepository {
               'asset_original_file.encryption',
             ]),
         )
-        .onConflict((oc) => oc.columns(['backendId', 'key']).doNothing())
+        .onConflict(replaceWriteRegistration)
         .execute();
 
       await tx
@@ -138,7 +158,7 @@ export class StorageDeletionRepository {
             ])
             .$narrowType<{ backendId: string; key: string }>(),
         )
-        .onConflict((oc) => oc.columns(['backendId', 'key']).doNothing())
+        .onConflict(replaceWriteRegistration)
         .execute();
 
       for (const table of ['person_thumbnail_file', 'user_profile_image_file'] as const) {
@@ -150,7 +170,7 @@ export class StorageDeletionRepository {
             sql`select "backendId", "key", ${notBefore('backendId')}, ${isOriginal('backendId')} from ${sql.table(table)}
               where ${sql.ref(owner)} = ${userId} and "backendId" not in (${sql.join(builtinBackends)})`,
           )
-          .onConflict((oc) => oc.columns(['backendId', 'key']).doNothing())
+          .onConflict(replaceWriteRegistration)
           .execute();
       }
     });
@@ -169,6 +189,7 @@ export class StorageDeletionRepository {
         eb.fn.countAll<number>().filterWhere('isOriginal', '=', true).as('originals'),
         eb.fn.countAll<number>().as('files'),
       ])
+      .where('isWrite', '=', false)
       .executeTakeFirstOrThrow();
     return { originals: Number(originals), files: Number(files) };
   }

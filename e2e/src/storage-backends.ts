@@ -215,10 +215,15 @@ export class TestEnvironment {
     await writeFile(this.backendsFile, lines.join('\n') + (backends.length === 0 ? ' []' : '') + '\n');
   }
 
-  /** Files stored on a backend, without the probes of the startup check */
+  /**
+   * Files stored on a backend, without the probes of the startup check and what writes that were cut off left (stopping
+   * the server can cut one off; they are removed after two days)
+   */
   async listBackend(id: string) {
     const entries = await readdirIfExists(this.backendRoot(id));
-    return entries.filter((name) => name !== '.immich-probe').toSorted((a, b) => a.localeCompare(b));
+    return entries
+      .filter((name) => name !== '.immich-probe' && !name.endsWith('.immich-tmp'))
+      .toSorted((a, b) => a.localeCompare(b));
   }
 
   listStaging() {

@@ -95,6 +95,12 @@ export const STORAGE_PROBE_PREFIX = '.immich-probe';
 export const DEFAULT_DELETION_DELAY_DAYS = 360;
 export const DEFAULT_DATABASE_BACKUPS_KEEP_LAST = 14;
 
+/**
+ * A file is registered for deletion before it is written, for in case it is never recorded (e.g. the process is killed
+ * in between); a day later the cleanup deletes it unless it was recorded, which writing and recording take far less than
+ */
+export const WRITE_REGISTRATION_DELAY_MS = 24 * 60 * 60 * 1000;
+
 /** Derived files can be generated again, but are kept as long as the database backups that may still record them */
 export const DERIVED_DELETION_DELAY_DAYS = 30;
 
@@ -360,6 +366,7 @@ export class StorageBackendRepository {
     }
 
     const key = randomUUID();
+    await this.registerWrite(backendId, key);
     const { size, sha1, encryption } = await this.getWriteStore(backendId).put(key, createReadStream(path), {
       manifest: { path, ...manifest },
     });
@@ -400,6 +407,7 @@ export class StorageBackendRepository {
       path: stagingPath,
       commit: async () => {
         const key = randomUUID();
+        await this.registerWrite(backendId, key);
         const { size, sha1, encryption } = await store.put(key, createReadStream(stagingPath), {
           manifest: { path, ...manifest },
         });
@@ -470,6 +478,17 @@ export class StorageBackendRepository {
     const location = { backendId: file.backendId, key: file.key };
     await this.getLocalCopies().drop(location);
     await this.getDerivedCache().drop(location);
+  }
+
+  /** Remove what cut-off writes left on the configured local backends, replicas included */
+  async sweepTemporaryFiles(before: Date) {
+    let removed = 0;
+    for (const config of this.configs.values()) {
+      if (config.driver === StorageBackendDriver.Local) {
+        removed += await new LocalBlobStore(config.root).sweepTemporaryFiles(before);
+      }
+    }
+    return removed;
   }
 
   /** Remove local copies and cached files that are too old or take too much space */
@@ -653,6 +672,19 @@ export class StorageBackendRepository {
     }
 
     return localPath;
+  }
+
+  /**
+   * Register a file about to be written to a backend for deletion, unless it is recorded by `notBefore`: the cleanup
+   * drops the registration of a file that is recorded, and deletes one that is not
+   */
+  @GenerateSql({ params: [DummyValue.STRING, DummyValue.STRING, DummyValue.DATE] })
+  async registerWrite(backendId: string, key: string, notBefore = new Date(Date.now() + WRITE_REGISTRATION_DELAY_MS)) {
+    await this.db
+      .insertInto('storage_deletion')
+      .values({ backendId, key, notBefore, isOriginal: false, isWrite: true })
+      .onConflict((oc) => oc.columns(['backendId', 'key']).doNothing())
+      .execute();
   }
 
   @GenerateSql()

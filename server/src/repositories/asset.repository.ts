@@ -718,8 +718,24 @@ export class AssetRepository {
     return this.getById(asset.id, { exifInfo: true, faces: {}, edits: true });
   }
 
-  async remove(asset: { id: string }): Promise<void> {
-    await this.db.deleteFrom('asset').where('id', '=', asUuid(asset.id)).execute();
+  /**
+   * Delete an asset, and return the files recorded for it when it was deleted. The asset is locked first: a file being
+   * recorded for it meanwhile waits until it is gone and then fails to be recorded, so that every stored file is either
+   * returned here or deleted by whoever stored it.
+   */
+  @GenerateSql({ params: [{ id: DummyValue.UUID }] })
+  async remove(asset: { id: string }) {
+    return this.db.transaction().execute(async (tx) => {
+      await tx.selectFrom('asset').select('id').where('id', '=', asUuid(asset.id)).forUpdate().execute();
+      const files = await tx.selectFrom('asset_file').selectAll().where('assetId', '=', asUuid(asset.id)).execute();
+      const originalFile = await tx
+        .selectFrom('asset_original_file')
+        .select(['backendId', 'key', 'size', 'checksum', 'encryption'])
+        .where('assetId', '=', asUuid(asset.id))
+        .executeTakeFirst();
+      await tx.deleteFrom('asset').where('id', '=', asUuid(asset.id)).execute();
+      return { files, originalFile: originalFile ?? null };
+    });
   }
 
   @GenerateSql({ params: [{ ownerId: DummyValue.UUID, libraryId: DummyValue.UUID, checksum: DummyValue.BUFFER }] })

@@ -205,12 +205,20 @@ export class StorageDeletionService extends BaseService {
     return row;
   }
 
-  private async deleteBatch(due: Array<{ id: string; backendId: string; key: string }>, now: Date) {
+  private async deleteBatch(due: Array<{ id: string; backendId: string; key: string; isWrite: boolean }>, now: Date) {
     const recordedFiles = await this.storageDeletionRepository.getRecorded(due);
     const recorded = new Set(recordedFiles.map(({ backendId, key }) => `${backendId}:${key}`));
     const [stale, deletable] = partition(due, ({ backendId, key }) => recorded.has(`${backendId}:${key}`));
-    for (const { backendId, key } of stale) {
-      this.logger.warn(`Not deleting ${backendId}:${key}, which is recorded again`);
+    for (const { backendId, key, isWrite } of stale) {
+      // a file registered before it was written is normally recorded
+      if (!isWrite) {
+        this.logger.warn(`Not deleting ${backendId}:${key}, which is recorded again`);
+      }
+    }
+    for (const { backendId, key, isWrite } of deletable) {
+      if (isWrite) {
+        this.logger.warn(`Deleting ${backendId}:${key}, which was written but never recorded`);
+      }
     }
     await this.storageDeletionRepository.remove(stale.map(({ id }) => id));
 
