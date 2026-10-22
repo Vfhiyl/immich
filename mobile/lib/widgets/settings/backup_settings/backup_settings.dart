@@ -29,7 +29,6 @@ class BackupSettings extends StatelessWidget {
         if (CurrentPlatform.isAndroid) ...[
           const Divider(),
           SettingGroupTitle(title: context.t.background_options, icon: Icons.charging_station_rounded),
-          const _BackupOnlyWhenChargingButton(),
           const _BackupDelaySlider(),
         ],
         const Divider(),
@@ -151,14 +150,12 @@ class _BackupSwitchTile extends ConsumerWidget {
   final bool Function(AppConfig) selector;
   final String title;
   final String subtitle;
-  final void Function(bool)? onChanged;
 
   const _BackupSwitchTile({
     required this.metadataKey,
     required this.selector,
     required this.title,
     required this.subtitle,
-    this.onChanged,
   });
 
   @override
@@ -171,10 +168,7 @@ class _BackupSwitchTile extends ConsumerWidget {
         subtitle: subtitle,
         trailing: Switch(
           value: value,
-          onChanged: (bool newValue) async {
-            await ref.read(settingsProvider).write(metadataKey, newValue);
-            onChanged?.call(newValue);
-          },
+          onChanged: (bool newValue) => ref.read(settingsProvider).write(metadataKey, newValue),
         ),
       ),
     );
@@ -205,24 +199,6 @@ class _UseCellularForPhotosButton extends StatelessWidget {
       selector: (c) => c.backup.useCellularForPhotos,
       title: context.t.photos,
       subtitle: context.t.network_requirement_photos_upload,
-    );
-  }
-}
-
-class _BackupOnlyWhenChargingButton extends ConsumerWidget {
-  const _BackupOnlyWhenChargingButton();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final fgService = ref.watch(backgroundWorkerFgServiceProvider);
-    return _BackupSwitchTile(
-      metadataKey: SettingsKey.backupRequireCharging,
-      selector: (c) => c.backup.requireCharging,
-      title: context.t.charging,
-      subtitle: context.t.charging_requirement_mobile_backup,
-      onChanged: (value) {
-        unawaited(fgService.configure(requireCharging: value));
-      },
     );
   }
 }
@@ -276,6 +252,8 @@ class _BackupDelaySlider extends ConsumerWidget {
           onChangeEnd: (double v) async {
             final seconds = backupDelayToSeconds(v.toInt());
             await ref.read(settingsProvider).write(SettingsKey.backupTriggerDelay, seconds);
+            // the native scheduler waits this long after new photos before backing them up
+            await ref.read(backgroundWorkerFgServiceProvider).configure(minimumDelaySeconds: seconds);
           },
           max: 3.0,
           min: 0.0,

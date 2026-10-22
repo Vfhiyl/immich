@@ -42,13 +42,12 @@ class BackgroundWorkerFgService {
   Future<void> saveNotificationMessage(String title, String body) =>
       _foregroundHostApi.saveNotificationMessage(title, body);
 
-  Future<void> configure({int? minimumDelaySeconds, bool? requireCharging}) {
+  /// Tell the native scheduler how to run backups in the background. They only run while the phone charges, which
+  /// is not a setting: backing up in the background must not drain the battery.
+  Future<void> configure({int? minimumDelaySeconds}) {
     final backup = SettingsRepository.instance.appConfig.backup;
     return _foregroundHostApi.configure(
-      BackgroundWorkerSettings(
-        minimumDelaySeconds: minimumDelaySeconds ?? backup.triggerDelay,
-        requiresCharging: requireCharging ?? backup.requireCharging,
-      ),
+      BackgroundWorkerSettings(minimumDelaySeconds: minimumDelaySeconds ?? backup.triggerDelay, requiresCharging: true),
     );
   }
 

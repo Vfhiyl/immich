@@ -239,6 +239,10 @@ class ImmichAppState extends ConsumerState<ImmichApp> with WidgetsBindingObserve
       // needs to be delayed so that EasyLocalization is working
       unawaited(ref.read(backgroundWorkerFgServiceProvider).enable());
       if (Platform.isAndroid) {
+        // what the settings say now, also for settings changed before they were passed on (e.g. by older versions)
+        unawaited(ref.read(backgroundWorkerFgServiceProvider).configure());
+      }
+      if (Platform.isAndroid) {
         unawaited(
           ref
               .read(backgroundWorkerFgServiceProvider)
