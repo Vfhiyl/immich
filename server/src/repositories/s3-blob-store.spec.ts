@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import type { StorageRequest } from 'src/utils/storage-metering.js';
-import { S3BackendOptions, createS3Client, meterS3Client } from 'src/repositories/s3-blob-store.js';
+import { BlobUploadNotFoundError } from 'src/repositories/blob-store.js';
+import { S3BackendOptions, S3BlobStore, createS3Client, meterS3Client } from 'src/repositories/s3-blob-store.js';
 
 // how the client talks to a service is checked here; how the store behaves against services is checked by the
 // contract tests in test/contract
@@ -122,5 +123,60 @@ describe(meterS3Client.name, () => {
     await client.send(new HeadObjectCommand({ Bucket: 'photos', Key: 'a' }));
 
     expect(requests.map(({ operation }) => operation)).toEqual(['HeadObject', 'HeadObject', 'HeadObject']);
+  });
+});
+
+describe(S3BlobStore.name, () => {
+  describe('uploadPart', () => {
+    const options: S3BackendOptions = {
+      endpoint: 'https://storage.example.com',
+      region: 'region-1',
+      bucket: 'photos',
+      prefix: '',
+      addressing: 'path',
+      credentials: { type: 'chain' },
+    };
+
+    /** A service that resets the connection while a part is sent, and answers ListParts with `listParts` */
+    const storeWithReset = (listParts: { status: number; body: string }) => {
+      const client = createS3Client(options, {
+        credentials: { accessKeyId: 'AKID', secretAccessKey: 'secret' },
+        requestHandler: {
+          handle: (request: { query?: Record<string, string> }) => {
+            if (request.query?.partNumber) {
+              return Promise.reject(Object.assign(new Error('write ECONNRESET'), { code: 'ECONNRESET' }));
+            }
+            return Promise.resolve({
+              response: {
+                statusCode: listParts.status,
+                headers: { 'content-type': 'application/xml' },
+                body: Readable.from([Buffer.from(listParts.body)]),
+              },
+            });
+          },
+        } as never,
+        retryStrategy: retryAtOnce as never,
+      });
+      return new S3BlobStore(client, 'photos', '');
+    };
+    const upload = { uploadId: 'upload-id', partSize: 5 * 1024 * 1024 };
+
+    it('should tell an upload the service dropped, when it closes the connection instead of answering', async () => {
+      const store = storeWithReset({
+        status: 404,
+        body: '<Error><Code>NoSuchUpload</Code><Message>The upload does not exist</Message></Error>',
+      });
+      await expect(store.uploadPart('a', upload, { number: 1, data: Buffer.alloc(10) })).rejects.toThrow(
+        BlobUploadNotFoundError,
+      );
+    });
+
+    it('should report the connection error for an upload the service still knows', async () => {
+      const store = storeWithReset({
+        status: 200,
+        body: '<ListPartsResult><Bucket>photos</Bucket><Key>a</Key><UploadId>upload-id</UploadId></ListPartsResult>',
+      });
+      await expect(store.uploadPart('a', upload, { number: 1, data: Buffer.alloc(10) })).rejects.toThrow('ECONNRESET');
+    });
   });
 });

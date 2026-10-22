@@ -6,6 +6,7 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
+  ListPartsCommand,
   PutObjectCommand,
   S3Client,
   S3ClientConfig,
@@ -310,7 +311,23 @@ export class S3BlobStore implements BlobStore {
       }
       return { number, etag: ETag, size: data.length };
     } catch (error) {
+      // a service may answer a part for an upload it no longer knows before reading it, and close the connection
+      if (statusCode(error) === undefined && !(await this.hasUpload(objectKey, upload))) {
+        throw new BlobUploadNotFoundError(key, upload.uploadId);
+      }
       throw this.toUploadError(key, upload, error);
+    }
+  }
+
+  /** Whether the service still knows an upload; unsure (e.g. on another network error) counts as yes */
+  private async hasUpload(objectKey: string, upload: BlobUpload) {
+    try {
+      await this.client.send(
+        new ListPartsCommand({ Bucket: this.bucket, Key: objectKey, UploadId: upload.uploadId, MaxParts: 1 }),
+      );
+      return true;
+    } catch (error) {
+      return !['NoSuchUpload', 'NotFound'].includes(errorName(error));
     }
   }
 
