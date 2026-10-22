@@ -37,8 +37,9 @@ const handedOut = new Set<number>();
  */
 export const freePort = async (): Promise<number> => {
   for (let attempt = 0; attempt < 100; attempt++) {
-    // below 50000, so that ports derived by adding 10000 stay valid
-    const port = 10_000 + Math.floor(Math.random() * 40_000);
+    // below the ports the system hands out for outgoing connections (32768 and up on Linux), which could take one
+    // between choosing it and listening on it, also for the derived ports 10000 above
+    const port = 10_000 + Math.floor(Math.random() * 12_000);
     if (handedOut.has(port) || handedOut.has(port + 10_000) || handedOut.has(port - 10_000)) {
       continue;
     }
