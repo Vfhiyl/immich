@@ -54,8 +54,11 @@ class AppBarServerInfo extends HookConsumerWidget {
             label: context.t.server_version,
             text: serverInfoState.serverVersion.major > 0 ? "${serverInfoState.serverVersion}" : "--",
           ),
-          divider,
-          _ServerInfoItem(label: context.t.server_info_box_server_url, text: getServerUrl() ?? '--', tooltip: true),
+          // not after signing in with a QR code
+          if (!isServerHidden()) ...[
+            divider,
+            _ServerInfoItem(label: context.t.server_info_box_server_url, text: getServerUrl() ?? '--', tooltip: true),
+          ],
           if (serverInfoState.latestVersion != null) ...[
             divider,
             _ServerInfoItem(

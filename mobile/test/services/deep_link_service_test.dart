@@ -23,7 +23,6 @@ class MockRemoteAlbumService extends Mock implements RemoteAlbumService {}
 
 class MockMemoryService extends Mock implements MemoryService {}
 
-
 class MockPlatformDeepLink extends Mock implements PlatformDeepLink {}
 
 class MockWidgetRef extends Mock implements WidgetRef {}

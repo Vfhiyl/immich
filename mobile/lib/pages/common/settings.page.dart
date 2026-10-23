@@ -4,6 +4,7 @@ import 'package:flutter_hooks/flutter_hooks.dart' hide Store;
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/routing/router.dart';
+import 'package:immich_mobile/utils/url_helper.dart';
 import 'package:immich_mobile/widgets/settings/advanced_settings.dart';
 import 'package:immich_mobile/widgets/settings/asset_list_settings/asset_list_settings.dart';
 import 'package:immich_mobile/widgets/settings/asset_viewer_settings/asset_viewer_settings.dart';
@@ -70,6 +71,11 @@ enum SettingSection {
   };
 
   const SettingSection(this.icon);
+
+  /// The sections shown: after signing in with a QR code, the networking settings are not, which show and set the
+  /// address of the server
+  static List<SettingSection> get shown =>
+      isServerHidden() ? values.where((section) => section != networking).toList() : values;
 }
 
 @RoutePage()
@@ -89,7 +95,7 @@ class _MobileLayout extends StatelessWidget {
   const _MobileLayout();
   @override
   Widget build(BuildContext context) {
-    final List<Widget> settings = SettingSection.values
+    final List<Widget> settings = SettingSection.shown
         .expand(
           (setting) => setting == SettingSection.beta
               ? [
@@ -126,7 +132,7 @@ class _TabletLayout extends HookWidget {
   const _TabletLayout();
   @override
   Widget build(BuildContext context) {
-    final selectedSection = useState<SettingSection>(SettingSection.values.first);
+    final selectedSection = useState<SettingSection>(SettingSection.shown.first);
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.start,
@@ -135,7 +141,7 @@ class _TabletLayout extends HookWidget {
           flex: 2,
           child: CustomScrollView(
             slivers: [
-              ...SettingSection.values.map(
+              ...SettingSection.shown.map(
                 (s) => SliverToBoxAdapter(
                   child: ListTile(
                     title: Text(s.title(context.t)),

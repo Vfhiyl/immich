@@ -83,6 +83,21 @@ class AuthService {
     return _authApiRepository.login(email, password);
   }
 
+  /// Sign in to [server] with the one-time code of a QR code an administrator showed; the app then does not show the
+  /// address of the server
+  Future<LoginResponse> loginWithCode(String server, String code) async {
+    try {
+      await validateServerUrl(server);
+      final response = await _authApiRepository.loginWithCode(code);
+      await Store.put(StoreKey.serverHidden, true);
+      return response;
+    } catch (_) {
+      // the address of a QR code is not left for the login screen to show
+      await Future.wait([Store.delete(StoreKey.serverEndpoint), Store.delete(StoreKey.serverUrl)]);
+      rethrow;
+    }
+  }
+
   /// Performs user logout operation by making a server request and clearing local data.
   ///
   /// This method attempts to log out the user through the authentication API repository.
@@ -116,6 +131,14 @@ class AuthService {
   Future<void> clearLocalData() async {
     // Cancel any ongoing background sync operations before clearing data
     await _backgroundSyncManager.cancel();
+    // signed in with a QR code: the address of the server goes with the session, a new code signs in again
+    if (Store.tryGet(StoreKey.serverHidden) ?? false) {
+      await Future.wait([
+        Store.delete(StoreKey.serverEndpoint),
+        Store.delete(StoreKey.serverUrl),
+        Store.delete(StoreKey.serverHidden),
+      ]);
+    }
     await Future.wait([
       _authRepository.clearLocalData(),
       Store.delete(StoreKey.currentUser),

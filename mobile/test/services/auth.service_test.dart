@@ -3,9 +3,13 @@ import 'package:drift/native.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:immich_mobile/data/db/main/database.dart';
+import 'package:immich_mobile/domain/models/store.model.dart';
 import 'package:immich_mobile/domain/services/store.service.dart';
+import 'package:immich_mobile/entities/store.entity.dart';
+import 'package:immich_mobile/infrastructure/repositories/settings.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/store.repository.dart';
 import 'package:immich_mobile/models/auth/auxilary_endpoint.model.dart';
+import 'package:immich_mobile/models/auth/login_response.model.dart';
 import 'package:immich_mobile/services/auth.service.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:openapi/api.dart';
@@ -37,10 +41,82 @@ void main() {
     WidgetsFlutterBinding.ensureInitialized();
     db = Drift(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
     await StoreService.init(storeRepository: StoreRepository(db));
+    await SettingsRepository.ensureInitialized(db);
   });
 
   tearDownAll(() async {
     await db.close();
+  });
+
+  group('loginWithCode', () {
+    const response = LoginResponse(
+      accessToken: 'token',
+      isAdmin: false,
+      name: 'Ann',
+      profileImagePath: '',
+      shouldChangePassword: false,
+      userEmail: 'ann@example.com',
+      userId: 'ann',
+    );
+
+    setUp(() async {
+      when(() => apiService.setDeviceInfoHeader()).thenAnswer((_) async => {});
+      await Store.delete(StoreKey.serverHidden);
+    });
+
+    test('signs in to the server of the QR code with its code, and hides the address', () async {
+      when(
+        () => apiService.resolveAndSetEndpoint('https://photos.example.com'),
+      ).thenAnswer((_) async => 'https://photos.example.com/api');
+      when(() => authApiRepository.loginWithCode('the-code')).thenAnswer((_) async => response);
+
+      await expectLater(sut.loginWithCode('https://photos.example.com', 'the-code'), completion(response));
+
+      expect(Store.tryGet(StoreKey.serverHidden), isTrue);
+      expect(Store.tryGet(StoreKey.serverUrl), 'https://photos.example.com/api');
+    });
+
+    test('leaves no address behind for the login screen when the code does not sign in', () async {
+      when(() => apiService.resolveAndSetEndpoint('https://photos.example.com')).thenAnswer((_) async {
+        await Store.put(StoreKey.serverEndpoint, 'https://photos.example.com/api');
+        return 'https://photos.example.com/api';
+      });
+      when(() => authApiRepository.loginWithCode('expired')).thenThrow(ApiException(401, 'expired'));
+
+      await expectLater(sut.loginWithCode('https://photos.example.com', 'expired'), throwsA(isA<ApiException>()));
+
+      expect(Store.tryGet(StoreKey.serverEndpoint), isNull);
+      expect(Store.tryGet(StoreKey.serverUrl), isNull);
+      expect(Store.tryGet(StoreKey.serverHidden), isNull);
+    });
+  });
+
+  group('clearLocalData', () {
+    setUp(() {
+      when(() => backgroundSyncManager.cancel()).thenAnswer((_) async {});
+      when(() => authRepository.clearLocalData()).thenAnswer((_) async {});
+    });
+
+    test('forgets the address of a server signed in with a QR code, so that a new code signs in again', () async {
+      await Store.put(StoreKey.serverEndpoint, 'https://photos.example.com/api');
+      await Store.put(StoreKey.serverUrl, 'https://photos.example.com/api');
+      await Store.put(StoreKey.serverHidden, true);
+
+      await sut.clearLocalData();
+
+      expect(Store.tryGet(StoreKey.serverEndpoint), isNull);
+      expect(Store.tryGet(StoreKey.serverUrl), isNull);
+      expect(Store.tryGet(StoreKey.serverHidden), isNull);
+    });
+
+    test('keeps the address of a server that was typed in', () async {
+      await Store.put(StoreKey.serverEndpoint, 'https://photos.example.com/api');
+      await Store.delete(StoreKey.serverHidden);
+
+      await sut.clearLocalData();
+
+      expect(Store.tryGet(StoreKey.serverEndpoint), 'https://photos.example.com/api');
+    });
   });
 
   group('validateServerUrl', () {

@@ -26,6 +26,13 @@ class AuthApiRepository extends ApiRepository {
     return _mapLoginReponse(loginResponseDto);
   }
 
+  /// Sign in with the one-time code of a QR code an administrator showed
+  Future<LoginResponse> loginWithCode(String code) async {
+    final loginResponseDto = await checkNull(_apiService.authenticationApi.loginWithCode(LoginCodeDto(code: code)));
+
+    return _mapLoginReponse(loginResponseDto);
+  }
+
   Future<void> logout() async {
     if (_apiService.apiClient.basePath.isEmpty) {
       return;

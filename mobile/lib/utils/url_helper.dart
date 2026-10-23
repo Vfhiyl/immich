@@ -126,3 +126,10 @@ String? punycodeDecodeUrl(String? serverUrl) {
 
   return Uri.decodeFull(serverUri.replace(host: decodedHost).toString());
 }
+
+/// Whether the app was signed in with a QR code an administrator showed, so that it does not show the address of the
+/// server
+bool isServerHidden() => Store.tryGet(StoreKey.serverHidden) ?? false;
+
+/// Whether the app is signed in
+bool hasSession() => Store.tryGet(StoreKey.accessToken) != null;

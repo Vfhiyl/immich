@@ -59,6 +59,14 @@ To apply the Storage Label to previously uploaded assets, run the Storage Migrat
 
 To reset a user's password, go to `Administration > Users`, then click on the context menu button next to the user, then click "Reset Password". The user's password will be reset to a random password and they have to change it next time they sign in.
 
+## Sign a Phone In With a QR Code
+
+Instead of typing the server address and a password on a phone, an administrator can show a QR code that signs a user's phone in: on **Administration → Users**, open the user and choose **Sign in a phone**, then the user taps **Scan QR code** on the login screen of the app (or scans it with the camera of the phone).
+
+- The QR code holds the server address, the **External domain** of **Administration → Settings → Server** (set it first, e.g. `https://photos.example.com`), and a one-time code: it works once, within ten minutes, and does not contain the password.
+- The phone gets a session of its own, which lasts like one of a password sign-in. It is listed under the user's devices, where the user, or an administrator on the user's page, can sign it out, e.g. when the phone is lost.
+- A phone signed in this way does not show the server address (in the settings, the server information, and when sharing to Immich). Signing out forgets it; the phone then needs a new QR code.
+
 ## Delete a User
 
 If you need to remove a user from Immich, go to `Administration > Users`, then click on the context menu button next to the user. The user account will immediately become disabled and their library and all associated data will be removed after 7 days by default.

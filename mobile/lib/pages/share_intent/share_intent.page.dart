@@ -19,7 +19,8 @@ class ShareIntentPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final currentEndpoint = getServerUrl() ?? '--';
+    // not after signing in with a QR code
+    final currentEndpoint = isServerHidden() ? null : getServerUrl() ?? '--';
     final candidates = ref.watch(shareIntentUploadProvider);
 
     final isUploading = candidates.any((candidate) => candidate.status == UploadStatus.running);
@@ -59,10 +60,11 @@ class ShareIntentPage extends ConsumerWidget {
         title: Column(
           children: [
             Text(context.t.upload_to_immich(count: candidates.length)),
-            Text(
-              currentEndpoint,
-              style: context.textTheme.labelMedium?.copyWith(color: context.colorScheme.onSurface.withAlpha(200)),
-            ),
+            if (currentEndpoint != null)
+              Text(
+                currentEndpoint,
+                style: context.textTheme.labelMedium?.copyWith(color: context.colorScheme.onSurface.withAlpha(200)),
+              ),
           ],
         ),
         leading: IconButton(

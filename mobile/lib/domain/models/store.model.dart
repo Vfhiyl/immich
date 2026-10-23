@@ -21,6 +21,10 @@ enum StoreKey<T> {
 
   syncMigrationStatus<String>._(1013),
 
+  // keys of this fork are 2000 and above, apart from upstream's
+  /// Signed in with a QR code an administrator showed: the app does not show the address of the server
+  serverHidden<bool>._(2001),
+
   // Legacy keys that have been migrated to the new metadata store
   legacyBackupRequireCharging<bool>._(7),
   legacyBackupTriggerDelay<int>._(8),

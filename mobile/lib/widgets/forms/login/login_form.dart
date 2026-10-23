@@ -26,6 +26,7 @@ import 'package:immich_mobile/providers/websocket.provider.dart';
 import 'package:immich_mobile/repositories/permission.repository.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/utils/provider_utils.dart';
+import 'package:immich_mobile/utils/qr_login.dart';
 import 'package:immich_mobile/utils/semver.dart';
 import 'package:immich_mobile/utils/url_helper.dart';
 import 'package:immich_mobile/utils/version_compatibility.dart';
@@ -164,7 +165,7 @@ class LoginForm extends HookConsumerWidget {
 
     useEffect(() {
       final serverUrl = getServerUrl();
-      if (serverUrl != null) {
+      if (serverUrl != null && !isServerHidden()) {
         serverEndpointController.text = serverUrl;
       }
       return null;
@@ -249,6 +250,68 @@ class LoginForm extends HookConsumerWidget {
 
     bool isSyncRemoteDeletionsMode() => Platform.isAndroid && Store.get(StoreKey.manageLocalMediaAndroid, false);
 
+    /// After signing in: the permissions, the first sync, and the timeline
+    Future<void> afterLogin() async {
+      await ref.read(galleryPermissionNotifier.notifier).requestGalleryPermission();
+      if (isSyncRemoteDeletionsMode()) {
+        await getManageMediaPermission();
+      }
+      unawaited(handleSyncFlow());
+      if (!context.mounted) {
+        return;
+      }
+
+      ref.read(websocketProvider.notifier).connect();
+      unawaited(ref.read(featureMessageServiceProvider).markSeen());
+      if (!context.mounted) {
+        return;
+      }
+
+      unawaited(context.router.replaceAll([const TabShellRoute()]));
+    }
+
+    /// Sign in with a QR code an administrator showed; the address of the server is not shown
+    Future<void> loginWithQr(QrLogin qr) async {
+      invalidateAllApiRepositoryProviders(ref);
+      try {
+        await ref.read(authProvider.notifier).loginWithCode(qr.server, qr.code);
+        await ref.read(serverInfoProvider.notifier).getServerInfo();
+        if (!context.mounted) {
+          return;
+        }
+        serverEndpointController.clear();
+        await afterLogin();
+      } catch (error) {
+        log.warning('Unable to sign in with a QR code', error);
+        if (!context.mounted) {
+          return;
+        }
+        ImmichToast.show(
+          context: context,
+          msg: context.t.login_qr_failed,
+          toastType: ToastType.error,
+          gravity: ToastGravity.TOP,
+        );
+      }
+    }
+
+    // a QR code opened with the camera of the phone signs in right away
+    useEffect(() {
+      final qr = ref.read(pendingQrLoginProvider);
+      if (qr != null) {
+        ref.read(pendingQrLoginProvider.notifier).state = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(loginWithQr(qr)));
+      }
+      return null;
+    }, []);
+
+    Future<void> scanQr() async {
+      final scanned = await context.pushRoute<QrLogin>(const QrScanRoute());
+      if (scanned != null) {
+        await loginWithQr(scanned);
+      }
+    }
+
     Future<void> login() async {
       TextInput.finishAutofillContext();
 
@@ -266,22 +329,7 @@ class LoginForm extends HookConsumerWidget {
           unawaited(context.pushRoute(const ChangePasswordRoute()));
           passwordController.clear();
         } else {
-          await ref.read(galleryPermissionNotifier.notifier).requestGalleryPermission();
-          if (isSyncRemoteDeletionsMode()) {
-            await getManageMediaPermission();
-          }
-          unawaited(handleSyncFlow());
-          if (!context.mounted) {
-            return;
-          }
-
-          ref.read(websocketProvider.notifier).connect();
-          unawaited(ref.read(featureMessageServiceProvider).markSeen());
-          if (!context.mounted) {
-            return;
-          }
-
-          unawaited(context.router.replaceAll([const TabShellRoute()]));
+          await afterLogin();
           return;
         }
       } catch (error) {
@@ -462,6 +510,12 @@ class LoginForm extends HookConsumerWidget {
                     keyboardAction: .next,
                     onSubmit: (_) => form.submit(),
                   ),
+                ),
+                ImmichTextButton(
+                  labelText: context.t.login_scan_qr_code,
+                  icon: Icons.qr_code_scanner_rounded,
+                  variant: ImmichVariant.ghost,
+                  onPressed: scanQr,
                 ),
                 ImmichTextButton(
                   labelText: context.t.settings,

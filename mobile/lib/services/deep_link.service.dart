@@ -14,6 +14,8 @@ import 'package:immich_mobile/providers/infrastructure/db.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/timeline.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
+import 'package:immich_mobile/utils/qr_login.dart';
+import 'package:immich_mobile/utils/url_helper.dart';
 
 final deepLinkServiceProvider = Provider(
   (ref) => DeepLinkService(
@@ -52,8 +54,19 @@ class DeepLinkService {
       "album" => await _buildAlbumDeepLink(queryParams['id'] ?? ''),
       "people" => await _buildPeopleDeepLink(queryParams['id'] ?? '', ref),
       "activity" => await _buildActivityDeepLink(queryParams['albumId'] ?? ''),
+      "login" => _buildLoginDeepLink(link.uri.toString(), ref),
       _ => null,
     };
+  }
+
+  /// A QR code to sign in, opened with the camera of the phone: only while the app is not signed in
+  PageRouteInfo? _buildLoginDeepLink(String link, WidgetRef ref) {
+    final qrLogin = QrLogin.parse(link);
+    if (qrLogin == null || hasSession()) {
+      return null;
+    }
+    ref.read(pendingQrLoginProvider.notifier).state = qrLogin;
+    return const LoginRoute();
   }
 
   Future<PageRouteInfo?> handleMyImmichApp(PlatformDeepLink link, WidgetRef ref) async {

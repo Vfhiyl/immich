@@ -207,6 +207,11 @@ class ImmichAppState extends ConsumerState<ImmichApp> with WidgetsBindingObserve
       return isColdStart ? DeepLink.defaultPath : DeepLink.none;
     }
 
+    // signing in with a QR code needs nothing to go back to
+    if (isColdStart && route is LoginRoute) {
+      return DeepLink([route]);
+    }
+
     // We need to replace the route if the destination is the current route
     if (!isColdStart) {
       unawaited(
