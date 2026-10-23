@@ -49,19 +49,18 @@ const parseBoolean = (value: string | undefined, name: string) => {
 
 export class ResumableUploadHeaderError extends Error {}
 
-/** The interop version a client follows, if it is one this server supports */
+/**
+ * The interop version a client follows, if it is one this server supports. A client that follows another draft gets
+ * no interim response (the draft forbids one for a version the server does not speak), so that it goes on with a
+ * regular upload, as URLSession does
+ */
 export const getInteropVersion = (headers: IncomingHttpHeaders) => {
   const version = parseNonNegativeInteger(
     header(headers, 'upload-draft-interop-version'),
     'Upload-Draft-Interop-Version',
   );
-  if (version === undefined) {
+  if (version === undefined || version < MIN_INTEROP_VERSION || version > LATEST_INTEROP_VERSION) {
     return;
-  }
-  if (version < MIN_INTEROP_VERSION || version > LATEST_INTEROP_VERSION) {
-    throw new ResumableUploadHeaderError(
-      `Upload-Draft-Interop-Version ${version} is not supported (${MIN_INTEROP_VERSION} to ${LATEST_INTEROP_VERSION})`,
-    );
   }
   return version;
 };
@@ -80,6 +79,10 @@ export const getUploadOffset = (headers: IncomingHttpHeaders) =>
 
 export const getUploadLength = (headers: IncomingHttpHeaders) =>
   parseNonNegativeInteger(header(headers, 'upload-length'), 'Upload-Length');
+
+/** The length of the content of a request */
+export const getContentLength = (headers: IncomingHttpHeaders) =>
+  parseNonNegativeInteger(header(headers, 'content-length'), 'Content-Length');
 
 /** The SHA-1 a client declares in `Repr-Digest` (RFC 9530), under the `sha` key like the HTTP digest registry names it */
 export const getDeclaredSha1 = (headers: IncomingHttpHeaders) => {

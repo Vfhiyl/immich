@@ -57,15 +57,6 @@ describe(ResumableUploadService.name, () => {
   });
 
   describe('createUpload', () => {
-    it('should need Upload-Complete', async () => {
-      const response = await sut.createUpload({
-        auth: authStub.admin,
-        headers: { 'x-immich-asset-data': validData },
-        body: emptyBody(),
-      });
-      expect(response).toMatchObject({ status: 400, body: { message: expect.stringContaining('Upload-Complete') } });
-    });
-
     it.each([
       ['missing', undefined, 'is missing'],
       ['not base64url JSON', 'not json', 'base64url encoded JSON'],
@@ -89,13 +80,21 @@ describe(ResumableUploadService.name, () => {
       expect(mocks.uploadSession.create).not.toHaveBeenCalled();
     });
 
-    it('should reject an interop version it does not support', async () => {
-      const response = await sut.createUpload({
-        auth: authStub.admin,
-        headers: { 'upload-draft-interop-version': '2', 'upload-complete': '?1', 'x-immich-asset-data': validData },
-        body: emptyBody(),
-      });
-      expect(response).toMatchObject({ status: 400 });
+    it('should take a regular upload from a client that does not speak the protocol, or a draft it does not know', async () => {
+      mocks.user.get.mockResolvedValue(UserFactory.create({ quotaSizeInBytes: 1000, quotaUsageInBytes: 900 }));
+      mocks.uploadSession.getReservedBytes.mockResolvedValue(0);
+
+      for (const headers of [{}, { 'upload-draft-interop-version': '2' }, { 'upload-draft-interop-version': '99' }]) {
+        // the whole file is in the request: its length counts against the quota
+        await expect(
+          sut.createUpload({
+            auth: authStub.admin,
+            headers: { ...headers, 'content-length': '200', 'x-immich-asset-data': validData },
+            body: emptyBody(),
+          }),
+        ).rejects.toThrow('Quota has been exceeded');
+      }
+      expect(mocks.uploadSession.create).not.toHaveBeenCalled();
     });
 
     it('should answer with the asset the user has already, without uploading', async () => {

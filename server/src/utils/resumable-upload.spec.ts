@@ -18,9 +18,13 @@ describe('resumable upload headers', () => {
       expect(getInteropVersion({})).toBeUndefined();
     });
 
-    it('should reject versions it does not support, and nonsense', () => {
-      expect(() => getInteropVersion({ 'upload-draft-interop-version': '2' })).toThrow(ResumableUploadHeaderError);
-      expect(() => getInteropVersion({ 'upload-draft-interop-version': '11' })).toThrow('not supported');
+    it('should ignore versions it does not support', () => {
+      expect(getInteropVersion({ 'upload-draft-interop-version': '2' })).toBeUndefined();
+      expect(getInteropVersion({ 'upload-draft-interop-version': '11' })).toBeUndefined();
+    });
+
+    it('should reject nonsense', () => {
+      expect(() => getInteropVersion({ 'upload-draft-interop-version': 'six' })).toThrow(ResumableUploadHeaderError);
       expect(() => getInteropVersion({ 'upload-draft-interop-version': 'six' })).toThrow('non-negative integer');
     });
   });

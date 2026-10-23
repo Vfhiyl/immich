@@ -180,6 +180,28 @@ describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3, azu
     await expectOriginal(body.id, content);
   });
 
+  it.each([
+    ['that does not speak the protocol', {}],
+    ['of a draft the server does not know', { 'Upload-Draft-Interop-Version': '99' }],
+  ])('should take a file in a regular upload from a client %s, as URLSession sends one', async (_, headers) => {
+    const content = await largePhoto(1000);
+    const response = await api.raw('/upload', {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/octet-stream',
+        'Repr-Digest': digest(content),
+        'X-Immich-Asset-Data': assetData(`regular-${headers['Upload-Draft-Interop-Version'] ?? 'none'}.jpg`),
+      },
+      body: new Uint8Array(content),
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { id: string; status: string };
+    expect(body).toEqual({ id: expect.any(String), status: 'created' });
+    await expectOriginal(body.id, content);
+  });
+
   it('should take a file from the client of the mobile app, resuming it after the connection was cut', async () => {
     const content = await largePhoto(PART + 54_321);
     const path = join(environment.root, 'mobile-upload.jpg');

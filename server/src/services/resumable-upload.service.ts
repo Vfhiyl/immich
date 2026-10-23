@@ -32,6 +32,7 @@ import {
   LATEST_INTEROP_VERSION,
   ResumableUploadHeaderError,
   completedUploadProblem,
+  getContentLength,
   getDeclaredSha1,
   getInteropVersion,
   getUploadComplete,
@@ -119,21 +120,21 @@ export class ResumableUploadService extends BaseService {
 
   async createUpload({ auth, headers, body, sendInterim }: ResumableUploadRequest): Promise<ResumableUploadResponse> {
     let version: number | undefined;
-    let complete: boolean | undefined;
+    let complete: boolean;
     let length: number | undefined;
     let declaredChecksum: Buffer | undefined;
     let assetData: UploadAssetData;
     try {
       version = getInteropVersion(headers);
-      complete = getUploadComplete(headers, version);
-      length = getUploadLength(headers);
+      // a client that does not speak the protocol, e.g. URLSession of an iOS release whose draft this server does not
+      // know, sends the whole file in a regular upload
+      complete = getUploadComplete(headers, version) ?? true;
+      // the content of a request that completes the upload is the whole file
+      length = getUploadLength(headers) ?? (complete ? getContentLength(headers) : undefined);
       declaredChecksum = getDeclaredSha1(headers);
       assetData = this.getAssetData(headers);
     } catch (error) {
       return this.toBadRequest(error);
-    }
-    if (complete === undefined) {
-      return problem(400, { message: 'Not a resumable upload: Upload-Complete is missing' });
     }
 
     await this.requireAccess({ auth, permission: Permission.AssetUpload, ids: [auth.user.id] });
