@@ -9,7 +9,7 @@ workflows:
     max_build_duration: 60
     environment:
       flutter: 3.47.2
-      xcode: 26.2
+      xcode: 27.1
       java: 21
       cocoapods: default
       vars:
