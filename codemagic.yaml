@@ -1,0 +1,65 @@
+# Builds the iOS app on Codemagic's macOS machines, without signing: only to find out whether it compiles (Dart and
+# the native Swift code), since iOS cannot be built without a Mac. Same code generation as upstream's mobile build
+# (.github/workflows/build-mobile.yml, mobile/mise.toml), and the same versions: Flutter of mobile/mise.toml, Xcode of
+# the upstream iOS job, the openapi-generator of open-api/openapitools.json.
+workflows:
+  ios-build-check:
+    name: iOS build check (unsigned)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: 3.47.2
+      xcode: 26.2
+      java: 21
+      cocoapods: default
+      vars:
+        OPENAPI_GENERATOR_VERSION: 7.25.0
+        # the jar the checks of the repository use (misc/check.sh)
+        OPENAPI_GENERATOR_SHA1: 56a9bb79e3bb565f477eddca2c6daa288a9c6f35
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: feat/object-storage
+      cancel_previous_builds: true
+    when:
+      changeset:
+        includes:
+          - mobile/
+          - open-api/
+          - i18n/
+          - codemagic.yaml
+    scripts:
+      - name: Generate the Dart client of the API
+        script: |
+          set -euo pipefail
+          tools="$HOME/openapi-generator"
+          mkdir -p "$tools"
+          jar="$tools/openapi-generator-cli-$OPENAPI_GENERATOR_VERSION.jar"
+          curl -fsSL -o "$jar" \
+            "https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/$OPENAPI_GENERATOR_VERSION/openapi-generator-cli-$OPENAPI_GENERATOR_VERSION.jar"
+          echo "$OPENAPI_GENERATOR_SHA1  $jar" | shasum -a 1 -c -
+          printf '#!/usr/bin/env sh\nexec java -jar "%s" "$@"\n' "$jar" > "$tools/openapi-generator-cli"
+          chmod +x "$tools/openapi-generator-cli"
+          cd "$CM_BUILD_DIR/open-api"
+          PATH="$tools:$PATH" bash bin/generate-dart-sdk.sh
+      - name: Install dependencies
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/mobile"
+          flutter pub get --enforce-lockfile
+          cd ios && pod install
+      - name: Generate code
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/mobile"
+          dart run build_runner build --delete-conflicting-outputs
+          dart run drift_dev make-migrations
+          find pigeon -name '*.dart' -print0 | xargs -0 -n1 -P4 -I{} dart run pigeon --input {}
+          dart run easy_localization:generate -S ../i18n
+          dart run bin/generate_keys.dart
+      - name: Build the iOS app without signing
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/mobile"
+          flutter build ios --release --no-codesign
