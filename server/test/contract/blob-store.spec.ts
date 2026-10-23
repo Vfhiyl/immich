@@ -27,7 +27,7 @@ const chunked = (value: Buffer, size: number) =>
     })(),
   );
 
-describe.each(stores)('blob store contract: $name', ({ create }) => {
+describe.each(stores)('blob store contract: $name', ({ create, tracksUploads }) => {
   let store: BlobStore;
   let cleanup: () => Promise<void>;
 
@@ -216,7 +216,7 @@ describe.each(stores)('blob store contract: $name', ({ create }) => {
       await expect(buffer(await store.get('parts/small'))).resolves.toEqual(content);
     });
 
-    it('should drop an aborted upload, which takes no more parts', async () => {
+    it.runIf(tracksUploads)('should drop an aborted upload, which takes no more parts', async () => {
       const upload = await store.createUpload('parts/aborted', { partSize });
       const part = await store.uploadPart('parts/aborted', upload, { number: 1, data: randomBytes(partSize) });
 
@@ -230,7 +230,7 @@ describe.each(stores)('blob store contract: $name', ({ create }) => {
       await expect(store.head('parts/aborted')).resolves.toBeNull();
     });
 
-    it('should report an upload that it does not know', async () => {
+    it.runIf(tracksUploads)('should report an upload that it does not know', async () => {
       const upload = await store.createUpload('parts/known', { partSize });
       const unknown = { ...upload, uploadId: randomUUID() };
 
@@ -238,6 +238,21 @@ describe.each(stores)('blob store contract: $name', ({ create }) => {
         BlobUploadNotFoundError,
       );
       await store.abortUpload('parts/known', upload);
+    });
+
+    it('should tell whether it keeps track of uploads', () => {
+      expect(store.limits.tracksUploads).toBe(tracksUploads);
+    });
+
+    it('should leave no blob when an upload is aborted, also where the service drops the parts later', async () => {
+      const upload = await store.createUpload('parts/abandoned', { partSize });
+      await store.uploadPart('parts/abandoned', upload, { number: 1, data: randomBytes(partSize) });
+
+      await store.abortUpload('parts/abandoned', upload);
+
+      await expect(store.head('parts/abandoned')).resolves.toBeNull();
+      const listed = await Array.fromAsync(store.list('parts/'));
+      expect(listed.map(({ key }) => key)).not.toContain('parts/abandoned');
     });
 
     it('should reject a completion with a missing part', async () => {

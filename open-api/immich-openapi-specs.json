@@ -31291,7 +31291,8 @@
         "description": "How files are stored",
         "enum": [
           "local",
-          "s3"
+          "s3",
+          "azure"
         ],
         "type": "string"
       },

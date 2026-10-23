@@ -1,6 +1,6 @@
 # Storage Backends
 
-By default Immich keeps every file in its media location (`UPLOAD_LOCATION`). Storage backends let it keep files somewhere else instead: in a folder of its own, or in a bucket of any service that speaks the S3 protocol (Tencent Cloud COS, Alibaba Cloud OSS, AWS S3, Backblaze B2, Cloudflare R2, MinIO, …). Files on a backend can be encrypted by Immich before they leave the server.
+By default Immich keeps every file in its media location (`UPLOAD_LOCATION`). Storage backends let it keep files somewhere else instead: in a folder of its own, or in a bucket of any service that speaks the S3 protocol (Tencent Cloud COS, Alibaba Cloud OSS, AWS S3, Backblaze B2, Cloudflare R2, MinIO, …), or in a container of Azure Blob Storage (see [Azure Blob Storage](#azure-blob-storage)). Files on a backend can be encrypted by Immich before they leave the server.
 
 Without a storage backend configuration nothing changes: Immich works exactly as before.
 
@@ -117,20 +117,59 @@ databaseBackups:
   keepLast: 14
 ```
 
-| Field                          | Meaning                                                                                                                                                                    |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                           | Recorded with every file. **Never change or reuse it** once files are stored: Immich refuses to start while files are recorded on a backend that is not configured.        |
-| `role`                         | `originals`, `derived`, `backup` (one backend each) or `replica` (any number)                                                                                              |
-| `driver`                       | `s3` or `local`                                                                                                                                                            |
-| `root`                         | (`local`) the folder of the backend, inside the container                                                                                                                  |
-| `endpoint`, `region`, `bucket` | (`s3`) where the bucket is                                                                                                                                                 |
-| `prefix`                       | (`s3`) a folder in the bucket, ending with `/`, so that backends can share a bucket                                                                                        |
-| `addressing`                   | (`s3`) `virtual-host` (default) or `path`                                                                                                                                  |
-| `encrypted`                    | Whether new files are encrypted; `true` by default for `s3`, `false` for `local`. Files keep how they were written when this changes. The backup role is always encrypted. |
+| Field                          | Meaning                                                                                                                                                                                |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                           | Recorded with every file. **Never change or reuse it** once files are stored: Immich refuses to start while files are recorded on a backend that is not configured.                    |
+| `role`                         | `originals`, `derived`, `backup` (one backend each) or `replica` (any number)                                                                                                          |
+| `driver`                       | `s3`, `azure` (see [Azure Blob Storage](#azure-blob-storage)) or `local`                                                                                                               |
+| `root`                         | (`local`) the folder of the backend, inside the container                                                                                                                              |
+| `endpoint`, `region`, `bucket` | (`s3`) where the bucket is                                                                                                                                                             |
+| `prefix`                       | (`s3`) a folder in the bucket, ending with `/`, so that backends can share a bucket                                                                                                    |
+| `addressing`                   | (`s3`) `virtual-host` (default) or `path`                                                                                                                                              |
+| `encrypted`                    | Whether new files are encrypted; `true` by default for `s3` and `azure`, `false` for `local`. Files keep how they were written when this changes. The backup role is always encrypted. |
 
 Immich checks the file when it starts, and writes, reads back and deletes a probe on every backend; it does not start when something is wrong, and says why.
 
 Files stored before a backend was configured stay where they are and keep working: only new files go to the backend.
+
+### Azure Blob Storage
+
+Azure Blob Storage does not speak the S3 protocol; the `azure` driver uses its own API instead. Everything else on this page applies the same way: roles, encryption, deletion delays, replicas and checks.
+
+```yaml
+backends:
+  - id: originals
+    driver: azure
+    role: originals
+    endpoint: https://immichphotos.blob.core.windows.net # the private endpoint, if you use one
+    container: immich-originals
+    credentials:
+      # or type: sharedKey, with accountName and accountKeyFile
+      type: sas
+      sasTokenFile: /config/immich/azure-originals.sas
+    deletionCredentials:
+      type: sas
+      sasTokenFile: /config/immich/azure-deletion.sas
+```
+
+| Field                 | Meaning                                                                                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `endpoint`            | The blob service of the storage account, e.g. `https://<account>.blob.core.windows.net`, or that of a private endpoint                                                   |
+| `container`           | The container, created beforehand: 3–63 lowercase letters, digits and single dashes                                                                                      |
+| `prefix`              | A folder in the container, ending with `/`, so that backends can share a container                                                                                       |
+| `credentials`         | `type: sharedKey` with `accountName` and `accountKeyFile` (a file holding an account key), or `type: sas` with `sasTokenFile` (a file holding a shared access signature) |
+| `deletionCredentials` | The same, for the cleanup of deleted files only                                                                                                                          |
+
+With a shared access signature of the container (a service SAS, or better a user delegation SAS), the credentials of the server can be limited like those of an S3 bucket: `credentials` with the permissions read, create, write and list, **without delete**; `deletionCredentials` with delete only. An account key can do everything in the account: prefer a SAS for `credentials`. A SAS expires: renew it before it does, and restart Immich, which reads the file when it starts.
+
+Differences to S3 services:
+
+- **No lifecycle rule needed for unfinished uploads.** Large files are uploaded in blocks that are committed at the end; Azure discards blocks that were never committed after a week by itself.
+- **Access tier**: Hot for `originals` and `derived`, as the standard class of S3 services; Cool works for originals that are rarely opened; Cold and Archive only for replicas (Archive must be rehydrated before anything can be read).
+- **Soft delete and versioning**: not needed for the backends Immich writes to, for the same reasons as on S3. For a replica, use an immutability policy of the container (the counterpart of object lock).
+- Signing in with Microsoft Entra ID (managed identities) is not supported yet.
+
+Immich is tested against Azurite, Microsoft's emulator of Azure Storage; to check a real container, see [Testing a bucket](#testing-a-bucket).
 
 ## Encryption
 
@@ -325,3 +364,9 @@ IMMICH_CONTRACT_REAL_S3=/path/to/real-bucket.json pnpm run test:real-storage
 ```
 
 The credentials need the permissions of both credential sets above, since the tests also delete.
+
+A container of Azure Blob Storage is tested the same way, with `IMMICH_CONTRACT_REAL_AZURE` naming a file with `name`, `endpoint`, `container`, `accountName` and `accountKeyFile`:
+
+```bash
+IMMICH_CONTRACT_REAL_AZURE=/path/to/real-container.json pnpm run test:real-storage
+```

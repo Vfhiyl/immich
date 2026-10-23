@@ -50,7 +50,7 @@ Commands:
 
 /** A single local file as a read-only store, so that it is decrypted exactly like blobs on a backend */
 class FileAsBlobStore implements BlobStore {
-  readonly limits = { maxDeleteBatch: 0, minPartSize: 0, maxParts: 0, presign: false };
+  readonly limits = { maxDeleteBatch: 0, minPartSize: 0, maxParts: 0, presign: false, tracksUploads: true };
 
   constructor(
     private path: string,

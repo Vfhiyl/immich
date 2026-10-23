@@ -35,7 +35,8 @@ export interface BlobStore {
   /**
    * Start writing a blob in parts, over several requests and possibly by several processes: the returned upload must be
    * kept by the caller and passed back. Every part but the last has `partSize` bytes. An upload may be gone at any time
-   * (services do not promise to keep unfinished uploads), which `BlobUploadNotFoundError` reports.
+   * (services do not promise to keep unfinished uploads), which `BlobUploadNotFoundError` reports: when a part is
+   * written, or, for a store that does not track uploads (`limits.tracksUploads`), when it is completed.
    */
   createUpload(key: string, options: BlobUploadOptions): Promise<BlobUpload>;
 
@@ -81,6 +82,13 @@ export interface BlobStoreLimits {
   minPartSize: number;
   maxParts: number;
   presign: boolean;
+  /**
+   * Whether the service keeps uploads in parts as things of their own (S3: multipart uploads), so that a part of an
+   * upload it no longer knows is rejected, and an aborted upload is gone at once. Without (Azure: blocks staged under the
+   * blob's name), an unknown upload looks like a new one, aborting leaves its parts to the service, which discards them
+   * by itself (Azure: a week after the last one), and an upload that is gone is only reported when it is completed.
+   */
+  tracksUploads: boolean;
 }
 
 export interface BlobPutOptions {

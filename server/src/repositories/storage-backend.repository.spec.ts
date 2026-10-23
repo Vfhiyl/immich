@@ -7,6 +7,7 @@ import { Readable } from 'node:stream';
 import { Mocked } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
+import { AzureBlobStore } from 'src/repositories/azure-blob-store.js';
 import { BlobNotFoundError, BlobStore } from 'src/repositories/blob-store.js';
 import { EncryptedBlobStore, openTrailer } from 'src/repositories/encrypted-blob-store.js';
 import { MasterKeys } from 'src/repositories/key-provider.js';
@@ -27,6 +28,22 @@ const s3 = (overrides: Record<string, unknown>) =>
         region: 'region-1',
         bucket: 'photos',
         credentials: { type: 'chain' },
+        encrypted: false,
+        ...overrides,
+      },
+    ],
+  });
+
+const azure = (overrides: Record<string, unknown>) =>
+  JSON.stringify({
+    backends: [
+      {
+        id: 'originals',
+        driver: 'azure',
+        role: 'originals',
+        endpoint: 'https://account.blob.core.windows.net',
+        container: 'photos',
+        credentials: { type: 'sas', sasTokenFile: '/run/secrets/sas' },
         encrypted: false,
         ...overrides,
       },
@@ -419,6 +436,12 @@ describe(StorageBackendRepository.name, () => {
       await expect(sut.readConfig(await write(withReplica))).resolves.toMatchObject({
         backends: [{}, {}, {}, { id: 'replica-1', role: 'replica', replicaOf: ['originals', 'backup'] }],
       });
+
+      const [azureExample] = /```yaml\n(backends:\n(?:(?!```).)*?driver: azure.*?)```/s.exec(page)!.slice(1);
+      const withAzure = example.replace(/^backends:\n.*?(?=\n {2}- id: derived)/ms, () => azureExample.trimEnd());
+      await expect(sut.readConfig(await write(withAzure))).resolves.toMatchObject({
+        backends: [{ id: 'originals', driver: 'azure' }, { id: 'derived' }, { id: 'backups' }],
+      });
     });
 
     it('should read an S3 backend that is not encrypted without a master key file', async () => {
@@ -447,6 +470,61 @@ describe(StorageBackendRepository.name, () => {
       ],
     ])('should reject an S3 backend with %s', async (_, overrides, message) => {
       const path = await write(s3(overrides));
+      await expect(sut.readConfig(path)).rejects.toThrow(message);
+    });
+
+    it('should read an Azure backend with defaults for the prefix and encryption', async () => {
+      const path = await write(
+        [
+          'encryption:',
+          '  masterKeyFile: /run/secrets/master.key',
+          'backends:',
+          '  - id: originals',
+          '    driver: azure',
+          '    role: originals',
+          '    endpoint: https://account.blob.core.windows.net',
+          '    container: photos',
+          '    credentials:',
+          '      type: sharedKey',
+          '      accountName: account',
+          '      accountKeyFile: /run/secrets/azure',
+          '    deletionCredentials:',
+          '      type: sas',
+          '      sasTokenFile: /run/secrets/azure-delete',
+        ].join('\n'),
+      );
+
+      await expect(sut.readConfig(path)).resolves.toMatchObject({
+        backends: [
+          {
+            id: 'originals',
+            driver: 'azure',
+            role: 'originals',
+            endpoint: 'https://account.blob.core.windows.net',
+            container: 'photos',
+            prefix: '',
+            credentials: { type: 'sharedKey', accountName: 'account', accountKeyFile: '/run/secrets/azure' },
+            deletionCredentials: { type: 'sas', sasTokenFile: '/run/secrets/azure-delete' },
+            encrypted: true,
+          },
+        ],
+      });
+    });
+
+    it.each([
+      ['a container name with capitals', { container: 'Photos' }, 'container'],
+      ['a container name with two dashes in a row', { container: 'my--photos' }, 'container'],
+      ['a container name that is too short', { container: 'ph' }, 'container'],
+      ['a prefix without a trailing slash', { prefix: 'immich' }, 'prefix'],
+      ['an S3 option', { bucket: 'photos' }, 'bucket'],
+      ['a relative SAS file', { credentials: { type: 'sas', sasTokenFile: 'sas' } }, 'absolute path'],
+      [
+        'an account key in the configuration',
+        { credentials: { type: 'sharedKey', accountName: 'account', accountKey: 'a2V5' } },
+        'accountKey',
+      ],
+    ])('should reject an Azure backend with %s', async (_, overrides, message) => {
+      const path = await write(azure(overrides));
       await expect(sut.readConfig(path)).rejects.toThrow(message);
     });
 
@@ -519,6 +597,56 @@ describe(StorageBackendRepository.name, () => {
       expect(sut.getDeletionStore('separate')).toBe(sut.getDeletionStore('separate'));
       expect(sut.getDeletionStore('shared')).toBe(sut.get('shared'));
       expect(sut.getDeletionStore('media')).toBe(sut.get('media'));
+    });
+
+    it('should make configured Azure backends available, deleting with their own credentials if they have them', async () => {
+      const directory = await fs.mkdtemp(join(tmpdir(), 'immich-azure-'));
+      try {
+        const sasTokenFile = join(directory, 'sas');
+        await fs.writeFile(sasTokenFile, 'sig=abc');
+        const remote = {
+          driver: StorageBackendDriver.Azure as const,
+          endpoint: 'https://account.blob.core.windows.net',
+          container: 'photos',
+          prefix: '',
+          credentials: { type: 'sas' as const, sasTokenFile },
+          encrypted: false,
+        };
+        sut.configure([
+          {
+            ...remote,
+            id: 'separate',
+            role: StorageBackendRole.Originals,
+            deletionCredentials: { type: 'sas', sasTokenFile },
+          },
+          { ...remote, id: 'shared', role: StorageBackendRole.Derived, prefix: 'derived/' },
+        ]);
+
+        expect(sut.get('separate')).toBeInstanceOf(AzureBlobStore);
+        expect(sut.getDeletionStore('separate')).toBeInstanceOf(AzureBlobStore);
+        expect(sut.getDeletionStore('separate')).not.toBe(sut.get('separate'));
+        expect(sut.getDeletionStore('shared')).toBe(sut.get('shared'));
+        expect(() => sut.getLocalPath({ path: '/data/a.jpg', backendId: 'shared', key: 'k' })).toThrow(
+          'Storage backend shared does not keep files on the local filesystem',
+        );
+        expect(sut.describeConfiguration().backends).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: 'separate',
+              driver: 'azure',
+              location: 'https://account.blob.core.windows.net photos/',
+              hasDeletionCredentials: true,
+            }),
+            expect.objectContaining({
+              id: 'shared',
+              location: 'https://account.blob.core.windows.net photos/derived/',
+              hasDeletionCredentials: false,
+            }),
+          ]),
+        );
+      } finally {
+        await fs.rm(directory, { recursive: true, force: true });
+      }
     });
 
     it('should keep originals for the configured delay and derived files for a fixed one', () => {

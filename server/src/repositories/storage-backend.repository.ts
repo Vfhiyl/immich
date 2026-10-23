@@ -18,6 +18,7 @@ import {
   StorageBackendsConfigSchema,
 } from 'src/dtos/storage-backend-config.dto.js';
 import { BuiltinStorageBackend, StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
+import { AzureBlobStore, createAzureContainerClient } from 'src/repositories/azure-blob-store.js';
 import { BlobExpectation, BlobNotFoundError, BlobRange, BlobStore } from 'src/repositories/blob-store.js';
 import { EncryptedBlobStore } from 'src/repositories/encrypted-blob-store.js';
 import { KeyProvider, MasterKeys } from 'src/repositories/key-provider.js';
@@ -262,14 +263,23 @@ export class StorageBackendRepository {
   /** The store that deletes from a backend: with the deletion credentials of the backend, if it has its own */
   getDeletionStore(backendId: string): BlobStore {
     const config = this.configs.get(backendId);
-    if (config?.driver !== StorageBackendDriver.S3 || !config.deletionCredentials) {
+    if (!config || config.driver === StorageBackendDriver.Local || !config.deletionCredentials) {
       return this.get(backendId);
     }
 
     let store = this.deletionStores.get(backendId);
     if (!store) {
-      const client = this.createS3Client(backendId, { ...config, credentials: config.deletionCredentials });
-      store = new S3BlobStore(client, config.bucket, config.prefix);
+      store =
+        config.driver === StorageBackendDriver.S3
+          ? new S3BlobStore(
+              this.createS3Client(backendId, { ...config, credentials: config.deletionCredentials }),
+              config.bucket,
+              config.prefix,
+            )
+          : new AzureBlobStore(
+              this.createAzureClient(backendId, { ...config, credentials: config.deletionCredentials }),
+              config.prefix,
+            );
       this.deletionStores.set(backendId, store);
     }
     return store;
@@ -335,6 +345,18 @@ export class StorageBackendRepository {
           : write;
         return { write, deletion };
       }
+
+      case StorageBackendDriver.Azure: {
+        const prefix = `${config.prefix}${sourceBackendId}/`;
+        const write = new AzureBlobStore(this.createAzureClient(config.id, config), prefix);
+        const deletion = config.deletionCredentials
+          ? new AzureBlobStore(
+              this.createAzureClient(config.id, { ...config, credentials: config.deletionCredentials }),
+              prefix,
+            )
+          : write;
+        return { write, deletion };
+      }
     }
   }
 
@@ -352,8 +374,10 @@ export class StorageBackendRepository {
           location:
             config.driver === StorageBackendDriver.S3
               ? `${config.endpoint} ${config.bucket}/${config.prefix}`
-              : config.root,
-          hasDeletionCredentials: config.driver === StorageBackendDriver.S3 && !!config.deletionCredentials,
+              : config.driver === StorageBackendDriver.Azure
+                ? `${config.endpoint} ${config.container}/${config.prefix}`
+                : config.root,
+          hasDeletionCredentials: config.driver !== StorageBackendDriver.Local && !!config.deletionCredentials,
         }))
         .toArray(),
       masterKeyId: this.keys?.currentKeyId.toString('hex') ?? null,
@@ -770,6 +794,11 @@ export class StorageBackendRepository {
     return meterS3Client(createS3Client(config), (request) => this.meter.record(backendId, request));
   }
 
+  /** A client whose requests are counted for the backend */
+  private createAzureClient(backendId: string, config: Parameters<typeof createAzureContainerClient>[0]) {
+    return createAzureContainerClient(config, (request) => this.meter.record(backendId, request));
+  }
+
   /** The requests to storage services counted since the last call, to be written to the database */
   drainRequestUsage() {
     return this.meter.drain();
@@ -783,6 +812,10 @@ export class StorageBackendRepository {
 
       case StorageBackendDriver.S3: {
         return new S3BlobStore(this.createS3Client(backend.id, backend), backend.bucket, backend.prefix);
+      }
+
+      case StorageBackendDriver.Azure: {
+        return new AzureBlobStore(this.createAzureClient(backend.id, backend), backend.prefix);
       }
     }
   }

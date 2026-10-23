@@ -5,6 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { AzureBlobStore, createAzureContainerClient } from 'src/repositories/azure-blob-store.js';
 import { S3BackendOptions, createS3Client } from 'src/repositories/s3-blob-store.js';
 import { getTool, tools } from 'test/contract/tools.js';
 
@@ -183,3 +184,91 @@ export const startSeaweedfs = async (root: string) => {
     { endpoint: `http://127.0.0.1:${ports.s3}`, region: 'us-east-1', bucket: 'contract', accessKeyId, secretAccessKey },
   );
 };
+
+/** How tests reach a running Azure Blob service */
+export interface AzureTarget {
+  name: string;
+  /** The blob service of the account; for Azurite, its address with the account name as the first path segment */
+  endpoint: string;
+  container: string;
+  accountName: string;
+  accountKey: string;
+  /** A real service: blobs the tests leave are removed afterwards */
+  isReal?: boolean;
+}
+
+/** An Azure Blob client of a target, with its shared key written to a file as a deployment would */
+export const toAzureContainer = (target: AzureTarget, keyFile: string) =>
+  createAzureContainerClient({
+    endpoint: target.endpoint,
+    container: target.container,
+    prefix: '',
+    credentials: { type: 'sharedKey', accountName: target.accountName, accountKeyFile: keyFile },
+  });
+
+/** Azurite, Microsoft's emulator of Azure Storage for local development and tests, with an account of its own */
+export const startAzurite = async (root: string) => {
+  const port = await freePort();
+  const accountName = `contract${randomBytes(4).toString('hex')}`;
+  const accountKey = randomBytes(64).toString('base64');
+  const data = join(root, 'azurite');
+  await mkdir(data, { recursive: true });
+  const keyFile = join(root, 'azurite.key');
+  await writeFile(keyFile, accountKey);
+
+  const output: string[] = [];
+  const executable = join(import.meta.dirname, '../../node_modules/.bin/azurite-blob');
+  const child = spawn(
+    executable,
+    [
+      '--blobHost',
+      '127.0.0.1',
+      '--blobPort',
+      String(port),
+      '--location',
+      data,
+      '--skipApiVersionCheck',
+      '--disableTelemetry',
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, AZURITE_ACCOUNTS: `${accountName}:${accountKey}` } },
+  );
+  child.stdout?.on('data', (data) => {
+    output.push(data.toString());
+  });
+  child.stderr?.on('data', (data) => {
+    output.push(data.toString());
+  });
+
+  const target: AzureTarget = {
+    name: 'azurite',
+    endpoint: `http://127.0.0.1:${port}/${accountName}`,
+    container: 'contract',
+    accountName,
+    accountKey,
+  };
+  const stop = async () => {
+    child.kill('SIGTERM');
+    await sleep(500);
+    if (child.exitCode === null) {
+      child.kill('SIGKILL');
+    }
+  };
+  const container = toAzureContainer(target, keyFile);
+  for (let attempt = 0; attempt < 120; attempt++) {
+    if (child.exitCode !== null) {
+      throw new Error(`Azurite exited with code ${child.exitCode}:\n${output.join('')}`);
+    }
+    try {
+      await container.createIfNotExists();
+      return { target, stop };
+    } catch {
+      await sleep(250);
+    }
+  }
+  await stop();
+  throw new Error(`Azurite did not start:\n${output.join('')}`);
+};
+
+/** A store on a target, below a prefix of its own */
+export const toAzureStore = (target: AzureTarget, keyFile: string, prefix: string) =>
+  new AzureBlobStore(toAzureContainer(target, keyFile), prefix);

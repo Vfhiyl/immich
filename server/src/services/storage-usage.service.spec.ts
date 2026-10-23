@@ -45,6 +45,12 @@ describe(StorageUsageService.name, () => {
     expect(toPriceClass('AbortMultipartUpload')).toBe(StoragePriceClass.Delete);
     expect(toPriceClass('UploadPart')).toBe(StoragePriceClass.Write);
     expect(toPriceClass('ListObjectsV2')).toBe(StoragePriceClass.Write);
+    expect(toPriceClass('GetBlob')).toBe(StoragePriceClass.Read);
+    expect(toPriceClass('GetBlobProperties')).toBe(StoragePriceClass.Read);
+    expect(toPriceClass('GetBlockList')).toBe(StoragePriceClass.Read);
+    expect(toPriceClass('DeleteBlob')).toBe(StoragePriceClass.Delete);
+    expect(toPriceClass('PutBlock')).toBe(StoragePriceClass.Write);
+    expect(toPriceClass('ListBlobs')).toBe(StoragePriceClass.Write);
   });
 
   it('should write the counted requests to the database', async () => {

@@ -129,6 +129,7 @@ export class S3BlobStore implements BlobStore {
     minPartSize: 5 * 1024 * 1024,
     maxParts: MAX_PARTS,
     presign: false,
+    tracksUploads: true,
   };
 
   constructor(

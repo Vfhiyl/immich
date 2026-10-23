@@ -79,7 +79,56 @@ const S3BackendSchema = z
   })
   .strict();
 
-export const StorageBackendConfigSchema = z.discriminatedUnion('driver', [LocalBackendSchema, S3BackendSchema]);
+/** Secrets are read from files: an account key, or a shared access signature (SAS) of the container */
+const AzureCredentialsSchema = z.discriminatedUnion('type', [
+  z
+    .object({
+      type: z.literal('sharedKey'),
+      accountName: z.string().min(1),
+      accountKeyFile: absolutePath,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('sas'),
+      sasTokenFile: absolutePath,
+    })
+    .strict(),
+]);
+
+/** A container of Azure Blob Storage (which does not speak the S3 protocol) */
+const AzureBackendSchema = z
+  .object({
+    id: BackendIdSchema,
+    driver: z.literal(StorageBackendDriver.Azure),
+    role: z.enum(StorageBackendRole),
+    /** The blob service of the storage account, e.g. https://<account>.blob.core.windows.net */
+    endpoint: z.url({ protocol: /^https?$/ }),
+    container: z
+      .string()
+      .regex(
+        /^(?!.*--)[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/,
+        'Must be a valid container name: 3-63 lowercase letters, digits and single dashes',
+      ),
+    /** Blobs are stored below this prefix, so that several backends can share a container */
+    prefix: z
+      .string()
+      .regex(/^([^/]+\/)*$/, 'Must be empty or end with a slash, without empty segments')
+      .default(''),
+    credentials: AzureCredentialsSchema,
+    /** Credentials that may delete blobs, used only by the cleanup of deleted files (see the S3 backend) */
+    deletionCredentials: AzureCredentialsSchema.optional(),
+    /** Whether new files are encrypted, by default yes, since the files leave the server */
+    encrypted: z.boolean().default(true),
+    replicaOf: ReplicaOfSchema,
+  })
+  .strict();
+
+export const StorageBackendConfigSchema = z.discriminatedUnion('driver', [
+  LocalBackendSchema,
+  S3BackendSchema,
+  AzureBackendSchema,
+]);
 
 const EncryptionConfigSchema = z
   .object({

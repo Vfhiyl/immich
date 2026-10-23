@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import {
   Api,
+  AzureService,
   ImmichServer,
   LocalBackend,
   S3Service,
@@ -46,8 +47,9 @@ const digest = (content: Buffer) => `sha=:${Buffer.from(sha1(content), 'hex').to
 
 type Scenario = {
   name: string;
-  backends?: (s3: S3Service | undefined) => LocalBackend[];
+  backends?: (s3: S3Service | undefined, azure: AzureService | undefined) => LocalBackend[];
   s3?: boolean;
+  azure?: boolean;
   /** The master keys from a command (encryption.masterKeyCommand) instead of a file */
   keyCommand?: boolean;
 };
@@ -70,11 +72,20 @@ const scenarios: Scenario[] = [
       { id: 'derived', role: 'derived', s3: { service: s3!, prefix: 'derived/' } },
     ],
   },
+  {
+    name: 'on an Azure Blob service',
+    azure: true,
+    backends: (_s3, azure) => [
+      { id: 'originals', role: 'originals', azure: { service: azure!, prefix: 'originals/' } },
+      { id: 'derived', role: 'derived', azure: { service: azure!, prefix: 'derived/' } },
+    ],
+  },
 ];
 
-describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3, keyCommand }) => {
+describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3, azure: withAzure, keyCommand }) => {
   let environment: TestEnvironment;
   let s3: S3Service | undefined;
+  let azure: AzureService | undefined;
   let server: ImmichServer;
   let api: Api;
 
@@ -121,8 +132,11 @@ describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3, key
     if (withS3) {
       s3 = await S3Service.start(environment);
     }
+    if (withAzure) {
+      azure = await AzureService.start(environment);
+    }
     if (backends) {
-      await environment.writeBackends(backends(s3), { keyCommand });
+      await environment.writeBackends(backends(s3, azure), { keyCommand });
     }
     server = await ImmichServer.start(environment, { backends: !!backends });
     api = await Api.signUpAdmin();
@@ -137,6 +151,7 @@ describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3, key
   afterAll(async () => {
     await server?.stop();
     s3?.stop();
+    azure?.stop();
     await environment?.destroy();
   });
 
@@ -469,7 +484,8 @@ describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3, key
     expect(informational.headers['upload-limit']).toContain('expires=');
   });
 
-  if (backends && !withS3) {
+  // local backends only: the test drops the upload by deleting its files
+  if (backends && !withS3 && !withAzure) {
     it('should start again from the beginning when the backend dropped the upload', async () => {
       const content = await largePhoto();
       const location = await begin(content, 'dropped.jpg');

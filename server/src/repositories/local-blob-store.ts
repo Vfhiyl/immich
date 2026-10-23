@@ -43,6 +43,7 @@ export class LocalBlobStore implements BlobStore {
     minPartSize: 0,
     maxParts: Infinity,
     presign: false,
+    tracksUploads: true,
   };
 
   private readonly root: string;

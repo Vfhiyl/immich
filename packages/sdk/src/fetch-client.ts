@@ -8684,7 +8684,8 @@ export enum NotificationType {
 }
 export enum StorageBackendDriver {
     Local = "local",
-    S3 = "s3"
+    S3 = "s3",
+    Azure = "azure"
 }
 export enum StorageReplicatedRole {
     Originals = "originals",

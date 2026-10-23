@@ -44,10 +44,11 @@ export enum StoragePriceClass {
 
 /** How services charge for a request: reads (GET, HEAD), deletes, and everything else (PUT, POST, LIST) */
 export const toPriceClass = (operation: string): StoragePriceClass => {
-  if (['GetObject', 'HeadObject'].includes(operation)) {
+  // S3, and Azure (whose read operations also include reading the list of blocks)
+  if (['GetObject', 'HeadObject', 'GetBlob', 'GetBlobProperties', 'GetBlockList'].includes(operation)) {
     return StoragePriceClass.Read;
   }
-  if (['DeleteObject', 'DeleteObjects', 'AbortMultipartUpload'].includes(operation)) {
+  if (['DeleteObject', 'DeleteObjects', 'AbortMultipartUpload', 'DeleteBlob'].includes(operation)) {
     return StoragePriceClass.Delete;
   }
   return StoragePriceClass.Write;

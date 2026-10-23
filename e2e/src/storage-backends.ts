@@ -1,5 +1,6 @@
+import { ContainerClient, StorageSharedKeyCredential } from '@azure/storage-blob';
 import { ChildProcess, execFile, spawn } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -31,6 +32,8 @@ export interface LocalBackend {
   replicaOf?: Array<'originals' | 'backup'>;
   /** Store the backend's files on an S3 service, below this prefix, instead of a local folder */
   s3?: { service: S3Service; prefix: string };
+  /** Or on an Azure Blob service */
+  azure?: { service: AzureService; prefix: string };
   /** Whether new files are encrypted; the server encrypts S3 backends unless told otherwise */
   encrypted?: boolean;
 }
@@ -79,6 +82,62 @@ export class S3Service {
     readonly bucket: string,
     readonly accessKeyId: string,
     readonly secretAccessKeyFile: string,
+  ) {}
+
+  stop() {
+    this.process.kill();
+  }
+}
+
+/** Azurite, Microsoft's emulator of Azure Storage, with an account of its own (installed with the server) */
+export class AzureService {
+  static async start(environment: TestEnvironment) {
+    const root = join(environment.root, 'azurite');
+    await mkdir(root, { recursive: true });
+    const accountName = `immich${randomUUID().slice(0, 8)}`;
+    const accountKeyFile = join(environment.root, 'azure-key');
+    const accountKey = randomBytes(64).toString('base64');
+    await writeFile(accountKeyFile, accountKey);
+
+    const port = 22_000 + Math.floor(Math.random() * 10_000);
+    const child = spawn(
+      join(serverRoot, 'node_modules/.bin/azurite-blob'),
+      [
+        '--blobHost',
+        '127.0.0.1',
+        '--blobPort',
+        String(port),
+        '--location',
+        root,
+        '--skipApiVersionCheck',
+        '--disableTelemetry',
+      ],
+      { stdio: 'ignore', env: { ...process.env, AZURITE_ACCOUNTS: `${accountName}:${accountKey}` } },
+    );
+    const service = new this(child, `http://127.0.0.1:${port}/${accountName}`, 'immich', accountName, accountKeyFile);
+    // the container is made by whoever sets up a deployment, as a bucket is
+    const container = new ContainerClient(
+      `${service.endpoint}/${service.container}`,
+      new StorageSharedKeyCredential(accountName, accountKey),
+    );
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try {
+        await container.createIfNotExists();
+        return service;
+      } catch {
+        await sleep(100);
+      }
+    }
+    child.kill();
+    throw new Error('The Azure service did not start');
+  }
+
+  private constructor(
+    private process: ChildProcess,
+    readonly endpoint: string,
+    readonly container: string,
+    readonly accountName: string,
+    readonly accountKeyFile: string,
   ) {}
 
   stop() {
@@ -185,7 +244,7 @@ export class TestEnvironment {
    */
   async writeBackends(backends: LocalBackend[], { keepMasterKey = false, keyCommand = false } = {}) {
     const lines = [];
-    if (backends.some(({ s3, encrypted }) => encrypted ?? !!s3)) {
+    if (backends.some(({ s3, azure, encrypted }) => encrypted ?? !!(s3 || azure))) {
       if (!keepMasterKey) {
         await rm(this.masterKeyFile, { force: true });
         await runEncryptionTool(['generate-key', this.masterKeyFile]);
@@ -199,7 +258,7 @@ export class TestEnvironment {
     }
 
     lines.push('backends:');
-    for (const { id, role, replicaOf, s3, encrypted } of backends) {
+    for (const { id, role, replicaOf, s3, azure, encrypted } of backends) {
       lines.push(`  - id: ${id}`, `    role: ${role}`);
       if (replicaOf) {
         lines.push(`    replicaOf: [${replicaOf.join(', ')}]`);
@@ -207,7 +266,19 @@ export class TestEnvironment {
       if (encrypted !== undefined) {
         lines.push(`    encrypted: ${encrypted}`);
       }
-      if (s3) {
+      if (azure) {
+        const { service, prefix } = azure;
+        lines.push(
+          '    driver: azure',
+          `    endpoint: ${service.endpoint}`,
+          `    container: ${service.container}`,
+          `    prefix: ${prefix}`,
+          '    credentials:',
+          '      type: sharedKey',
+          `      accountName: ${service.accountName}`,
+          `      accountKeyFile: ${service.accountKeyFile}`,
+        );
+      } else if (s3) {
         const { service, prefix } = s3;
         this.backendFolders.set(id, join(service.root, service.bucket, prefix));
         lines.push(
