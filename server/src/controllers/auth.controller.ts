@@ -16,6 +16,7 @@ import {
   SignUpDto,
   ValidateAccessTokenResponseDto,
 } from 'src/dtos/auth.dto.js';
+import { LoginCodeDto } from 'src/dtos/login-code.dto.js';
 import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
 import { ApiTag, AuthType, ImmichCookie, Permission } from 'src/enum.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
@@ -26,6 +27,18 @@ import { respondWithCookie, respondWithoutCookie } from 'src/utils/response.js';
 @Controller('auth')
 export class AuthController {
   constructor(private service: AuthService) {}
+
+  @Post('login-code')
+  @Endpoint({
+    summary: 'Login with a code',
+    description:
+      'Login with a one-time code that an administrator showed as a QR code, and receive a session token: for the mobile app.',
+    history: new HistoryBuilder().added('v3.3.5').alpha('v3.3.5'),
+  })
+  @Authenticated({ public: true })
+  loginWithCode(@Body() dto: LoginCodeDto, @GetLoginDetails() loginDetails: LoginDetails): Promise<LoginResponseDto> {
+    return this.service.loginWithCode(dto, loginDetails);
+  }
 
   @Post('login')
   @Endpoint({

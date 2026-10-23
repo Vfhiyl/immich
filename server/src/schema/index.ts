@@ -57,6 +57,7 @@ import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
+import { LoginCodeTable } from 'src/schema/tables/login-code.table.js';
 import { MemoryAssetAuditTable } from 'src/schema/tables/memory-asset-audit.table.js';
 import { MemoryAssetTable } from 'src/schema/tables/memory-asset.table.js';
 import { MemoryAuditTable } from 'src/schema/tables/memory-audit.table.js';
@@ -179,6 +180,7 @@ export class ImmichDatabase {
     StorageUsageDailyTable,
     StorageDeletionTable,
     UploadSessionTable,
+    LoginCodeTable,
     StorageMasterKeyTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
@@ -327,6 +329,7 @@ export interface DB {
   storage_usage_daily: StorageUsageDailyTable;
   storage_deletion: StorageDeletionTable;
   upload_session: UploadSessionTable;
+  login_code: LoginCodeTable;
   storage_master_key: StorageMasterKeyTable;
 
   system_metadata: SystemMetadataTable;

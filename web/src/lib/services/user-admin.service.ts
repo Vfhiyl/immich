@@ -1,6 +1,7 @@
 import {
   createUserAdmin,
   deleteUserAdmin,
+  deleteUserSessionAdmin,
   restoreUserAdmin,
   updateUserAdmin,
   UserStatus,
@@ -17,6 +18,7 @@ import {
   mdiLockSmart,
   mdiPencilOutline,
   mdiPlusBoxOutline,
+  mdiQrcode,
   mdiTrashCanOutline,
 } from '@mdi/js';
 import { DateTime } from 'luxon';
@@ -27,6 +29,7 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
 import PasswordResetSuccessModal from '$lib/modals/PasswordResetSuccessModal.svelte';
 import UserDeleteConfirmModal from '$lib/modals/UserDeleteConfirmModal.svelte';
+import UserLoginCodeModal from '$lib/modals/UserLoginCodeModal.svelte';
 import UserRestoreConfirmModal from '$lib/modals/UserRestoreConfirmModal.svelte';
 import { Route } from '$lib/route';
 import type { HeaderButtonActionItem } from '$lib/types';
@@ -94,7 +97,15 @@ export const getUserAdminActions = ($t: MessageFormatter, user: UserAdminRespons
     onAction: () => handleResetPinCodeUserAdmin(user),
   };
 
-  return { Detail, Update, Delete, Restore, ResetPassword, ResetPinCode };
+  // a QR code that signs the user's phone in, without the password
+  const SignInPhone: ActionItem = {
+    icon: mdiQrcode,
+    title: $t('admin.user_sign_in_phone'),
+    $if: () => !user.deletedAt,
+    onAction: () => modalManager.show(UserLoginCodeModal, { user }),
+  };
+
+  return { Detail, Update, Delete, Restore, ResetPassword, ResetPinCode, SignInPhone };
 };
 
 export const handleCreateUserAdmin = async (dto: UserAdminCreateDto) => {
@@ -184,6 +195,26 @@ const handleResetPasswordUserAdmin = async (user: UserAdminResponseDto) => {
     await modalManager.show(PasswordResetSuccessModal, { newPassword: dto.password });
   } catch (error) {
     handleError(error, $t('errors.unable_to_reset_password'));
+  }
+};
+
+/** End a session of a user, e.g. of a phone that was lost; whether it was ended */
+export const handleDeleteUserSessionAdmin = async (user: UserAdminResponseDto, sessionId: string) => {
+  const $t = await getFormatter();
+  const confirmed = await modalManager.showDialog({
+    prompt: $t('admin.user_session_delete_confirm', { values: { user: user.name } }),
+  });
+  if (!confirmed) {
+    return false;
+  }
+
+  try {
+    await deleteUserSessionAdmin({ id: user.id, sessionId });
+    toastManager.primary($t('admin.user_session_deleted'));
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_log_out_device'));
+    return false;
   }
 };
 

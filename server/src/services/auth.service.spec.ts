@@ -46,6 +46,38 @@ describe(AuthService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  describe('loginWithCode', () => {
+    it('should sign in the user of a code that is valid, with a session like a password sign-in', async () => {
+      const user = UserFactory.create();
+      mocks.session.useLoginCode.mockResolvedValue(user.id);
+      mocks.user.get.mockResolvedValue(user);
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+      await expect(sut.loginWithCode({ code: 'the-code' }, loginDetails)).resolves.toMatchObject({
+        accessToken: 'cmFuZG9tLWJ5dGVz',
+        userId: user.id,
+      });
+
+      // only the hash of a code is stored
+      expect(mocks.session.useLoginCode).toHaveBeenCalledWith(expect.any(Buffer));
+      expect(mocks.crypto.hashSha256).toHaveBeenCalledWith('the-code');
+      expect(mocks.session.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: user.id, deviceOS: loginDetails.deviceOS }),
+      );
+    });
+
+    it('should not sign in with a code that is unknown, used or expired, nor for a deleted user', async () => {
+      mocks.session.useLoginCode.mockResolvedValue(undefined);
+      await expect(sut.loginWithCode({ code: 'unknown' }, loginDetails)).rejects.toBeInstanceOf(UnauthorizedException);
+
+      mocks.session.useLoginCode.mockResolvedValue('deleted-user');
+      mocks.user.get.mockResolvedValue(undefined);
+      await expect(sut.loginWithCode({ code: 'the-code' }, loginDetails)).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('login', () => {
     it('should throw an error if password login is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.disabled);

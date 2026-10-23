@@ -92,3 +92,32 @@ where
 update "session"
 set
   "isPendingSyncReset" = $1
+
+-- SessionRepository.createLoginCode
+delete from "login_code"
+where
+  "expiresAt" <= $1
+insert into
+  "login_code" ("code", "userId", "createdById", "expiresAt")
+values
+  ($1, $2, $3, $4)
+
+-- SessionRepository.useLoginCode
+delete from "login_code"
+where
+  "code" = $1
+  and "expiresAt" > $2
+returning
+  "userId"
+
+-- SessionRepository.resetSyncProgress
+begin
+update "session"
+set
+  "isPendingSyncReset" = $1
+where
+  "id" = $2
+delete from "session_sync_checkpoint"
+where
+  "sessionId" = $1
+commit

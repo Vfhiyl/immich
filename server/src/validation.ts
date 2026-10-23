@@ -100,6 +100,13 @@ const UUIDParamSchema = z.object({
 
 export class UUIDParamDto extends createZodDto(UUIDParamSchema) {}
 
+const UserSessionParamSchema = z.object({
+  id: z.uuidv4(),
+  sessionId: z.uuidv4(),
+});
+
+export class UserSessionParamDto extends createZodDto(UserSessionParamSchema) {}
+
 const UUIDv7ParamSchema = z.object({
   id: z.uuidv7(),
 });

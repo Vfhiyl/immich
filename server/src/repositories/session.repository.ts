@@ -135,7 +135,6 @@ export class SessionRepository {
     await this.db.updateTable('session').set({ pinExpiresAt: null }).where('userId', '=', userId).execute();
   }
 
-  @GenerateSql({ params: [DummyValue.UUID] })
   /**
    * Make every client sync anew, e.g. after the database was restored from a backup: what they synced since the backup
    * was taken is gone, and no records of deletions tell them so
@@ -145,6 +144,30 @@ export class SessionRepository {
     await this.db.updateTable('session').set({ isPendingSyncReset: true }).execute();
   }
 
+  /** A one-time login code, by its SHA-256; codes that expired are dropped meanwhile */
+  @GenerateSql({
+    params: [
+      { code: DummyValue.BUFFER, userId: DummyValue.UUID, createdById: DummyValue.UUID, expiresAt: DummyValue.DATE },
+    ],
+  })
+  async createLoginCode(code: { code: Buffer; userId: string; createdById: string; expiresAt: Date }) {
+    await this.db.deleteFrom('login_code').where('expiresAt', '<=', DateTime.now().toJSDate()).execute();
+    await this.db.insertInto('login_code').values(code).execute();
+  }
+
+  /** Use up a one-time login code: the user it signs in, if it is known and has not expired */
+  @GenerateSql({ params: [DummyValue.BUFFER] })
+  async useLoginCode(code: Buffer) {
+    const used = await this.db
+      .deleteFrom('login_code')
+      .where('code', '=', code)
+      .where('expiresAt', '>', DateTime.now().toJSDate())
+      .returning(['userId'])
+      .executeTakeFirst();
+    return used?.userId;
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID] })
   async resetSyncProgress(sessionId: string) {
     await this.db.transaction().execute((tx) => {
       return Promise.all([

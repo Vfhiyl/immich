@@ -3310,6 +3310,64 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/users/{id}/login-codes": {
+      "post": {
+        "description": "A one-time code, valid for a few minutes, that the mobile app scans as a QR code to sign the user in on the external domain.",
+        "operationId": "createUserLoginCodeAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginCodeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create a code to sign in a phone",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminUser.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/users/{id}/preferences": {
       "get": {
         "description": "Retrieve the preferences of a specific user.",
@@ -3574,6 +3632,67 @@
         ],
         "x-immich-permission": "adminSession.read",
         "x-immich-state": "Stable"
+      }
+    },
+    "/admin/users/{id}/sessions/{sessionId}": {
+      "delete": {
+        "description": "End a session of a user, e.g. of a phone that was lost.",
+        "operationId": "deleteUserSessionAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a user session",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminUser.update",
+        "x-immich-state": "Alpha"
       }
     },
     "/admin/users/{id}/statistics": {
@@ -7228,6 +7347,50 @@
           }
         ],
         "x-immich-state": "Stable"
+      }
+    },
+    "/auth/login-code": {
+      "post": {
+        "description": "Login with a one-time code that an administrator showed as a QR code, and receive a session token: for the mobile app.",
+        "operationId": "loginWithCode",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginCodeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Login with a code",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
       }
     },
     "/auth/logout": {
@@ -24585,6 +24748,43 @@
           "fatal"
         ],
         "type": "string"
+      },
+      "LoginCodeDto": {
+        "properties": {
+          "code": {
+            "description": "The one-time code of the QR code",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "LoginCodeResponseDto": {
+        "properties": {
+          "expiresAt": {
+            "description": "When the code expires, unless it was used before",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "server": {
+            "description": "The server the mobile app signs in to: the external domain",
+            "type": "string"
+          },
+          "url": {
+            "description": "What the QR code holds: a link that the mobile app opens to sign in, with the server and the code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "server",
+          "url"
+        ],
+        "type": "object"
       },
       "LoginCredentialDto": {
         "properties": {

@@ -1018,6 +1018,14 @@ export type CalendarHeatmapResponseDto = {
     /** Total activity count over the period */
     totalCount: number;
 };
+export type LoginCodeResponseDto = {
+    /** When the code expires, unless it was used before */
+    expiresAt: string;
+    /** The server the mobile app signs in to: the external domain */
+    server: string;
+    /** What the QR code holds: a link that the mobile app opens to sign in, with the server and the code */
+    url: string;
+};
 export type AlbumsResponse = {
     defaultAssetOrder: AssetOrder;
 };
@@ -1847,6 +1855,10 @@ export type LoginResponseDto = {
     userEmail: string;
     /** User ID */
     userId: string;
+};
+export type LoginCodeDto = {
+    /** The one-time code of the QR code */
+    code: string;
 };
 export type LogoutResponseDto = {
     /** Redirect URI */
@@ -5019,6 +5031,20 @@ export function getUserCalendarHeatmapAdmin({ $from, id, to, $type }: {
     }));
 }
 /**
+ * Create a code to sign in a phone
+ */
+export function createUserLoginCodeAdmin({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LoginCodeResponseDto;
+    }>(`/admin/users/${encodeURIComponent(id)}/login-codes`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Retrieve user preferences
  */
 export function getUserPreferencesAdmin({ id }: {
@@ -5072,6 +5098,18 @@ export function getUserSessionsAdmin({ id }: {
         data: SessionResponseDto[];
     }>(`/admin/users/${encodeURIComponent(id)}/sessions`, {
         ...opts
+    }));
+}
+/**
+ * Delete a user session
+ */
+export function deleteUserSessionAdmin({ id, sessionId }: {
+    id: string;
+    sessionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/users/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}`, {
+        ...opts,
+        method: "DELETE"
     }));
 }
 /**
@@ -5911,6 +5949,21 @@ export function login({ loginCredentialDto }: {
         ...opts,
         method: "POST",
         body: loginCredentialDto
+    })));
+}
+/**
+ * Login with a code
+ */
+export function loginWithCode({ loginCodeDto }: {
+    loginCodeDto: LoginCodeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LoginResponseDto;
+    }>("/auth/login-code", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: loginCodeDto
     })));
 }
 /**

@@ -4,6 +4,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AssetStatsDto, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
 import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calendar-heatmap.dto.js';
+import { LoginCodeResponseDto } from 'src/dtos/login-code.dto.js';
 import { SessionResponseDto } from 'src/dtos/session.dto.js';
 import { UserPreferencesResponseDto, UserPreferencesUpdateDto } from 'src/dtos/user-preferences.dto.js';
 import {
@@ -16,7 +17,7 @@ import {
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
-import { UUIDParamDto } from 'src/validation.js';
+import { UUIDParamDto, UserSessionParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.UsersAdmin)
 @Controller('admin/users')
@@ -125,6 +126,30 @@ export class UserAdminController {
   })
   getUserSessionsAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<SessionResponseDto[]> {
     return this.service.getSessions(auth, id);
+  }
+
+  @Delete(':id/sessions/:sessionId')
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Delete a user session',
+    description: 'End a session of a user, e.g. of a phone that was lost.',
+    history: new HistoryBuilder().added('v3.3.5').alpha('v3.3.5'),
+  })
+  deleteUserSessionAdmin(@Auth() auth: AuthDto, @Param() { id, sessionId }: UserSessionParamDto): Promise<void> {
+    return this.service.deleteSession(auth, id, sessionId);
+  }
+
+  @Post(':id/login-codes')
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  @Endpoint({
+    summary: 'Create a code to sign in a phone',
+    description:
+      'A one-time code, valid for a few minutes, that the mobile app scans as a QR code to sign the user in on the external domain.',
+    history: new HistoryBuilder().added('v3.3.5').alpha('v3.3.5'),
+  })
+  createUserLoginCodeAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<LoginCodeResponseDto> {
+    return this.service.createLoginCode(auth, id);
   }
 
   @Get(':id/statistics')

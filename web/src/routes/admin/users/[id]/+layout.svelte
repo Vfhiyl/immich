@@ -8,7 +8,7 @@
   import DeviceCard from '$lib/components/user-settings-page/DeviceCard.svelte';
   import FeatureSetting from './FeatureSetting.svelte';
   import { Route } from '$lib/route';
-  import { getUserAdminActions } from '$lib/services/user-admin.service';
+  import { getUserAdminActions, handleDeleteUserSessionAdmin } from '$lib/services/user-admin.service';
   import { locale } from '$lib/stores/preferences.store';
   import { createDateFormatter, findLocale } from '$lib/utils';
   import { getBytesWithUnit } from '$lib/utils/byte-units';
@@ -66,12 +66,22 @@
   let userCreatedAtDateAndTime = $derived(createDateFormatter(editedLocale).formatDateTime(createAtDate));
   let userUpdatedAtDateAndTime = $derived(createDateFormatter(editedLocale).formatDateTime(updatedAtDate));
 
+  // the sessions of the user, of which an administrator can end any (e.g. of a phone that was lost)
+  let deletedSessions = $state<string[]>([]);
+  const sessions = $derived(userSessions.filter(({ id }) => !deletedSessions.includes(id)));
+
+  const onDeleteSession = async (sessionId: string) => {
+    if (await handleDeleteUserSessionAdmin(user, sessionId)) {
+      deletedSessions = [...deletedSessions, sessionId];
+    }
+  };
+
   const storageUsageThresholds = [
     { from: 0.8, className: 'bg-warning' },
     { from: 0.95, className: 'bg-danger' },
   ];
 
-  const { ResetPassword, ResetPinCode, Update, Delete, Restore } = $derived(getUserAdminActions($t, user));
+  const { ResetPassword, ResetPinCode, SignInPhone, Update, Delete, Restore } = $derived(getUserAdminActions($t, user));
 
   const onUpdate = async (update: UserAdminResponseDto) => {
     if (update.id !== user.id) {
@@ -96,11 +106,14 @@
   {onUserAdminDeleted}
 />
 
-<CommandPaletteDefaultProvider name={$t('user')} actions={[ResetPassword, ResetPinCode, Update, Delete, Restore]} />
+<CommandPaletteDefaultProvider
+  name={$t('user')}
+  actions={[SignInPhone, ResetPassword, ResetPinCode, Update, Delete, Restore]}
+/>
 
 <AdminPageLayout
   breadcrumbs={[{ title: $t('admin.user_management'), href: Route.users() }, { title: user.name }]}
-  actions={[ResetPassword, ResetPinCode, Update, Restore, MenuItemType.Divider, Delete]}
+  actions={[SignInPhone, ResetPassword, ResetPinCode, Update, Restore, MenuItemType.Divider, Delete]}
 >
   <div>
     <Container size="large" center>
@@ -205,8 +218,8 @@
 
         <AdminCard icon={mdiDevices} title={$t('authorized_devices')}>
           <Stack gap={3}>
-            {#each userSessions as session (session.id)}
-              <DeviceCard {session} />
+            {#each sessions as session (session.id)}
+              <DeviceCard {session} onDelete={() => onDeleteSession(session.id)} />
             {:else}
               <span class="text-dark">{$t('no_devices')}</span>
             {/each}

@@ -75,6 +75,7 @@ export enum OpenQueryParam {
   NOTIFICATIONS = 'notifications',
   PURCHASE_SETTINGS = 'user-purchase-settings',
   SHARING = 'sharing',
+  SERVER = 'server',
 }
 
 export const maximumLengthSearchPeople = 100;

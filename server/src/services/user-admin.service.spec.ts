@@ -21,6 +21,56 @@ describe(UserAdminService.name, () => {
     );
   });
 
+  describe('createLoginCode', () => {
+    it('should create a code for the QR code, valid for ten minutes, with the external domain', async () => {
+      const user = UserFactory.create();
+      mocks.user.get.mockResolvedValue(user);
+      mocks.systemMetadata.get.mockResolvedValue({ server: { externalDomain: 'https://photos.example.com' } });
+      mocks.session.createLoginCode.mockResolvedValue();
+
+      const before = Date.now();
+      const { url, server, expiresAt } = await sut.createLoginCode(authStub.admin, user.id);
+
+      const link = new URL(url);
+      expect(link.protocol).toBe('immich:');
+      expect(link.searchParams.get('server')).toBe('https://photos.example.com');
+      expect(link.searchParams.get('code')).toBeTruthy();
+      expect(server).toBe('https://photos.example.com');
+      expect(new Date(expiresAt).getTime() - before).toBeGreaterThanOrEqual(10 * 60 * 1000 - 1000);
+      expect(new Date(expiresAt).getTime() - before).toBeLessThanOrEqual(10 * 60 * 1000 + 1000);
+      // only its hash is stored
+      expect(mocks.session.createLoginCode).toHaveBeenCalledWith({
+        code: expect.any(Buffer),
+        userId: user.id,
+        createdById: authStub.admin.user.id,
+        expiresAt: expect.any(Date),
+      });
+      expect(mocks.crypto.hashSha256).toHaveBeenCalledWith(link.searchParams.get('code'));
+    });
+
+    it('should need the external domain, which the phone signs in to', async () => {
+      mocks.user.get.mockResolvedValue(UserFactory.create());
+
+      await expect(sut.createLoginCode(authStub.admin, 'user-id')).rejects.toThrow('external domain');
+      expect(mocks.session.createLoginCode).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteSession', () => {
+    it('should end a session of the user, and only of the user', async () => {
+      mocks.session.getByUserId.mockResolvedValue([{ id: 'session-1' }] as never);
+      mocks.session.delete.mockResolvedValue();
+
+      await sut.deleteSession(authStub.admin, 'user-id', 'session-1');
+      expect(mocks.session.delete).toHaveBeenCalledWith('session-1');
+      expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'session-1' });
+
+      await expect(sut.deleteSession(authStub.admin, 'user-id', 'session-2')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+  });
+
   describe('create', () => {
     it('should not create a user if there is no local admin account', async () => {
       mocks.user.getAdmin.mockResolvedValueOnce(void 0);

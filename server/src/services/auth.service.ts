@@ -22,6 +22,7 @@ import {
   mapLoginResponse,
 } from 'src/dtos/auth.dto.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
+import { LoginCodeDto } from 'src/dtos/login-code.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { AuthType, ImmichCookie, ImmichHeader, ImmichQuery, JobName, Permission } from 'src/enum.js';
 import { OAuthProfile } from 'src/repositories/oauth.repository.js';
@@ -83,6 +84,21 @@ export class AuthService extends BaseService {
       throw new UnauthorizedException('Incorrect email or password');
     }
 
+    return this.createLoginResponse(user, details);
+  }
+
+  /**
+   * Sign in with a one-time code an administrator showed as a QR code (see UserAdminService.createLoginCode): the
+   * session is like one of a password sign-in, which the user and administrators can end in the list of devices
+   */
+  async loginWithCode({ code }: LoginCodeDto, details: LoginDetails) {
+    const userId = await this.sessionRepository.useLoginCode(this.cryptoRepository.hashSha256(code));
+    const user = userId ? await this.userRepository.get(userId, { withDeleted: false }) : undefined;
+    if (!user) {
+      this.logger.warn(`Failed login with a code from ip address ${details.clientIp}`);
+      throw new UnauthorizedException('The code is not valid, or expired');
+    }
+    this.logger.log(`${user.email} signed in with a code from ip address ${details.clientIp}`);
     return this.createLoginResponse(user, details);
   }
 

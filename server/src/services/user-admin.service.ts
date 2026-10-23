@@ -3,6 +3,7 @@ import { SALT_ROUNDS } from 'src/constants.js';
 import { AssetStatsDto, AssetStatsResponseDto, mapStats } from 'src/dtos/asset.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calendar-heatmap.dto.js';
+import { LoginCodeResponseDto } from 'src/dtos/login-code.dto.js';
 import { SessionResponseDto, mapSession } from 'src/dtos/session.dto.js';
 import { UserPreferencesResponseDto, UserPreferencesUpdateDto, mapPreferences } from 'src/dtos/user-preferences.dto.js';
 import {
@@ -19,6 +20,9 @@ import { BaseService } from 'src/services/base.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
 import { findOrFail } from 'src/utils/misc.js';
 import { getPreferences, getPreferencesPartial, mergePreferences } from 'src/utils/preferences.js';
+
+/** A code to sign a phone in is shown for a short time and used right away; fixed in code */
+const LOGIN_CODE_LIFETIME_MS = 10 * 60 * 1000;
 
 @Injectable()
 export class UserAdminService extends BaseService {
@@ -133,6 +137,47 @@ export class UserAdminService extends BaseService {
   async getSessions(auth: AuthDto, id: string): Promise<SessionResponseDto[]> {
     const sessions = await this.sessionRepository.getByUserId(id);
     return sessions.map((session) => mapSession(session));
+  }
+
+  /**
+   * A one-time code to sign a user's phone in, shown as a QR code that the mobile app scans: it holds the server (the
+   * external domain of the settings) and a code that is valid for a few minutes, once. The phone gets a session of its
+   * own; the user's password is not in it.
+   */
+  async createLoginCode(auth: AuthDto, id: string): Promise<LoginCodeResponseDto> {
+    const user = await this.findOrFail(id, { withDeleted: false });
+    const { server } = await this.getConfig({ withCache: false });
+    if (!server.externalDomain) {
+      throw new BadRequestException(
+        'Set the external domain in the server settings first: it is the address the mobile app signs in to',
+      );
+    }
+
+    const code = this.cryptoRepository.randomBytesAsText(32);
+    const expiresAt = new Date(Date.now() + LOGIN_CODE_LIFETIME_MS);
+    await this.sessionRepository.createLoginCode({
+      code: this.cryptoRepository.hashSha256(code),
+      userId: user.id,
+      createdById: auth.user.id,
+      expiresAt,
+    });
+    this.logger.log(`${auth.user.email} showed a code to sign in ${user.email}`);
+
+    const url = new URL('immich://login');
+    url.searchParams.set('server', server.externalDomain);
+    url.searchParams.set('code', code);
+    return { url: url.href, server: server.externalDomain, expiresAt: expiresAt.toISOString() };
+  }
+
+  /** End a session of a user, e.g. of a phone that was lost */
+  async deleteSession(auth: AuthDto, id: string, sessionId: string): Promise<void> {
+    const sessions = await this.sessionRepository.getByUserId(id);
+    if (sessions.every((session) => session.id !== sessionId)) {
+      throw new BadRequestException('The session is not one of the user');
+    }
+    await this.sessionRepository.delete(sessionId);
+    await this.eventRepository.emit('SessionDelete', { sessionId });
+    this.logger.log(`${auth.user.email} ended a session of user ${id}`);
   }
 
   async getStatistics(auth: AuthDto, id: string, dto: AssetStatsDto): Promise<AssetStatsResponseDto> {
