@@ -1,6 +1,7 @@
 import {
   acknowledgeStorageIssue,
   cancelStorageExport,
+  exportStorageMasterKeys,
   fetchStoredDatabaseBackup,
   importDeletedOriginal,
   purgeDeletedOriginal,
@@ -12,6 +13,7 @@ import {
 } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { DateTime } from 'luxon';
+import { downloadBlob } from '$lib/utils';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
@@ -130,6 +132,20 @@ export const handlePurgeDeletedOriginal = async (id: string, password: string) =
     return true;
   } catch (error) {
     handleError(error, $t('errors.unable_to_purge_deleted_original'));
+    return false;
+  }
+};
+
+/** Download the master keys as a key file, after the administrator confirmed their password; whether it was given */
+export const handleDownloadMasterKeys = async (password: string) => {
+  const $t = await getFormatter();
+  try {
+    const { fileName, keyFile } = await exportStorageMasterKeys({ storageMasterKeyExportDto: { password } });
+    downloadBlob(new Blob([keyFile], { type: 'text/plain' }), fileName);
+    toastManager.info($t('admin.storage_master_key_downloaded'));
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_download_master_keys'));
     return false;
   }
 };

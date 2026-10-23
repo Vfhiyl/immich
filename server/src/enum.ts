@@ -407,6 +407,7 @@ export enum SystemMetadataKey {
   SyncDeleteRetention = 'sync-delete-retention',
   StorageBudgetReminders = 'storage-budget-reminders',
   StorageExportState = 'storage-export-state',
+  StorageMasterKeySaved = 'storage-master-key-saved',
 }
 
 export enum UserMetadataKey {

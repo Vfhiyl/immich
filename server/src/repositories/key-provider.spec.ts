@@ -90,6 +90,20 @@ describe(MasterKeys.name, () => {
     });
   });
 
+  describe('toKeyFile', () => {
+    it('should write the keys as a key file holds them, the current one first, to read back the same', async () => {
+      const current = generateMasterKey();
+      const previous = generateMasterKey();
+      const sut = MasterKeys.fromFile(await writeKeyFile(`${current}\n${previous}\n`));
+
+      const text = sut.toKeyFile();
+      expect(text.split('\n').filter((line) => line && !line.startsWith('#'))).toEqual([current, previous]);
+      const copy = MasterKeys.fromFile(await writeKeyFile(text));
+      expect(copy.currentKeyId).toEqual(sut.currentKeyId);
+      expect(copy.getKey(getMasterKeyId(Buffer.from(previous, 'base64')))).toEqual(Buffer.from(previous, 'base64'));
+    });
+  });
+
   describe('writeNewMasterKey', () => {
     it('should create a key file that only its owner can read', async () => {
       const path = join(folder, 'master.key');

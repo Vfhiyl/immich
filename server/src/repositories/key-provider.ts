@@ -17,7 +17,17 @@ export interface KeyProvider {
   readonly currentKeyId: Buffer;
   getKey(id: Buffer): Buffer;
   hasKey(id: Buffer): boolean;
+  /** The keys as a key file holds them, to keep a copy of */
+  toKeyFile(): string;
+  /** Where the keys come from: a key file, or a command (e.g. of a key management service) */
+  readonly source?: MasterKeySource;
 }
+
+export type MasterKeySource = 'file' | 'command';
+
+const KEY_FILE_HEADER =
+  '# Immich master keys: the first one encrypts new files, the others are needed to read older ones.\n' +
+  '# Keep a copy apart from the storage and the database; without it, encrypted files cannot be read.\n';
 
 export const getMasterKeyId = (key: Buffer) =>
   createHash('sha256').update('immich master key id').update(key).digest().subarray(0, MASTER_KEY_ID_LENGTH);
@@ -36,7 +46,7 @@ export class MasterKeys implements KeyProvider {
    * storage and the database.
    */
   static fromFile(path: string) {
-    return MasterKeys.fromText(readFileSync(path, 'utf8'), `The master key file ${path}`);
+    return MasterKeys.fromText(readFileSync(path, 'utf8'), `The master key file ${path}`, 'file');
   }
 
   /**
@@ -59,30 +69,34 @@ export class MasterKeys implements KeyProvider {
         cause: error,
       });
     }
-    return MasterKeys.fromText(output, `The output of the master key command ${program}`);
+    return MasterKeys.fromText(output, `The output of the master key command ${program}`, 'command');
   }
 
-  private static fromText(text: string, source: string) {
+  private static fromText(text: string, description: string, source: MasterKeySource) {
     const lines = text
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith('#'));
     if (lines.length === 0) {
-      throw new Error(`${source} holds no key`);
+      throw new Error(`${description} holds no key`);
     }
 
     return new MasterKeys(
       lines.map((line) => {
         const key = Buffer.from(line, 'base64');
         if (key.length !== MASTER_KEY_LENGTH || key.toString('base64') !== line) {
-          throw new Error(`${source} holds a line that is not a base64 encoded 256-bit key`);
+          throw new Error(`${description} holds a line that is not a base64 encoded 256-bit key`);
         }
         return key;
       }),
+      source,
     );
   }
 
-  constructor(keys: Buffer[]) {
+  constructor(
+    keys: Buffer[],
+    readonly source?: MasterKeySource,
+  ) {
     if (keys.length === 0 || keys.some((key) => key.length !== MASTER_KEY_LENGTH)) {
       throw new Error('Master keys must be 256-bit keys, and there must be at least one');
     }
@@ -95,6 +109,15 @@ export class MasterKeys implements KeyProvider {
 
   hasKey(id: Buffer): boolean {
     return this.keys.has(id.toString('hex'));
+  }
+
+  toKeyFile(): string {
+    // the current key first, as it was read
+    return `${KEY_FILE_HEADER}${this.keys
+      .values()
+      .map((key) => key.toString('base64'))
+      .toArray()
+      .join('\n')}\n`;
   }
 
   getKey(id: Buffer): Buffer {
@@ -114,7 +137,7 @@ export class MasterKeys implements KeyProvider {
 export const writeNewMasterKey = async (path: string, { rotate = false } = {}) => {
   const key = generateMasterKey();
   const id = getMasterKeyId(Buffer.from(key, 'base64')).toString('hex');
-  const header = `# Immich master keys: the first one encrypts new files, the others are needed to read older ones.\n# Keep a copy apart from the storage and the database; without it, encrypted files cannot be read.\n`;
+  const header = KEY_FILE_HEADER;
 
   if (!rotate) {
     await writeFile(path, `${header}${key}\n`, { flag: 'wx', mode: 0o600 });

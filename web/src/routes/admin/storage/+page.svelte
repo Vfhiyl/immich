@@ -1,5 +1,6 @@
 <script lang="ts">
   import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
+  import MasterKeyBackup from '$lib/components/storage/MasterKeyBackup.svelte';
   import { Route } from '$lib/route';
   import StorageExportSection from './StorageExportSection.svelte';
   import {
@@ -101,10 +102,16 @@
               retention: data.configuration.syncDeleteRetentionDays ?? $t('admin.storage_forever'),
             },
           })}
-          {#if data.configuration.masterKeyId}
-            {$t('admin.storage_master_key', { values: { id: data.configuration.masterKeyId } })}
-          {/if}
         </Text>
+        {#if data.configuration.masterKeyId}
+          <div class="mt-4">
+            <MasterKeyBackup
+              keyId={data.configuration.masterKeyId}
+              source={data.configuration.masterKeySource}
+              savedAt={data.configuration.masterKeySavedAt}
+            />
+          </div>
+        {/if}
       {/if}
     </section>
 

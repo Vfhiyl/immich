@@ -589,6 +589,9 @@ export type StorageConfigurationResponseDto = {
     deletionDelayDays: number;
     /** Id of the master key that encrypts new files */
     masterKeyId: string | null;
+    /** When an administrator last downloaded the current master key, null if never (or before a key change) */
+    masterKeySavedAt: string | null;
+    masterKeySource: (StorageMasterKeySource) | null;
     /** How long records of deletions are kept, null for forever */
     syncDeleteRetentionDays: number | null;
 };
@@ -744,6 +747,18 @@ export type StorageExportResponseDto = {
 export type StorageExportStartDto = {
     /** Only export the originals of these users; all by default */
     userIds?: string[];
+};
+export type StorageMasterKeyExportDto = {
+    /** Password of the administrator, to confirm */
+    password: string;
+};
+export type StorageMasterKeyExportResponseDto = {
+    /** A name for the key file */
+    fileName: string;
+    /** The master keys as a key file holds them */
+    keyFile: string;
+    /** Id of the current master key */
+    keyId: string;
 };
 export type StorageReplicaListResponseDto = {
     /** When the replicas were last reconciled */
@@ -4740,6 +4755,21 @@ export function cancelStorageExport(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Download the master keys
+ */
+export function exportStorageMasterKeys({ storageMasterKeyExportDto }: {
+    storageMasterKeyExportDto: StorageMasterKeyExportDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageMasterKeyExportResponseDto;
+    }>("/admin/storage/master-keys/export", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: storageMasterKeyExportDto
+    })));
+}
+/**
  * List the replicas
  */
 export function getStorageReplicas(opts?: Oazapfts.RequestOpts) {
@@ -8696,6 +8726,10 @@ export enum StorageBackendRole {
     Derived = "derived",
     Backup = "backup",
     Replica = "replica"
+}
+export enum StorageMasterKeySource {
+    File = "file",
+    Command = "command"
 }
 export enum StorageCheckKind {
     Reconcile = "reconcile",

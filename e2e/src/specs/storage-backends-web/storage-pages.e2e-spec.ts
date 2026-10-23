@@ -20,6 +20,9 @@ const webpPath = join(testAssetDir, 'formats/webp/denali.webp');
 
 type Assets = { assets: { items: Array<{ id: string; originalFileName: string }> } };
 
+/** The keys of a master key file, without its comments */
+const keysOf = (text: string) => text.split('\n').filter((line) => line && !line.startsWith('#'));
+
 /** A row of the table on the page that names the file */
 const rowOf = (page: Page, text: string) => page.getByRole('row').filter({ hasText: text });
 
@@ -88,7 +91,39 @@ test.describe('storage pages', () => {
     await expect(rowOf(page, 'replica').first()).toContainText('replica (originals, backup)');
     await expect(configuration.locator('input, select, textarea')).toHaveCount(0);
     await expect(page.getByText(/Deleted originals are kept for 360 days/)).toBeVisible();
-    await expect(page.getByText(/Master key [0-9a-f]+\./)).toBeVisible();
+    await expect(page.getByText(/Master key [0-9a-f]+ has not been downloaded yet/)).toBeVisible();
+  });
+
+  test('downloads the master key after the password was confirmed, and stops warning', async ({ page }) => {
+    await page.goto('/admin/storage');
+    await expect(page.getByText(/Master key [0-9a-f]+ has not been downloaded yet/)).toBeVisible();
+
+    await page.getByRole('button', { name: 'Download master key' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Confirm password').fill('wrong');
+    await dialog.getByRole('button', { name: 'Download master key' }).click();
+    await expect(page.getByText('Wrong password')).toBeVisible();
+
+    await dialog.getByLabel('Confirm password').fill('admin');
+    const download = page.waitForEvent('download');
+    await dialog.getByRole('button', { name: 'Download master key' }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toMatch(/^immich-master-keys-[0-9a-f]+\.txt$/);
+    const downloaded = await readFile(await file.path(), 'utf8');
+    expect(keysOf(downloaded)).toEqual(keysOf(await readFile(environment.masterKeyFile, 'utf8')));
+
+    await expect(page.getByText(/Master key [0-9a-f]+ was last downloaded/)).toBeVisible();
+    await page.reload();
+    await expect(page.getByText(/Master key [0-9a-f]+ was last downloaded/)).toBeVisible();
+    // every administrator is told
+    const { body } = await api.json<Array<{ title: string }>>('/notifications');
+    expect(body.map(({ title }) => title)).toContain('The master keys were downloaded');
+  });
+
+  test('asks to save the master key while the server is set up', async ({ page }) => {
+    await page.goto('/auth/onboarding?step=master_key');
+    await expect(page.getByText('Download a copy of the master key now')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Download master key' })).toBeVisible();
   });
 
   test('uploads a large photo in parts, going on when the connection breaks', async ({ page }) => {

@@ -619,6 +619,8 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   /** The reminders about budgets sent, by backend: `<month>:projected` and `<month>:exceeded` */
   [SystemMetadataKey.StorageBudgetReminders]: Record<string, string[]>;
   [SystemMetadataKey.StorageExportState]: StorageExportState;
+  /** When an administrator last downloaded the master keys, for the current key */
+  [SystemMetadataKey.StorageMasterKeySaved]: { keyId: string; savedAt: string; userId: string };
 }
 
 export type UserPreferences = {

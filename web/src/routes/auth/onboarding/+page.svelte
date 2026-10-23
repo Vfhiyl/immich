@@ -5,6 +5,7 @@
   import OnboardingCard from './OnboardingCard.svelte';
   import OnboardingHello from './OnboardingHello.svelte';
   import OnboardingLocale from './OnboardingLanguage.svelte';
+  import OnboardingMasterKey from './OnboardingMasterKey.svelte';
   import OnboardingMobileApp from './OnboardingMobileApp.svelte';
   import OnboardingServerPrivacy from './OnboardingServerPrivacy.svelte';
   import OnboardingStorageTemplate from './OnboardingStorageTemplate.svelte';
@@ -15,12 +16,13 @@
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { Route } from '$lib/route';
   import { OnboardingRole } from '$lib/types';
-  import { setUserOnboarding, updateAdminOnboarding } from '@immich/sdk';
+  import { getStorageConfiguration, setUserOnboarding, updateAdminOnboarding } from '@immich/sdk';
   import {
     mdiCellphoneArrowDownVariant,
     mdiCloudCheckOutline,
     mdiHarddisk,
     mdiIncognito,
+    mdiKeyOutline,
     mdiThemeLightDark,
     mdiTranslate,
   } from '@mdi/js';
@@ -36,11 +38,15 @@
       | typeof OnboardingServerPrivacy
       | typeof OnboardingUserPrivacy
       | typeof OnboardingMobileApp
-      | typeof OnboardingLocale;
+      | typeof OnboardingLocale
+      | typeof OnboardingMasterKey;
     role: OnboardingRole;
     title?: string;
     icon?: string;
   }
+
+  // only for a server with encrypted storage: its master key must be kept apart from it
+  let hasMasterKey = $state(false);
 
   const onboardingSteps: OnboardingStep[] = $derived([
     { name: 'hello', component: OnboardingHello, role: OnboardingRole.USER },
@@ -86,6 +92,17 @@
       title: $t('admin.backup_onboarding_title'),
       icon: mdiCloudCheckOutline,
     },
+    ...(hasMasterKey
+      ? [
+          {
+            name: 'master_key',
+            component: OnboardingMasterKey,
+            role: OnboardingRole.SERVER,
+            title: $t('admin.storage_master_key_onboarding_title'),
+            icon: mdiKeyOutline,
+          },
+        ]
+      : []),
     {
       name: 'mobile_app',
       component: OnboardingMobileApp,
@@ -156,6 +173,12 @@
   onMount(async () => {
     if (userRole === OnboardingRole.SERVER) {
       await systemConfigManager.init();
+      try {
+        const { masterKeyId } = await getStorageConfiguration();
+        hasMasterKey = !!masterKeyId;
+      } catch {
+        // without the storage configuration, the step is left out
+      }
     }
   });
 </script>

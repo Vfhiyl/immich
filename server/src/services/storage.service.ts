@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { chunk, partition } from 'lodash-es';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -7,8 +7,14 @@ import type { JobOf, SystemFlags } from 'src/types.js';
 import { ErrorMessages } from 'src/constants.js';
 import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import { mapNotification } from 'src/dtos/notification.dto.js';
 import { StorageBackendConfig, StorageBackendsConfig, describeKeySource } from 'src/dtos/storage-backend-config.dto.js';
-import { StorageConfigurationResponseDto } from 'src/dtos/storage-backend.dto.js';
+import {
+  StorageConfigurationResponseDto,
+  StorageMasterKeyExportDto,
+  StorageMasterKeyExportResponseDto,
+} from 'src/dtos/storage-backend.dto.js';
 import {
   BootstrapEventPriority,
   BuiltinStorageBackend,
@@ -16,6 +22,8 @@ import {
   ImmichWorker,
   JobName,
   JobStatus,
+  NotificationLevel,
+  NotificationType,
   QueueName,
   StorageFolder,
   SystemMetadataKey,
@@ -231,11 +239,56 @@ export class StorageService extends BaseService {
   }
 
   /** The storage configuration, as administrators may see it */
-  getConfiguration(): StorageConfigurationResponseDto {
+  async getConfiguration(): Promise<StorageConfigurationResponseDto> {
+    const configuration = this.storageBackendRepository.describeConfiguration();
+    const saved = await this.systemMetadataRepository.get(SystemMetadataKey.StorageMasterKeySaved);
     return {
-      ...this.storageBackendRepository.describeConfiguration(),
+      ...configuration,
+      // a new current key has not been saved yet
+      masterKeySavedAt: saved && saved.keyId === configuration.masterKeyId ? saved.savedAt : null,
       syncDeleteRetentionDays: this.configRepository.getEnv().sync.deleteRetentionDays,
     };
+  }
+
+  /**
+   * The master keys as a key file, for an administrator to keep a copy apart from the server: without them, encrypted
+   * files cannot be read. Only after the administrator confirmed their password; every administrator is told.
+   */
+  async exportMasterKeys(
+    auth: AuthDto,
+    { password }: StorageMasterKeyExportDto,
+  ): Promise<StorageMasterKeyExportResponseDto> {
+    const user = await this.userRepository.getForChangePassword(auth.user.id);
+    if (!user.password || !this.cryptoRepository.compareBcrypt(password, user.password)) {
+      throw new UnauthorizedException('Wrong password');
+    }
+    const exported = this.storageBackendRepository.exportMasterKeys();
+    if (!exported) {
+      throw new BadRequestException('No master keys are configured');
+    }
+
+    const savedAt = new Date().toISOString();
+    await this.systemMetadataRepository.set(SystemMetadataKey.StorageMasterKeySaved, {
+      keyId: exported.keyId,
+      savedAt,
+      userId: auth.user.id,
+    });
+    this.logger.warn(`The master keys (current key ${exported.keyId}) were downloaded by ${auth.user.email}`);
+    for (const admin of await this.userRepository.getList({ withDeleted: false })) {
+      if (!admin.isAdmin) {
+        continue;
+      }
+      const notification = await this.notificationRepository.create({
+        userId: admin.id,
+        type: NotificationType.SystemMessage,
+        level: NotificationLevel.Warning,
+        title: 'The master keys were downloaded',
+        description: `${auth.user.email} downloaded the master keys at ${savedAt}. If this was not expected, change the password of that account.`,
+      });
+      this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(notification));
+    }
+
+    return { keyId: exported.keyId, fileName: `immich-master-keys-${exported.keyId}.txt`, keyFile: exported.keyFile };
   }
 
   /** Check that a backend accepts writes and returns what was written (encrypted, if it encrypts), then remove the probe */

@@ -185,6 +185,8 @@ docker compose run --rm immich-server 'immich-encryption generate-key /config/im
 **Without the master key file, encrypted photos cannot be read, by anyone, ever.** Keep at least two copies offline, in different places, away from the bucket and the server: printed on paper, in a password manager, on a USB stick in a safe. Immich refuses to start if the key file lost a key that encrypted files.
 :::
 
+Administrators can also download the master keys in the web app: in the first-run setup, and any time on **Administration → Storage**, after entering their password. Every administrator is notified of a download. The storage page warns until the current key was downloaded, and again after a key change (the downloaded file then holds the new key and the older ones).
+
 To replace the key, add a new one; the old keys must stay in the file, since the files they encrypted keep using them:
 
 ```bash

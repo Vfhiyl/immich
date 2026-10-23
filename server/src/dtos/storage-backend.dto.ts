@@ -12,6 +12,11 @@ export const ReplicatedRoleSchema = z
   .describe('A role whose backends replicas can copy')
   .meta({ id: 'StorageReplicatedRole' });
 
+const StorageMasterKeySourceSchema = z
+  .enum(['file', 'command'])
+  .describe('Where the master keys come from: a key file, or a command such as one of a key management service')
+  .meta({ id: 'StorageMasterKeySource' });
+
 const StorageBackendSchema = z.object({
   id: z.string().describe('Id of the storage backend'),
   role: StorageBackendRoleSchema,
@@ -26,6 +31,11 @@ const StorageConfigurationResponseSchema = z
   .object({
     backends: z.array(StorageBackendSchema),
     masterKeyId: z.string().nullable().describe('Id of the master key that encrypts new files'),
+    masterKeySource: StorageMasterKeySourceSchema.nullable(),
+    masterKeySavedAt: z.iso
+      .datetime()
+      .nullable()
+      .describe('When an administrator last downloaded the current master key, null if never (or before a key change)'),
     deletionDelayDays: z.int().describe('How long deleted originals are kept before they are deleted'),
     databaseBackupsKeepLast: z.int().describe('How many database backups the backend for backups keeps'),
     syncDeleteRetentionDays: z.int().nullable().describe('How long records of deletions are kept, null for forever'),
@@ -33,3 +43,20 @@ const StorageConfigurationResponseSchema = z
   .meta({ id: 'StorageConfigurationResponseDto' });
 
 export class StorageConfigurationResponseDto extends createZodDto(StorageConfigurationResponseSchema) {}
+
+const StorageMasterKeyExportSchema = z
+  .object({
+    password: z.string().min(1).describe('Password of the administrator, to confirm'),
+  })
+  .meta({ id: 'StorageMasterKeyExportDto' });
+
+const StorageMasterKeyExportResponseSchema = z
+  .object({
+    keyId: z.string().describe('Id of the current master key'),
+    fileName: z.string().describe('A name for the key file'),
+    keyFile: z.string().describe('The master keys as a key file holds them'),
+  })
+  .meta({ id: 'StorageMasterKeyExportResponseDto' });
+
+export class StorageMasterKeyExportDto extends createZodDto(StorageMasterKeyExportSchema) {}
+export class StorageMasterKeyExportResponseDto extends createZodDto(StorageMasterKeyExportResponseSchema) {}

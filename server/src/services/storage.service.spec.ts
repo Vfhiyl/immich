@@ -416,7 +416,7 @@ describe(StorageService.name, () => {
   });
 
   describe('getConfiguration', () => {
-    it('should describe the backends without their credentials', () => {
+    it('should describe the backends without their credentials', async () => {
       mocks.storageBackend.configure(
         [
           {
@@ -444,7 +444,7 @@ describe(StorageService.name, () => {
         { delayDays: 720 },
       );
 
-      const configuration = sut.getConfiguration();
+      const configuration = await sut.getConfiguration();
 
       expect(configuration).toEqual({
         backends: [
@@ -468,11 +468,91 @@ describe(StorageService.name, () => {
           },
         ],
         masterKeyId: null,
+        masterKeySource: null,
+        masterKeySavedAt: null,
         deletionDelayDays: 720,
         databaseBackupsKeepLast: 14,
         syncDeleteRetentionDays: 365,
       });
       expect(JSON.stringify(configuration)).not.toMatch(/profile/);
+    });
+
+    it('should tell when the current master key was saved, but not for a key saved before a key change', async () => {
+      const keys = new MasterKeys([randomBytes(32)], 'command');
+      const keyId = keys.currentKeyId.toString('hex');
+      mocks.storageBackend.configure([], keys);
+      mocks.systemMetadata.get.mockResolvedValue({ keyId, savedAt: '2026-10-23T00:00:00.000Z', userId: 'admin' });
+
+      await expect(sut.getConfiguration()).resolves.toMatchObject({
+        masterKeyId: keyId,
+        masterKeySource: 'command',
+        masterKeySavedAt: '2026-10-23T00:00:00.000Z',
+      });
+
+      mocks.systemMetadata.get.mockResolvedValue({
+        keyId: 'an older key',
+        savedAt: '2026-01-01T00:00:00.000Z',
+        userId: 'admin',
+      });
+      await expect(sut.getConfiguration()).resolves.toMatchObject({ masterKeySavedAt: null });
+    });
+  });
+
+  describe('exportMasterKeys', () => {
+    const auth = { user: { id: 'admin-id', email: 'admin@example.com' } } as never;
+
+    beforeEach(() => {
+      mocks.user.getForChangePassword.mockResolvedValue({ id: 'admin-id', password: 'hash' } as never);
+      mocks.user.getList.mockResolvedValue([
+        { id: 'admin-id', isAdmin: true },
+        { id: 'other-admin', isAdmin: true },
+        { id: 'user', isAdmin: false },
+      ] as never);
+      mocks.notification.create.mockImplementation((notification) =>
+        Promise.resolve({ ...notification, id: 'notification', createdAt: new Date() } as never),
+      );
+    });
+
+    it('should give the key file after the password was confirmed, record it and tell every administrator', async () => {
+      const keys = new MasterKeys([randomBytes(32), randomBytes(32)], 'file');
+      const keyId = keys.currentKeyId.toString('hex');
+      mocks.storageBackend.configure([], keys);
+      mocks.crypto.compareBcrypt.mockReturnValue(true);
+
+      const exported = await sut.exportMasterKeys(auth, { password: 'secret' });
+
+      expect(exported).toEqual({ keyId, fileName: `immich-master-keys-${keyId}.txt`, keyFile: keys.toKeyFile() });
+      expect(mocks.crypto.compareBcrypt).toHaveBeenCalledWith('secret', 'hash');
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.StorageMasterKeySaved, {
+        keyId,
+        savedAt: expect.any(String),
+        userId: 'admin-id',
+      });
+      expect(mocks.notification.create).toHaveBeenCalledTimes(2);
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'other-admin', title: 'The master keys were downloaded' }),
+      );
+    });
+
+    it('should not give the keys for a wrong password, nor without a password', async () => {
+      mocks.storageBackend.configure([], new MasterKeys([randomBytes(32)]));
+      mocks.crypto.compareBcrypt.mockReturnValue(false);
+      await expect(sut.exportMasterKeys(auth, { password: 'wrong' })).rejects.toThrow('Wrong password');
+
+      // e.g. an administrator who only signs in with OAuth
+      mocks.user.getForChangePassword.mockResolvedValue({ id: 'admin-id', password: '' } as never);
+      mocks.crypto.compareBcrypt.mockReturnValue(true);
+      await expect(sut.exportMasterKeys(auth, { password: 'anything' })).rejects.toThrow('Wrong password');
+
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+      expect(mocks.notification.create).not.toHaveBeenCalled();
+    });
+
+    it('should tell that there are no master keys', async () => {
+      mocks.storageBackend.configure([]);
+      mocks.crypto.compareBcrypt.mockReturnValue(true);
+
+      await expect(sut.exportMasterKeys(auth, { password: 'secret' })).rejects.toThrow('No master keys are configured');
     });
   });
 

@@ -2380,6 +2380,63 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/storage/master-keys/export": {
+      "post": {
+        "description": "The master keys as a key file, to keep a copy apart from the server, after the administrator confirmed their password; every administrator is notified",
+        "operationId": "exportStorageMasterKeys",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageMasterKeyExportDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMasterKeyExportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download the master keys",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/storage/replicas": {
       "get": {
         "description": "Each replica with what it copies, what is copied and what waits, and the last reconciliation",
@@ -31658,6 +31715,21 @@
             "nullable": true,
             "type": "string"
           },
+          "masterKeySavedAt": {
+            "description": "When an administrator last downloaded the current master key, null if never (or before a key change)",
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "masterKeySource": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageMasterKeySource"
+              }
+            ],
+            "nullable": true
+          },
           "syncDeleteRetentionDays": {
             "description": "How long records of deletions are kept, null for forever",
             "maximum": 9007199254740991,
@@ -31671,6 +31743,8 @@
           "databaseBackupsKeepLast",
           "deletionDelayDays",
           "masterKeyId",
+          "masterKeySavedAt",
+          "masterKeySource",
           "syncDeleteRetentionDays"
         ],
         "type": "object"
@@ -32122,6 +32196,49 @@
           "items"
         ],
         "type": "object"
+      },
+      "StorageMasterKeyExportDto": {
+        "properties": {
+          "password": {
+            "description": "Password of the administrator, to confirm",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "type": "object"
+      },
+      "StorageMasterKeyExportResponseDto": {
+        "properties": {
+          "fileName": {
+            "description": "A name for the key file",
+            "type": "string"
+          },
+          "keyFile": {
+            "description": "The master keys as a key file holds them",
+            "type": "string"
+          },
+          "keyId": {
+            "description": "Id of the current master key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileName",
+          "keyFile",
+          "keyId"
+        ],
+        "type": "object"
+      },
+      "StorageMasterKeySource": {
+        "description": "Where the master keys come from: a key file, or a command such as one of a key management service",
+        "enum": [
+          "file",
+          "command"
+        ],
+        "type": "string"
       },
       "StoragePurposeUsageDto": {
         "properties": {

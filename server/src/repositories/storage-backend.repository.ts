@@ -381,9 +381,15 @@ export class StorageBackendRepository {
         }))
         .toArray(),
       masterKeyId: this.keys?.currentKeyId.toString('hex') ?? null,
+      masterKeySource: this.keys?.source ?? null,
       deletionDelayDays: this.originalsDeletionDelayDays,
       databaseBackupsKeepLast: this.databaseBackupsKeepLast,
     };
+  }
+
+  /** The master keys as a key file holds them, to keep a copy of; undefined without master keys */
+  exportMasterKeys(): { keyId: string; keyFile: string } | undefined {
+    return this.keys && { keyId: this.keys.currentKeyId.toString('hex'), keyFile: this.keys.toKeyFile() };
   }
 
   /** The configured backends, with their role */
