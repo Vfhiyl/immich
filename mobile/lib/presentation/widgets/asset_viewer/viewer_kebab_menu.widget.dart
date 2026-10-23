@@ -11,6 +11,7 @@ import 'package:immich_mobile/providers/infrastructure/timeline.provider.dart';
 import 'package:immich_mobile/providers/routes.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/utils/action_button.utils.dart';
+import 'package:immich_mobile/utils/url_helper.dart';
 import 'package:immich_ui/immich_ui.dart';
 
 class ViewerKebabMenu extends ConsumerWidget {
@@ -45,6 +46,7 @@ class ViewerKebabMenu extends ConsumerWidget {
       source: ActionSource.viewer,
       isCasting: isCasting,
       timelineOrigin: timelineOrigin,
+      isServerHidden: isServerHidden(),
     );
 
     final menuChildren = ActionButtonBuilder.buildViewerKebabMenu(actionContext, context);

@@ -42,6 +42,9 @@ class ActionButtonContext {
   final TimelineOrigin timelineOrigin;
   final int selectedCount;
 
+  /// Signed in with a QR code: nothing that shows the address of the server
+  final bool isServerHidden;
+
   const ActionButtonContext({
     required this.asset,
     required this.isOwner,
@@ -54,6 +57,7 @@ class ActionButtonContext {
     this.isCasting = false,
     this.timelineOrigin = TimelineOrigin.main,
     this.selectedCount = 1,
+    this.isServerHidden = false,
   });
 }
 
@@ -86,9 +90,11 @@ enum ActionButtonType {
     return switch (this) {
       ActionButtonType.advancedInfo => context.advancedTroubleshooting,
       ActionButtonType.share => true,
+      // not after signing in with a QR code: a link holds the address of the server
       ActionButtonType.shareLink =>
         !context.isInLockedView && //
-            context.asset.hasRemote,
+            context.asset.hasRemote &&
+            !context.isServerHidden,
       ActionButtonType.archive =>
         context.isOwner && //
             !context.isInLockedView && //
@@ -136,7 +142,8 @@ enum ActionButtonType {
             context.timelineOrigin != TimelineOrigin.trash &&
             !context.isInLockedView && //
             context.isStacked,
-      ActionButtonType.openInBrowser => context.asset.hasRemote && !context.isInLockedView,
+      // not after signing in with a QR code: the browser shows the address of the server
+      ActionButtonType.openInBrowser => context.asset.hasRemote && !context.isInLockedView && !context.isServerHidden,
       ActionButtonType.likeActivity =>
         !context.isInLockedView &&
             context.currentAlbum != null &&

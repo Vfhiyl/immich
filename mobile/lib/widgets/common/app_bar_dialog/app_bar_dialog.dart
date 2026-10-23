@@ -16,6 +16,7 @@ import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/providers/websocket.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/utils/bytes_units.dart';
+import 'package:immich_mobile/utils/url_helper.dart';
 import 'package:immich_mobile/widgets/common/app_bar_dialog/app_bar_profile_info.dart';
 import 'package:immich_mobile/widgets/common/app_bar_dialog/app_bar_server_info.dart';
 import 'package:immich_mobile/widgets/common/confirm_dialog.dart';
@@ -287,7 +288,8 @@ class ImmichAppBarDialog extends HookConsumerWidget {
                   ),
                 ),
                 if (isReadonlyModeEnabled) buildReadonlyMessage(),
-                buildAppLogButton(),
+                // not after signing in with a QR code: the logs hold the address of the server
+                if (!isServerHidden()) buildAppLogButton(),
                 buildFreeUpSpaceButton(),
                 buildSettingButton(),
                 buildSignOutButton(),

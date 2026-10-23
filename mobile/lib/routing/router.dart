@@ -76,6 +76,7 @@ import 'package:immich_mobile/providers/api.provider.dart';
 import 'package:immich_mobile/routing/auth_guard.dart';
 import 'package:immich_mobile/routing/duplicate_guard.dart';
 import 'package:immich_mobile/routing/locked_guard.dart';
+import 'package:immich_mobile/routing/server_hidden_guard.dart';
 import 'package:immich_mobile/services/api.service.dart';
 import 'package:immich_mobile/services/auth.service.dart';
 import 'package:immich_mobile/services/local_auth.service.dart';
@@ -99,6 +100,7 @@ class AppRouter extends RootStackRouter {
   late final AuthGuard _authGuard;
   late final DuplicateGuard _duplicateGuard;
   late final LockedGuard _lockedGuard;
+  late final ServerHiddenGuard _serverHiddenGuard;
 
   AppRouter(
     ApiService apiService,
@@ -108,6 +110,7 @@ class AppRouter extends RootStackRouter {
   ) {
     _authGuard = AuthGuard(apiService, authService);
     _duplicateGuard = const DuplicateGuard();
+    _serverHiddenGuard = const ServerHiddenGuard();
     _lockedGuard = LockedGuard(apiService, secureStorageService, localAuthService);
   }
 
@@ -134,11 +137,11 @@ class AppRouter extends RootStackRouter {
     AutoRoute(page: SettingsRoute.page, guards: [_duplicateGuard]),
     AutoRoute(page: SettingsSubRoute.page, guards: [_duplicateGuard]),
     AutoRoute(page: WhatsNewRoute.page, guards: [_duplicateGuard]),
-    AutoRoute(page: AppLogRoute.page, guards: [_duplicateGuard]),
+    AutoRoute(page: AppLogRoute.page, guards: [_duplicateGuard, _serverHiddenGuard]),
     AutoRoute(page: AppLogDetailRoute.page, guards: [_duplicateGuard]),
     AutoRoute(page: FolderRoute.page, guards: [_authGuard]),
-    AutoRoute(page: SharedLinkRoute.page, guards: [_authGuard, _duplicateGuard]),
-    AutoRoute(page: SharedLinkEditRoute.page, guards: [_authGuard, _duplicateGuard]),
+    AutoRoute(page: SharedLinkRoute.page, guards: [_authGuard, _duplicateGuard, _serverHiddenGuard]),
+    AutoRoute(page: SharedLinkEditRoute.page, guards: [_authGuard, _duplicateGuard, _serverHiddenGuard]),
     CustomRoute(page: MapLocationPickerRoute.page, guards: [_authGuard, _duplicateGuard]),
     AutoRoute(page: HeaderSettingsRoute.page, guards: [_duplicateGuard]),
     AutoRoute(page: ShareIntentRoute.page, guards: [_authGuard, _duplicateGuard]),

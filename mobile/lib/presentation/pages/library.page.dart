@@ -17,6 +17,7 @@ import 'package:immich_mobile/providers/server_info.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/utils/image_url_builder.dart';
+import 'package:immich_mobile/utils/url_helper.dart';
 import 'package:immich_mobile/widgets/common/immich_sliver_app_bar.dart';
 import 'package:immich_mobile/widgets/map/map_thumbnail.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
@@ -70,11 +71,13 @@ class _ActionButtonGrid extends ConsumerWidget {
             const SizedBox(height: 8),
             Row(
               children: [
-                _ActionButton(
-                  icon: Icons.link_outlined,
-                  onTap: () => context.pushRoute(const SharedLinkRoute()),
-                  label: context.t.shared_links,
-                ),
+                // not after signing in with a QR code: a link holds the address of the server
+                if (!isServerHidden())
+                  _ActionButton(
+                    icon: Icons.link_outlined,
+                    onTap: () => context.pushRoute(const SharedLinkRoute()),
+                    label: context.t.shared_links,
+                  ),
                 isTrashEnable ? const SizedBox(width: 8) : const SizedBox.shrink(),
                 isTrashEnable
                     ? _ActionButton(

@@ -189,6 +189,24 @@ void main() {
 
         expect(ActionButtonType.shareLink.shouldShow(context), isFalse);
       });
+
+      test('should not show, nor open in browser, after signing in with a QR code', () {
+        final context = ActionButtonContext(
+          asset: createRemoteAsset(),
+          isOwner: true,
+          isArchived: false,
+          isInLockedView: false,
+          currentAlbum: null,
+          advancedTroubleshooting: false,
+          isStacked: false,
+          source: ActionSource.viewer,
+          isServerHidden: true,
+        );
+
+        expect(ActionButtonType.shareLink.shouldShow(context), isFalse);
+        expect(ActionButtonType.openInBrowser.shouldShow(context), isFalse);
+        expect(ActionButtonType.share.shouldShow(context), isTrue);
+      });
     });
 
     group('archive button', () {

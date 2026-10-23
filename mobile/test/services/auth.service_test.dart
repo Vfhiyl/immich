@@ -3,7 +3,9 @@ import 'package:drift/native.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:immich_mobile/data/db/main/database.dart';
+import 'package:immich_mobile/domain/models/log.model.dart';
 import 'package:immich_mobile/domain/models/store.model.dart';
+import 'package:immich_mobile/domain/services/log.service.dart';
 import 'package:immich_mobile/domain/services/store.service.dart';
 import 'package:immich_mobile/entities/store.entity.dart';
 import 'package:immich_mobile/infrastructure/repositories/settings.repository.dart';
@@ -14,8 +16,11 @@ import 'package:immich_mobile/services/auth.service.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:openapi/api.dart';
 
+import '../infrastructure/repository.mock.dart';
 import '../repository.mocks.dart';
 import '../service.mocks.dart';
+
+class _FakeLogMessage extends Fake implements LogMessage {}
 
 void main() {
   late AuthService sut;
@@ -25,6 +30,7 @@ void main() {
   late MockNetworkService networkService;
   late MockBackgroundSyncManager backgroundSyncManager;
   late Drift db;
+  late MockLogRepository logRepository;
 
   setUp(() async {
     authApiRepository = MockAuthApiRepository();
@@ -42,6 +48,16 @@ void main() {
     db = Drift(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
     await StoreService.init(storeRepository: StoreRepository(db));
     await SettingsRepository.ensureInitialized(db);
+    logRepository = MockLogRepository();
+    when(() => logRepository.deleteAll()).thenAnswer((_) async => true);
+    registerFallbackValue(_FakeLogMessage());
+    when(() => logRepository.insert(any())).thenAnswer((_) async => true);
+    when(() => logRepository.truncate(limit: any(named: 'limit'))).thenAnswer((_) async {});
+    await LogService.init(
+      logRepository: logRepository,
+      settingsRepository: SettingsRepository.instance,
+      shouldBuffer: false,
+    );
   });
 
   tearDownAll(() async {
@@ -107,6 +123,8 @@ void main() {
       expect(Store.tryGet(StoreKey.serverEndpoint), isNull);
       expect(Store.tryGet(StoreKey.serverUrl), isNull);
       expect(Store.tryGet(StoreKey.serverHidden), isNull);
+      // the logs hold it too
+      verify(() => logRepository.deleteAll()).called(1);
     });
 
     test('keeps the address of a server that was typed in', () async {
@@ -116,6 +134,7 @@ void main() {
       await sut.clearLocalData();
 
       expect(Store.tryGet(StoreKey.serverEndpoint), 'https://photos.example.com/api');
+      verifyNever(() => logRepository.deleteAll());
     });
   });
 

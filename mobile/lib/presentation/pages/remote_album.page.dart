@@ -20,6 +20,7 @@ import 'package:immich_mobile/providers/infrastructure/timeline.provider.dart';
 import 'package:immich_mobile/providers/server_info.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
+import 'package:immich_mobile/utils/url_helper.dart';
 import 'package:immich_mobile/widgets/common/immich_toast.dart';
 import 'package:immich_mobile/widgets/common/remote_album_sliver_app_bar.dart';
 
@@ -221,7 +222,10 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
                 onAddPhotos: isOwner || isEditor ? () => addAssets(context) : null,
                 onToggleAlbumOrder: () => toggleAlbumOrder(),
                 onEditAlbum: canEdit ? () => showEditTitleAndDescription(context) : null,
-                onCreateSharedLink: () => unawaited(context.pushRoute(SharedLinkEditRoute(albumId: _album.id))),
+                // not after signing in with a QR code: a link holds the address of the server
+                onCreateSharedLink: isServerHidden()
+                    ? null
+                    : () => unawaited(context.pushRoute(SharedLinkEditRoute(albumId: _album.id))),
                 onShowOptions: () => context.pushRoute(AlbumOptionsRoute(album: _album)),
               ),
               onEditTitle: canEdit ? () => showEditTitleAndDescription(context) : null,

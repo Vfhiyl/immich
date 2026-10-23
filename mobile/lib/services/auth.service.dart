@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/settings_key.dart';
 import 'package:immich_mobile/domain/models/store.model.dart';
+import 'package:immich_mobile/domain/services/log.service.dart';
 import 'package:immich_mobile/domain/utils/background_sync.dart';
 import 'package:immich_mobile/entities/store.entity.dart';
 import 'package:immich_mobile/infrastructure/repositories/network.repository.dart';
@@ -137,6 +138,8 @@ class AuthService {
         Store.delete(StoreKey.serverEndpoint),
         Store.delete(StoreKey.serverUrl),
         Store.delete(StoreKey.serverHidden),
+        // the logs, which the login screen shows, hold the address too
+        LogService.I.clearLogs(),
       ]);
     }
     await Future.wait([

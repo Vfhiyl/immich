@@ -21,6 +21,7 @@ import 'package:immich_mobile/presentation/widgets/album/album_selector.widget.d
 import 'package:immich_mobile/presentation/widgets/bottom_sheet/base_bottom_sheet.widget.dart';
 import 'package:immich_mobile/providers/infrastructure/action.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
+import 'package:immich_mobile/utils/url_helper.dart';
 import 'package:immich_mobile/widgets/common/immich_toast.dart';
 
 class RemoteAlbumBottomSheet extends ConsumerStatefulWidget {
@@ -83,7 +84,7 @@ class _RemoteAlbumBottomSheetState extends ConsumerState<RemoteAlbumBottomSheet>
       actions: <ActionColumnButton>[
         const .new(action: AssetDebugAction(source: .timeline)),
         const .new(action: ShareAction(source: .timeline)),
-        const .new(action: ShareLinkAction(source: .timeline)),
+        if (!isServerHidden()) const .new(action: ShareLinkAction(source: .timeline)),
 
         if (ownsAlbum) ...const [
           .new(action: ArchiveAction(source: .timeline)),
