@@ -48,13 +48,11 @@
   const activeUsers = $derived(data.users.filter((user) => !user.deletedAt));
 
   const onImport = async (id: string, ownerId: string | null | undefined, fileName: string) => {
-    // the photo goes to its owner; to a user chosen here when the owner no longer exists
-    const imported = activeUsers.some((user) => user.id === ownerId)
-      ? await handleImportDeletedOriginal(id)
-      : await modalManager.show(StorageImportModal, { id, fileName, users: activeUsers });
-    if (imported) {
-      remove(id);
-    }
+    // the photo goes to its owner; to a user chosen here when the owner no longer exists. The deleted original stays
+    // until its deletion delay has passed, as the server keeps it: importing it again finds the photo it became
+    await (activeUsers.some((user) => user.id === ownerId)
+      ? handleImportDeletedOriginal(id)
+      : modalManager.show(StorageImportModal, { id, fileName, users: activeUsers }));
   };
 
   const onPurge = async (id: string, fileName: string) => {

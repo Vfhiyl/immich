@@ -1,7 +1,7 @@
 import { ContainerClient, StorageSharedKeyCredential } from '@azure/storage-blob';
 import { ChildProcess, execFile, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -16,6 +16,7 @@ import pg from 'pg';
  */
 
 const serverRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../server');
+const webBuild = resolve(serverRoot, '../web/build');
 export const testAssetDir = resolve(dirname(fileURLToPath(import.meta.url)), '../test-assets');
 
 const postgresBase = process.env.E2E_STORAGE_POSTGRES_URL ?? 'postgres://postgres:postgres@localhost:5432';
@@ -149,9 +150,13 @@ export const sha1 = (value: Buffer) => createHash('sha1').update(value).digest('
 
 /** A directory with everything one test environment writes: media location, backends and configuration */
 export class TestEnvironment {
-  static async create() {
-    const environment = new this(await mkdtemp(join(tmpdir(), 'immich-e2e-storage-')));
-    await environment.writeBuildData();
+  /**
+   * With `web`, the server serves the built web app (`web/build`), for tests in a browser. Without `configFile`, the
+   * system settings are in the database and can be changed in the web app (call `Api.configure` after the start).
+   */
+  static async create({ web = false, configFile = true } = {}) {
+    const environment = new this(await mkdtemp(join(tmpdir(), 'immich-e2e-storage-')), configFile);
+    await environment.writeBuildData(web);
     await writeFile(
       environment.configFile,
       JSON.stringify({
@@ -167,13 +172,25 @@ export class TestEnvironment {
   private backendFolders = new Map<string, string>();
   readonly database = `immich_e2e_storage_${randomUUID().slice(0, 8)}`;
 
-  private constructor(readonly root: string) {}
+  private constructor(
+    readonly root: string,
+    readonly usesConfigFile = true,
+  ) {}
 
   /** The server imports reverse geocoding data on startup; one placeholder row of each file is enough */
-  private async writeBuildData() {
+  private async writeBuildData(web: boolean) {
     const geodata = join(this.root, 'build', 'geodata');
     await mkdir(geodata, { recursive: true });
-    await mkdir(join(this.root, 'build', 'www'), { recursive: true });
+    if (web) {
+      try {
+        await access(join(webBuild, 'index.html'));
+      } catch {
+        throw new Error('The web app is not built; run `pnpm --filter immich-web build` first');
+      }
+      await symlink(webBuild, join(this.root, 'build', 'www'));
+    } else {
+      await mkdir(join(this.root, 'build', 'www'), { recursive: true });
+    }
     const files: Record<string, string> = {
       'geodata-date.txt': '2024-01-01\n',
       'admin1CodesASCII.txt': 'TS.01\tTest Region\tTest Region\t1\n',
@@ -369,7 +386,7 @@ const serverEnv = (environment: TestEnvironment, { backends = true } = {}) => ({
   REDIS_PORT: String(redisPort),
   IMMICH_PORT: String(port),
   IMMICH_MEDIA_LOCATION: environment.mediaLocation,
-  IMMICH_CONFIG_FILE: environment.configFile,
+  ...(environment.usesConfigFile && { IMMICH_CONFIG_FILE: environment.configFile }),
   IMMICH_EXPORT_LOCATION: environment.exportLocation,
   IMMICH_BUILD_DATA: join(environment.root, 'build'),
   IMMICH_LOG_LEVEL: 'log',
@@ -627,6 +644,20 @@ export class Api {
     });
     const text = await response.text();
     return { status: response.status, body: (text ? JSON.parse(text) : undefined) as T };
+  }
+
+  /** The system settings of a server without a configuration file, as the tests' configuration file has them */
+  async configure() {
+    const { body } = await this.json<Record<string, Record<string, unknown>>>('/system-config');
+    await this.json('/system-config', {
+      method: 'PUT',
+      body: {
+        ...body,
+        machineLearning: { ...body.machineLearning, enabled: false },
+        newVersionCheck: { ...body.newVersionCheck, enabled: false },
+        reverseGeocoding: { ...body.reverseGeocoding, enabled: false },
+      },
+    });
   }
 
   async deleteAssets(ids: string[]) {

@@ -181,9 +181,9 @@ describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3, azu
   });
 
   it.each([
-    ['that does not speak the protocol', {}],
-    ['of a draft the server does not know', { 'Upload-Draft-Interop-Version': '99' }],
-  ])('should take a file in a regular upload from a client %s, as URLSession sends one', async (_, headers) => {
+    ['that does not speak the protocol', 'none', {}],
+    ['of a draft the server does not know', '99', { 'Upload-Draft-Interop-Version': '99' }],
+  ])('should take a file in a regular upload from a client %s, as URLSession sends one', async (_, name, headers) => {
     const content = await largePhoto(1000);
     const response = await api.raw('/upload', {
       method: 'POST',
@@ -191,7 +191,7 @@ describe.each(scenarios)('resumable uploads $name', ({ backends, s3: withS3, azu
         ...headers,
         'Content-Type': 'application/octet-stream',
         'Repr-Digest': digest(content),
-        'X-Immich-Asset-Data': assetData(`regular-${headers['Upload-Draft-Interop-Version'] ?? 'none'}.jpg`),
+        'X-Immich-Asset-Data': assetData(`regular-${name}.jpg`),
       },
       body: new Uint8Array(content),
     });

@@ -379,7 +379,7 @@
     "storage_deleted_original_imported": "The original was imported as a new photo",
     "storage_deleted_original_purged": "The original was deleted from storage",
     "storage_deleted_originals": "Deleted originals",
-    "storage_deleted_originals_description": "Permanently deleted photos stay in storage for the deletion delay. Open one to look at it, import it as a new photo, or delete it from storage now.",
+    "storage_deleted_originals_description": "Permanently deleted photos stay in storage for the deletion delay. Open one to look at it, import it as a new photo (it stays here until its deletion delay has passed), or delete it from storage now.",
     "storage_deletion_paused": "Deleting files from storage is paused: {due} deleted originals are due, more than the {limit} that are deleted without asking.",
     "storage_deletion_pending": "{originals} deleted originals and {files} files in all wait for their deletion delay ({days} days for originals).",
     "storage_deletion_resume": "Delete them",

@@ -11,7 +11,8 @@
 # pinned in mise.toml) and Flutter on PATH, OPENAPI_GENERATOR_JAR (the openapi-generator-cli jar), a JDK and the
 # Android SDK at ANDROID_HOME (Gradle downloads the rest from Maven Central, or a mirror set in an init script), and
 # PostgreSQL with the vector extension at CHECK_POSTGRES_URL (a server URL without database name,
-# default postgres://postgres:postgres@localhost:5432). Nothing here needs Docker.
+# default postgres://postgres:postgres@localhost:5432). Playwright downloads its Chromium (of the version
+# @playwright/test pins) the first time the pages are tested in a browser. Nothing here needs Docker.
 
 set -euo pipefail
 
@@ -79,9 +80,13 @@ server_lint() { cd "$server" && "$(bin "$server" eslint)" "src/**/*.ts" "test/**
 server_types() { cd "$server" && "$(bin "$server" tsc)" --noEmit; }
 
 # the end-to-end project also holds upstream suites that need Docker, so only the storage backend suite is checked
-e2e_files=(src/storage-backends.ts src/specs/storage-backends vitest.storage-backends.config.ts)
+e2e_files=(
+  src/storage-backends.ts src/specs/storage-backends src/specs/storage-backends-web vitest.storage-backends.config.ts
+  playwright.storage-backends.config.ts
+)
 e2e_format() { cd "$e2e" && "$(bin "$e2e" prettier)" --check "${e2e_files[@]}"; }
 e2e_lint() { cd "$e2e" && "$(bin "$e2e" eslint)" "${e2e_files[@]}" --max-warnings 0; }
+e2e_types() { cd "$e2e" && "$(bin "$e2e" tsc)" --noEmit; }
 
 # the documentation of storage backends (the other pages are upstream's); its examples are checked by the unit tests
 docs_format() { cd "$repo/docs" && "$(bin "$repo/docs" prettier)" --check docs/administration/storage-backends.md; }
@@ -100,6 +105,8 @@ web_types() {
 }
 # in English, which some tests expect dates and numbers in
 web_unit() { cd "$web" && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 "$(bin "$web" vitest)" --run; }
+# served by the server in the end-to-end tests in a browser
+web_build() { cd "$web" && "$(bin "$web" vite)" build; }
 
 # the CLI, against the SDK built for the web app; built for the end-to-end tests, which run it
 cli="$repo/packages/cli"
@@ -218,11 +225,19 @@ end_to_end() {
     --config vitest.storage-backends.config.ts
 }
 
+# the pages of storage backends in a browser, against a server that serves the built web app
+end_to_end_web() {
+  cd "$e2e"
+  "$(bin "$e2e" playwright)" install --only-shell chromium
+  E2E_STORAGE_POSTGRES_URL="$postgres" "$(bin "$e2e" playwright)" test --config playwright.storage-backends.config.ts
+}
+
 step 'server: formatting' server_format
 step 'server: lint' server_lint
 step 'server: types' server_types
 step 'e2e: formatting' e2e_format
 step 'e2e: lint' e2e_lint
+step 'e2e: types' e2e_types
 step 'docs: formatting' docs_format
 step 'server: build' server_build
 step 'schema: migrations and drift' schema
@@ -233,6 +248,7 @@ step 'web: formatting' web_format
 step 'web: lint' web_lint
 step 'web: types' web_types
 step 'web: unit tests' web_unit
+step 'web: build' web_build
 step 'cli: formatting, lint, types, unit tests and build' cli_check
 step 'mobile: generated code' mobile_codegen
 step 'mobile: formatting' mobile_format
@@ -245,6 +261,7 @@ if [[ "$quick" == false ]]; then
   remove_orphans
   step 'server: blob store contract tests' contract
   step 'e2e: storage backends' end_to_end
+  step 'e2e: storage pages in a browser' end_to_end_web
 fi
 
 summary
