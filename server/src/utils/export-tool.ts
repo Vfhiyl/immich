@@ -64,6 +64,7 @@ export interface ExportedAsset {
     timeZone: string | null;
     make: string | null;
     model: string | null;
+    lensModel: string | null;
     city: string | null;
     state: string | null;
     country: string | null;
@@ -75,9 +76,24 @@ export interface ExportedAsset {
 
 export interface ExportOptions {
   output: string;
+  /** Only the originals of these users, by email or by id */
   users?: string[];
+  userIds?: string[];
   includeTrashed?: boolean;
+  /** Only the originals after this one, in the order of the export (when they were taken, then id) */
+  after?: { localDateTime: Date; id: string };
+  /** Where an original goes, by default `<user>/<year>/<date>/<file name>` */
+  naming?: (asset: ExportedAsset) => { folder: string; fileName: string };
 }
+
+/** Where an original goes without a storage template: `<user>/<year>/<date>/<file name>` */
+export const toExportTarget = (
+  output: string,
+  asset: Pick<ExportedAsset, 'ownerEmail' | 'localDateTime' | 'originalFileName'>,
+) => ({
+  folder: toExportFolder(output, asset.ownerEmail, asset.localDateTime),
+  fileName: toSafeName(asset.originalFileName),
+});
 
 export interface ExportSummary {
   exported: number;
@@ -214,10 +230,25 @@ export class Exporter {
   ) {}
 
   /** Export the originals of the database, by when they were taken */
-  async exportFromDatabase(db: Kysely<DB>, options: ExportOptions): Promise<ExportSummary> {
+  exportFromDatabase(db: Kysely<DB>, options: ExportOptions): Promise<ExportSummary> {
+    return this.exportAssets(streamExportableAssets(db, options), options);
+  }
+
+  /**
+   * Export originals, each with its JSON file and XMP sidecar; `onExported` is told after each one, and stops the export
+   * when it returns false
+   */
+  async exportAssets(
+    assets: AsyncIterable<ExportedAsset>,
+    options: ExportOptions,
+    onExported?: (asset: ExportedAsset, summary: ExportSummary) => boolean | Promise<boolean>,
+  ): Promise<ExportSummary> {
     const summary: ExportSummary = { exported: 0, skipped: 0, failed: 0 };
-    for await (const asset of this.streamAssets(db, options)) {
-      await this.exportAsset(asset, options.output, summary);
+    for await (const asset of assets) {
+      await this.exportAsset(asset, options, summary);
+      if (onExported && !(await onExported(asset, summary))) {
+        break;
+      }
     }
     return summary;
   }
@@ -276,12 +307,12 @@ export class Exporter {
     return summary;
   }
 
-  private async exportAsset(asset: ExportedAsset, output: string, summary: ExportSummary) {
+  private async exportAsset(asset: ExportedAsset, options: ExportOptions, summary: ExportSummary) {
     try {
       const size = asset.size === null ? null : Number(asset.size);
-      const folder = toExportFolder(output, asset.ownerEmail, asset.localDateTime);
+      const { folder, fileName } = (options.naming ?? ((asset) => toExportTarget(options.output, asset)))(asset);
       await mkdir(folder, { recursive: true });
-      const target = await findTarget(folder, toSafeName(asset.originalFileName), asset.id, size);
+      const target = await findTarget(folder, fileName, asset.id, size);
       if (target.done) {
         summary.skipped++;
         return;
@@ -345,118 +376,140 @@ export class Exporter {
         : await readBlob(source.blob);
     await pipeline(content, createWriteStream(target));
   }
+}
 
-  private queryAssets(db: Kysely<DB>, { users, includeTrashed }: ExportOptions) {
-    return (
-      db
-        .selectFrom('asset')
-        .innerJoin('user', 'user.id', 'asset.ownerId')
-        .leftJoin('asset_original_file', 'asset_original_file.assetId', 'asset.id')
-        .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-        .select((eb) => [
-          'asset.id',
-          'asset.ownerId',
-          'user.email as ownerEmail',
-          'asset.type',
-          'asset.originalFileName',
-          'asset.originalPath',
-          'asset.fileCreatedAt',
-          'asset.localDateTime',
-          'asset.isFavorite',
-          'asset.visibility',
-          'asset.deletedAt',
-          'asset.livePhotoVideoId',
-          'asset.duration',
-          'asset_original_file.backendId',
-          'asset_original_file.key',
-          'asset_original_file.size',
-          'asset_original_file.checksum',
-          'asset_original_file.encryption',
+const queryExportableAssets = (db: Kysely<DB>, { users, userIds, includeTrashed, after }: ExportOptions) => {
+  return (
+    db
+      .selectFrom('asset')
+      .innerJoin('user', 'user.id', 'asset.ownerId')
+      .leftJoin('asset_original_file', 'asset_original_file.assetId', 'asset.id')
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select((eb) => [
+        'asset.id',
+        'asset.ownerId',
+        'user.email as ownerEmail',
+        'asset.type',
+        'asset.originalFileName',
+        'asset.originalPath',
+        'asset.fileCreatedAt',
+        'asset.localDateTime',
+        'asset.isFavorite',
+        'asset.visibility',
+        'asset.deletedAt',
+        'asset.livePhotoVideoId',
+        'asset.duration',
+        'asset_original_file.backendId',
+        'asset_original_file.key',
+        'asset_original_file.size',
+        'asset_original_file.checksum',
+        'asset_original_file.encryption',
+        eb
+          .case()
+          .when('asset_exif.assetId', 'is', null)
+          .then(null)
+          .else(
+            eb.fn('json_build_object', [
+              sql.lit('latitude'),
+              'asset_exif.latitude',
+              sql.lit('longitude'),
+              'asset_exif.longitude',
+              sql.lit('description'),
+              'asset_exif.description',
+              sql.lit('rating'),
+              'asset_exif.rating',
+              sql.lit('dateTimeOriginal'),
+              'asset_exif.dateTimeOriginal',
+              sql.lit('timeZone'),
+              'asset_exif.timeZone',
+              sql.lit('make'),
+              'asset_exif.make',
+              sql.lit('model'),
+              'asset_exif.model',
+              sql.lit('lensModel'),
+              'asset_exif.lensModel',
+              sql.lit('city'),
+              'asset_exif.city',
+              sql.lit('state'),
+              'asset_exif.state',
+              sql.lit('country'),
+              'asset_exif.country',
+            ]),
+          )
+          .end()
+          .$castTo<ExportedAsset['exif']>()
+          .as('exif'),
+        jsonArrayFrom(
           eb
-            .case()
-            .when('asset_exif.assetId', 'is', null)
-            .then(null)
-            .else(
-              eb.fn('json_build_object', [
-                sql.lit('latitude'),
-                'asset_exif.latitude',
-                sql.lit('longitude'),
-                'asset_exif.longitude',
-                sql.lit('description'),
-                'asset_exif.description',
-                sql.lit('rating'),
-                'asset_exif.rating',
-                sql.lit('dateTimeOriginal'),
-                'asset_exif.dateTimeOriginal',
-                sql.lit('timeZone'),
-                'asset_exif.timeZone',
-                sql.lit('make'),
-                'asset_exif.make',
-                sql.lit('model'),
-                'asset_exif.model',
-                sql.lit('city'),
-                'asset_exif.city',
-                sql.lit('state'),
-                'asset_exif.state',
-                sql.lit('country'),
-                'asset_exif.country',
-              ]),
+            .selectFrom('album_asset')
+            .innerJoin('album', 'album.id', 'album_asset.albumId')
+            .select('album.albumName')
+            .whereRef('album_asset.assetId', '=', 'asset.id')
+            .orderBy('album.albumName'),
+        ).as('albums'),
+        jsonArrayFrom(
+          eb
+            .selectFrom('tag_asset')
+            .innerJoin('tag', 'tag.id', 'tag_asset.tagId')
+            .select('tag.value')
+            .whereRef('tag_asset.assetId', '=', 'asset.id')
+            .orderBy('tag.value'),
+        ).as('tags'),
+        jsonArrayFrom(
+          eb
+            .selectFrom('asset_face')
+            .innerJoin('person', (join) =>
+              join
+                .onRef('person.personGroupId', '=', 'asset_face.personGroupId')
+                .onRef('person.ownerId', '=', 'asset.ownerId'),
             )
-            .end()
-            .$castTo<ExportedAsset['exif']>()
-            .as('exif'),
-          jsonArrayFrom(
-            eb
-              .selectFrom('album_asset')
-              .innerJoin('album', 'album.id', 'album_asset.albumId')
-              .select('album.albumName')
-              .whereRef('album_asset.assetId', '=', 'asset.id')
-              .orderBy('album.albumName'),
-          ).as('albums'),
-          jsonArrayFrom(
-            eb
-              .selectFrom('tag_asset')
-              .innerJoin('tag', 'tag.id', 'tag_asset.tagId')
-              .select('tag.value')
-              .whereRef('tag_asset.assetId', '=', 'asset.id')
-              .orderBy('tag.value'),
-          ).as('tags'),
-          jsonArrayFrom(
-            eb
-              .selectFrom('asset_face')
-              .innerJoin('person', (join) =>
-                join
-                  .onRef('person.personGroupId', '=', 'asset_face.personGroupId')
-                  .onRef('person.ownerId', '=', 'asset.ownerId'),
-              )
-              .select('person.name')
-              .distinct()
-              .whereRef('asset_face.assetId', '=', 'asset.id')
-              .where('asset_face.deletedAt', 'is', null)
-              .where('person.name', '!=', '')
-              .orderBy('person.name'),
-          ).as('people'),
-        ])
-        .$if(!includeTrashed, (qb) => qb.where('asset.deletedAt', 'is', null))
-        .$if(!!users && users.length > 0, (qb) => qb.where('user.email', 'in', users!))
-        // the earlier of two photos of the same name keeps the name
-        .orderBy('asset.localDateTime')
-        .orderBy('asset.id')
-        .stream(500)
-    );
-  }
+            .select('person.name')
+            .distinct()
+            .whereRef('asset_face.assetId', '=', 'asset.id')
+            .where('asset_face.deletedAt', 'is', null)
+            .where('person.name', '!=', '')
+            .orderBy('person.name'),
+        ).as('people'),
+      ])
+      .$if(!includeTrashed, (qb) => qb.where('asset.deletedAt', 'is', null))
+      .$if(!!users && users.length > 0, (qb) => qb.where('user.email', 'in', users!))
+      .$if(!!userIds && userIds.length > 0, (qb) => qb.where('asset.ownerId', 'in', userIds!))
+      .$if(!!after, (qb) =>
+        qb.where((eb) =>
+          eb(eb.refTuple('asset.localDateTime', 'asset.id'), '>', eb.tuple(after!.localDateTime, after!.id)),
+        ),
+      )
+      // the earlier of two photos of the same name keeps the name
+      .orderBy('asset.localDateTime')
+      .orderBy('asset.id')
+      .stream(500)
+  );
+};
 
-  private async *streamAssets(db: Kysely<DB>, options: ExportOptions): AsyncIterable<ExportedAsset> {
-    for await (const row of this.queryAssets(db, options)) {
-      yield {
-        ...row,
-        albums: row.albums.map(({ albumName }) => albumName),
-        tags: row.tags.map(({ value }) => value),
-        people: row.people.map(({ name }) => name),
-      };
-    }
+/** The originals to export, in the order of the export: when they were taken, then id */
+export async function* streamExportableAssets(db: Kysely<DB>, options: ExportOptions): AsyncIterable<ExportedAsset> {
+  for await (const row of queryExportableAssets(db, options)) {
+    yield {
+      ...row,
+      albums: row.albums.map(({ albumName }) => albumName),
+      tags: row.tags.map(({ value }) => value),
+      people: row.people.map(({ name }) => name),
+    };
   }
 }
+
+/** How many originals there are to export */
+export const countExportableAssets = async (db: Kysely<DB>, options: ExportOptions) => {
+  const { count } = await db
+    .selectFrom('asset')
+    .innerJoin('user', 'user.id', 'asset.ownerId')
+    .select((eb) => eb.fn.countAll<string>().as('count'))
+    .$if(!options.includeTrashed, (qb) => qb.where('asset.deletedAt', 'is', null))
+    .$if(!!options.users && options.users.length > 0, (qb) => qb.where('user.email', 'in', options.users!))
+    .$if(!!options.userIds && options.userIds.length > 0, (qb) => qb.where('asset.ownerId', 'in', options.userIds!))
+    .executeTakeFirstOrThrow();
+  return Number(count);
+};
 
 export const runExportTool = async (args: string[], output: ToolOutput): Promise<number> => {
   let values;

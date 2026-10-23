@@ -164,7 +164,7 @@ encryption:
   masterKeyCommand: ['/config/immich/master-keys.sh']
 ```
 
-The command must print the keys as the key file holds them (base64, one per line, the current one first; lines starting with `#` are ignored) and exit with 0 within a minute; otherwise Immich does not start, and logs what the command wrote to its standard error. A script for a KMS typically decrypts a key file that was encrypted with the KMS key, e.g. with the tool and options your provider documents for decrypting data; the credentials it needs come from the container's environment or the instance's role, like those of the bucket. Keep the decrypted key file offline as well (see above): the KMS key alone does not help without the encrypted file, and losing access to the KMS key loses the photos. `immich-encryption decrypt --keys` and `immich-export` take a key file; with bash, `--keys <(/config/immich/master-keys.sh)` gives them the command's output without writing it to disk.
+The command must print the keys as the key file holds them (base64, one per line, the current one first; lines starting with `#` are ignored) and exit with 0 within a minute; otherwise Immich does not start, and logs what the command wrote to its standard error. A script for a KMS typically decrypts a key file that was encrypted with the KMS key, e.g. with the tool and options your provider documents for decrypting data; the credentials it needs come from the container's environment or the instance's role, like those of the bucket. Keep the decrypted key file offline as well (see above): the KMS key alone does not help without the encrypted file, and losing access to the KMS key loses the photos. `immich-export` reads the storage configuration, and runs the command too; `immich-encryption decrypt --keys` takes a key file, which with bash can be the command's output without writing it to disk: `--keys <(/config/immich/master-keys.sh)`.
 
 ## Deleting files
 
@@ -249,6 +249,18 @@ Every three months (and when started on the storage page), Immich runs a **resto
 
 Photos are written to `<user>/<year>/<date>/<file name>`, each with a `.json` file of everything Immich knows about it and an `.xmp` sidecar (dates, place, description, rating, tags, people) that other photo applications read. Without any database, `immich-export --storage … --output …` still exports every original by what its encrypted object describes: its file name and owner. An export can be stopped and run again.
 
+## Exporting
+
+An administrator can export the originals from **Administration > Storage > Export**, while Immich runs: every user's, or one user's, into a folder of the server, e.g. a mounted disk or a network share. Set the folder in the `.env` file and mount it into the `immich-server` container; it is not a setting of the web interface:
+
+```
+IMMICH_EXPORT_LOCATION=/export
+```
+
+The export writes the same files as `immich-export` (each original with its `.json` file and `.xmp` sidecar), in `<user>/<year>/<date>/` or, when the storage template is enabled (**Administration > Settings > Storage Template**), in the folders the template names, below a folder per user. It runs in the background, in chunks, and survives restarts; the storage page shows its progress. An export that is stopped, or started again later, goes on where it was: originals exported before and unchanged are kept, new ones are added. Originals that cannot be read (e.g. damaged on the backend) are reported and skipped.
+
+On storage backends, objects have random keys instead of the paths of the storage template, which then names the files of downloads (in the folders it names, when several photos are downloaded as an archive) and of exports instead.
+
 ## Checks and reports
 
 With storage backends, the integrity checks of **Administration → Maintenance** check the backends instead, on the same schedule and within the same limits: every day each backend is listed and compared with what is recorded (missing files, files nothing records, files of another size), and files are read back, decrypted and checked against their SHA-1 in turn. A problem is reported once two runs saw it; checks never change or delete anything. The reports are at `/api/admin/storage/checks`, and kept for three years.
@@ -285,6 +297,7 @@ These numbers are only an example: take the prices from the official price list 
 | Environment variable                | Meaning                                                                                                                                                                | Default |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `IMMICH_STORAGE_BACKENDS`           | The storage backend configuration file                                                                                                                                 |         |
+| `IMMICH_EXPORT_LOCATION`            | The folder of the server that administrators export the originals to (see [Exporting](#exporting))                                                                     |         |
 | `IMMICH_UPLOAD_MAX_APPEND_SIZE`     | The largest request a resumable upload sends, in bytes, for proxies that limit request bodies (e.g. `100000000` behind Cloudflare)                                     |         |
 | `IMMICH_SYNC_DELETE_RETENTION_DAYS` | How long the records of deletions are kept for phones to sync, in days (at least 30), or `forever`. A phone that did not sync for longer syncs its whole library anew. | `365`   |
 

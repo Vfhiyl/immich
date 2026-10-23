@@ -1,6 +1,7 @@
 <script lang="ts">
   import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
   import { Route } from '$lib/route';
+  import StorageExportSection from './StorageExportSection.svelte';
   import {
     formatAge,
     handleFetchStoredDatabaseBackup,
@@ -278,5 +279,7 @@
         </Table>
       </section>
     {/if}
+
+    <StorageExportSection storageExport={data.storageExport} users={data.users} />
   </Container>
 </AdminPageLayout>

@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { vitest } from 'vitest';
 import { DownloadResponseDto } from 'src/dtos/download.dto.js';
+import { StorageBackendDriver, StorageBackendRole } from 'src/enum.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -59,6 +60,81 @@ describe(DownloadService.name, () => {
 
       expect(archiveMock.addFile).toHaveBeenCalledTimes(1);
       expect(archiveMock.addFile).toHaveBeenNthCalledWith(1, asset.originalPath, asset.originalFileName);
+    });
+
+    it('should name the files by the storage template on storage backends, where files have no paths', async () => {
+      const archiveMock = {
+        addFile: vitest.fn(),
+        addStream: vitest.fn(),
+        finalize: vitest.fn(),
+        stream: new Readable(),
+      };
+      const [asset1, asset2] = [AssetFactory.create(), AssetFactory.create()];
+      mocks.storageBackend.configure([
+        {
+          id: 'originals',
+          driver: StorageBackendDriver.Local,
+          role: StorageBackendRole.Originals,
+          root: '/o',
+          encrypted: false,
+        },
+      ]);
+      mocks.systemMetadata.get.mockResolvedValue({
+        storageTemplate: { enabled: true, template: '{{y}}/{{#if album}}{{album}}{{else}}Other{{/if}}/{{filename}}' },
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset1.id, asset2.id]));
+      mocks.asset.getForOriginals.mockResolvedValue([forOriginal(asset1), forOriginal(asset2)]);
+      mocks.asset.getForTemplateNames.mockResolvedValue([
+        {
+          id: asset1.id,
+          type: 'IMAGE',
+          fileCreatedAt: new Date('2021-07-04T12:00:00Z'),
+          originalFileName: 'IMG_1.JPG',
+          make: null,
+          model: null,
+          lensModel: null,
+          albumName: 'Summer',
+        },
+        {
+          id: asset2.id,
+          type: 'IMAGE',
+          fileCreatedAt: new Date('2022-01-02T12:00:00Z'),
+          originalFileName: 'IMG_2.jpg',
+          make: null,
+          model: null,
+          lensModel: null,
+          albumName: null,
+        },
+      ] as never);
+      mocks.storage.createZipStream.mockReturnValue(archiveMock);
+      mocks.storage.realpath.mockImplementation((path) => Promise.resolve(path));
+
+      await sut.downloadArchive(authStub.admin, { assetIds: [asset1.id, asset2.id] });
+
+      expect(archiveMock.addFile).toHaveBeenNthCalledWith(1, asset1.originalPath, '2021/Summer/IMG_1.jpg');
+      expect(archiveMock.addFile).toHaveBeenNthCalledWith(2, asset2.originalPath, '2022/Other/IMG_2.jpg');
+    });
+
+    it('should keep the file names without storage backends, where the template already named the files', async () => {
+      const archiveMock = {
+        addFile: vitest.fn(),
+        addStream: vitest.fn(),
+        finalize: vitest.fn(),
+        stream: new Readable(),
+      };
+      const asset = AssetFactory.create();
+      mocks.systemMetadata.get.mockResolvedValue({
+        storageTemplate: { enabled: true, template: '{{y}}/{{filename}}' },
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginals.mockResolvedValue([forOriginal(asset)]);
+      mocks.storage.createZipStream.mockReturnValue(archiveMock);
+      mocks.storage.realpath.mockImplementation((path) => Promise.resolve(path));
+
+      await sut.downloadArchive(authStub.admin, { assetIds: [asset.id] });
+
+      expect(archiveMock.addFile).toHaveBeenCalledWith(asset.originalPath, asset.originalFileName);
+      expect(mocks.asset.getForTemplateNames).not.toHaveBeenCalled();
     });
 
     it('should log a warning if the original path could not be resolved', async () => {

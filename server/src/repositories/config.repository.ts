@@ -117,6 +117,8 @@ export interface EnvData {
     mediaLocation?: string;
     /** File that configures storage backends; without it files are stored in the media location as before */
     backendsFile?: string;
+    /** Folder that administrators can export the photos to (e.g. a mounted disk); without it there is no export */
+    exportLocation?: string;
     /**
      * The largest request body a resumable upload should send, for proxies that limit it (e.g. 100 MB with Cloudflare);
      * clients split their upload accordingly
@@ -372,6 +374,7 @@ const getEnv = (): EnvData => {
       ignoreMountCheckErrors: !!dto.IMMICH_IGNORE_MOUNT_CHECK_ERRORS,
       mediaLocation: dto.IMMICH_MEDIA_LOCATION,
       backendsFile: dto.IMMICH_STORAGE_BACKENDS,
+      exportLocation: dto.IMMICH_EXPORT_LOCATION,
       uploadMaxAppendSize: dto.IMMICH_UPLOAD_MAX_APPEND_SIZE,
     },
 

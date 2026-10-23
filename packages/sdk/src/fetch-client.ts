@@ -717,6 +717,34 @@ export type StorageDeletionPurgeDto = {
     /** Password of the administrator, to confirm */
     password: string;
 };
+export type StorageExportStateDto = {
+    /** Originals exported */
+    exported: number;
+    /** Originals that could not be exported */
+    failed: number;
+    finishedAt: string | null;
+    lastError: string | null;
+    /** Originals already exported before, and unchanged */
+    skipped: number;
+    startedAt: string;
+    status: StorageExportStatus;
+    /** Originals to export, counted when the export started */
+    total: number;
+    /** The users whose originals are exported; null for every user */
+    userIds: string[] | null;
+};
+export type StorageExportResponseDto = {
+    /** Where exports go (IMMICH_EXPORT_LOCATION); null when not set */
+    location: string | null;
+    /** The current or last export */
+    state: (StorageExportStateDto) | null;
+    /** Whether files are named by the storage template */
+    usesStorageTemplate: boolean;
+};
+export type StorageExportStartDto = {
+    /** Only export the originals of these users; all by default */
+    userIds?: string[];
+};
 export type StorageReplicaListResponseDto = {
     /** When the replicas were last reconciled */
     lastReconcileAt: string | null;
@@ -4675,6 +4703,38 @@ export function purgeDeletedOriginal({ id, storageDeletionPurgeDto }: {
  */
 export function resumeStorageDeletion(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchText("/admin/storage/deletions/resume", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Get the export
+ */
+export function getStorageExport(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageExportResponseDto;
+    }>("/admin/storage/export", {
+        ...opts
+    }));
+}
+/**
+ * Start an export
+ */
+export function startStorageExport({ storageExportStartDto }: {
+    storageExportStartDto: StorageExportStartDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/storage/export", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: storageExportStartDto
+    })));
+}
+/**
+ * Cancel the export
+ */
+export function cancelStorageExport(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/storage/export/cancel", {
         ...opts,
         method: "POST"
     }));
@@ -8661,6 +8721,12 @@ export enum AssetMediaStatus {
     Created = "created",
     Duplicate = "duplicate"
 }
+export enum StorageExportStatus {
+    Running = "running",
+    Done = "done",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
 export enum UserStatus {
     Active = "active",
     Removing = "removing",
@@ -9024,6 +9090,7 @@ export enum JobName {
     StorageReplicaReconcile = "StorageReplicaReconcile",
     StorageReplicaVerify = "StorageReplicaVerify",
     StorageRestoreDrill = "StorageRestoreDrill",
+    StorageExport = "StorageExport",
     StorageUsageSnapshot = "StorageUsageSnapshot",
     AssetGenerateThumbnailsQueueAll = "AssetGenerateThumbnailsQueueAll",
     AssetGenerateThumbnails = "AssetGenerateThumbnails",

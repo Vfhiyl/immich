@@ -1,5 +1,6 @@
 import {
   acknowledgeStorageIssue,
+  cancelStorageExport,
   fetchStoredDatabaseBackup,
   importDeletedOriginal,
   purgeDeletedOriginal,
@@ -7,6 +8,7 @@ import {
   retryStorageReplicaCopies,
   StorageCheckKind,
   startStorageCheck,
+  startStorageExport,
 } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { DateTime } from 'luxon';
@@ -33,6 +35,29 @@ export const handleStartStorageCheck = async (kind: StorageCheckKind) => {
     return true;
   } catch (error) {
     handleError(error, $t('errors.unable_to_start_storage_check'));
+    return false;
+  }
+};
+
+export const handleStartStorageExport = async (userIds?: string[]) => {
+  const $t = await getFormatter();
+  try {
+    await startStorageExport({ storageExportStartDto: { userIds } });
+    toastManager.info($t('admin.storage_export_started'));
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_start_storage_export'));
+    return false;
+  }
+};
+
+export const handleCancelStorageExport = async () => {
+  const $t = await getFormatter();
+  try {
+    await cancelStorageExport();
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_cancel_storage_export'));
     return false;
   }
 };

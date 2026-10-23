@@ -2245,6 +2245,141 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/storage/export": {
+      "get": {
+        "description": "Where exports go, and the current or last export of the originals",
+        "operationId": "getStorageExport",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageExportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the export",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Export the originals, with their metadata, to the export location: in folders by user and date (or by the storage template), each with a JSON file and an XMP sidecar. What was exported before and did not change is kept.",
+        "operationId": "startStorageExport",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageExportStartDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start an export",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage/export/cancel": {
+      "post": {
+        "description": "Stop the running export; what it exported is kept, and an export started later goes on from there",
+        "operationId": "cancelStorageExport",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel the export",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.4",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.4",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/storage/replicas": {
       "get": {
         "description": "Each replica with what it copies, what is copied and what waits, and the last reconciliation",
@@ -23986,6 +24121,7 @@
           "StorageReplicaReconcile",
           "StorageReplicaVerify",
           "StorageRestoreDrill",
+          "StorageExport",
           "StorageUsageSnapshot",
           "AssetGenerateThumbnailsQueueAll",
           "AssetGenerateThumbnails",
@@ -31778,6 +31914,121 @@
           "pendingOriginals"
         ],
         "type": "object"
+      },
+      "StorageExportResponseDto": {
+        "properties": {
+          "location": {
+            "description": "Where exports go (IMMICH_EXPORT_LOCATION); null when not set",
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageExportStateDto"
+              }
+            ],
+            "description": "The current or last export",
+            "nullable": true
+          },
+          "usesStorageTemplate": {
+            "description": "Whether files are named by the storage template",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "location",
+          "state",
+          "usesStorageTemplate"
+        ],
+        "type": "object"
+      },
+      "StorageExportStartDto": {
+        "properties": {
+          "userIds": {
+            "description": "Only export the originals of these users; all by default",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "StorageExportStateDto": {
+        "properties": {
+          "exported": {
+            "description": "Originals exported",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "failed": {
+            "description": "Originals that could not be exported",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "finishedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "lastError": {
+            "nullable": true,
+            "type": "string"
+          },
+          "skipped": {
+            "description": "Originals already exported before, and unchanged",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StorageExportStatus"
+          },
+          "total": {
+            "description": "Originals to export, counted when the export started",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "userIds": {
+            "description": "The users whose originals are exported; null for every user",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "exported",
+          "failed",
+          "finishedAt",
+          "lastError",
+          "skipped",
+          "startedAt",
+          "status",
+          "total",
+          "userIds"
+        ],
+        "type": "object"
+      },
+      "StorageExportStatus": {
+        "enum": [
+          "running",
+          "done",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
       },
       "StorageFolder": {
         "description": "Storage folder",

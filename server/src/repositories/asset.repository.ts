@@ -1368,6 +1368,37 @@ export class AssetRepository {
     return this.buildGetForOriginal(ids, isEdited).execute();
   }
 
+  /** What the storage template names the files of a download by */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  getForTemplateNames(ids: string[]) {
+    return this.db
+      .selectFrom('asset')
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select((eb) => [
+        'asset.id',
+        'asset.type',
+        'asset.fileCreatedAt',
+        'asset.originalFileName',
+        'asset_exif.make',
+        'asset_exif.model',
+        'asset_exif.lensModel',
+        // as the storage template migration: the newest album of the owner that holds it
+        eb
+          .selectFrom('album_asset')
+          .innerJoin('album', 'album.id', 'album_asset.albumId')
+          .innerJoin('album_user', 'album_user.albumId', 'album.id')
+          .select('album.albumName')
+          .whereRef('album_asset.assetId', '=', 'asset.id')
+          .whereRef('album_user.userId', '=', 'asset.ownerId')
+          .where('album.deletedAt', 'is', null)
+          .orderBy('album.createdAt', 'desc')
+          .limit(1)
+          .as('albumName'),
+      ])
+      .where('asset.id', 'in', ids)
+      .execute();
+  }
+
   @GenerateSql({ params: [DummyValue.UUID, AssetFileType.Preview, true] })
   async getForThumbnail(id: string, type: AssetFileType, isEdited: boolean) {
     return this.db

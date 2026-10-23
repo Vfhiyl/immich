@@ -757,6 +757,37 @@ from
 where
   "asset"."id" in ($3)
 
+-- AssetRepository.getForTemplateNames
+select
+  "asset"."id",
+  "asset"."type",
+  "asset"."fileCreatedAt",
+  "asset"."originalFileName",
+  "asset_exif"."make",
+  "asset_exif"."model",
+  "asset_exif"."lensModel",
+  (
+    select
+      "album"."albumName"
+    from
+      "album_asset"
+      inner join "album" on "album"."id" = "album_asset"."albumId"
+      inner join "album_user" on "album_user"."albumId" = "album"."id"
+    where
+      "album_asset"."assetId" = "asset"."id"
+      and "album_user"."userId" = "asset"."ownerId"
+      and "album"."deletedAt" is null
+    order by
+      "album"."createdAt" desc
+    limit
+      $1
+  ) as "albumName"
+from
+  "asset"
+  left join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
+where
+  "asset"."id" in ($2)
+
 -- AssetRepository.getForThumbnail
 select
   "asset"."originalPath",

@@ -51,6 +51,7 @@ export const EnvSchema = z
     IMMICH_LOG_FORMAT: LogFormatSchema.optional(),
     IMMICH_MEDIA_LOCATION: absolutePath,
     IMMICH_STORAGE_BACKENDS: absolutePath,
+    IMMICH_EXPORT_LOCATION: absolutePath,
     IMMICH_UPLOAD_MAX_APPEND_SIZE: z.coerce
       .number()
       .int()

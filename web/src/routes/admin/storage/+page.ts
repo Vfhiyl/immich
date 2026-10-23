@@ -3,7 +3,9 @@ import {
   getStorageConfiguration,
   getStorageDeletionStatus,
   getStorageReplicas,
+  getStorageExport,
   getStoredDatabaseBackups,
+  searchUsersAdmin,
   StorageBackendRole,
 } from '@immich/sdk';
 import { authenticate } from '$lib/utils/auth';
@@ -16,11 +18,13 @@ export const load = (async ({ url }) => {
   const configuration = await getStorageConfiguration();
   const hasBackends = configuration.backends.length > 0;
   const hasBackupBackend = configuration.backends.some(({ role }) => role === StorageBackendRole.Backup);
-  const [health, deletion, replicas, databaseBackups] = await Promise.all([
+  const [health, deletion, replicas, databaseBackups, storageExport, users] = await Promise.all([
     hasBackends ? getStorageCheckSummary() : undefined,
     hasBackends ? getStorageDeletionStatus() : undefined,
     hasBackends ? getStorageReplicas() : undefined,
     hasBackupBackend ? getStoredDatabaseBackups() : undefined,
+    getStorageExport(),
+    searchUsersAdmin({ withDeleted: false }),
   ]);
 
   const $t = await getFormatter();
@@ -31,6 +35,8 @@ export const load = (async ({ url }) => {
     deletion,
     replicas,
     databaseBackups,
+    storageExport,
+    users,
     meta: {
       title: $t('admin.storage'),
     },

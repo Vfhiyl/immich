@@ -15,6 +15,7 @@ import { ImmichReadStream } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
 import { getPreferences } from 'src/utils/preferences.js';
+import { compileStorageTemplate, toTemplatePath } from 'src/utils/storage-template.js';
 
 @Injectable()
 export class DownloadService extends BaseService {
@@ -94,6 +95,7 @@ export class DownloadService extends BaseService {
     const zip = this.storageRepository.createZipStream();
     const assets = await this.assetRepository.getForOriginals(dto.assetIds, dto.edited ?? false);
     const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
+    const templateNames = await this.getTemplateNames(dto.assetIds);
     const paths: Record<string, number> = {};
 
     for (const assetId of dto.assetIds) {
@@ -104,7 +106,7 @@ export class DownloadService extends BaseService {
 
       const { originalPath, originalFileName } = asset;
 
-      let filename = sanitize(originalFileName) || 'unnamed';
+      let filename = templateNames?.get(assetId) ?? (sanitize(originalFileName) || 'unnamed');
       const count = paths[filename] || 0;
       paths[filename] = count + 1;
       if (count !== 0) {
@@ -154,5 +156,28 @@ export class DownloadService extends BaseService {
       stream: zip.stream,
       disposition: dto.archiveName && `attachment; filename*=UTF-8''${encodeURIComponent(dto.archiveName)}.zip`,
     };
+  }
+
+  /**
+   * With storage backends, files have opaque keys rather than paths of the storage template, which then names the files
+   * of a download instead, in its folders (when it is enabled)
+   */
+  private async getTemplateNames(ids: string[]) {
+    if (!this.storageBackendRepository.hasConfiguredBackends()) {
+      return;
+    }
+    const { storageTemplate } = await this.getConfig({ withCache: true });
+    if (!storageTemplate.enabled) {
+      return;
+    }
+    const template = compileStorageTemplate(storageTemplate.template);
+    const names = new Map<string, string>();
+    for (const file of await this.assetRepository.getForTemplateNames(ids)) {
+      const path = toTemplatePath(template, { ...file, albumName: file.albumName ?? null });
+      if (path) {
+        names.set(file.id, path);
+      }
+    }
+    return names;
   }
 }

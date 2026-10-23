@@ -25,6 +25,7 @@ describe('export tool', () => {
           timeZone: null,
           make: null,
           model: null,
+          lensModel: null,
           city: null,
           state: null,
           country: null,

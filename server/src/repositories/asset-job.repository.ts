@@ -21,11 +21,21 @@ import {
   withVideoFormat,
   withVideoStream,
 } from 'src/utils/database.js';
+import { ExportOptions, countExportableAssets, streamExportableAssets } from 'src/utils/export-tool.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 @Injectable()
 export class AssetJobRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  /** The originals of an export, with what it writes beside them, in its order (the same as `immich-export`'s) */
+  streamForExport(options: ExportOptions) {
+    return streamExportableAssets(this.db, options);
+  }
+
+  countForExport(options: ExportOptions) {
+    return countExportableAssets(this.db, options);
+  }
 
   @GenerateSql({ params: [DummyValue.UUID] })
   getForSearchDuplicatesJob(id: string) {

@@ -153,6 +153,11 @@ export class TestEnvironment {
     return join(this.root, 'media');
   }
 
+  /** Where administrators export the originals to (IMMICH_EXPORT_LOCATION) */
+  get exportLocation() {
+    return join(this.root, 'app-export');
+  }
+
   get configFile() {
     return join(this.root, 'immich-config.json');
   }
@@ -294,6 +299,7 @@ const serverEnv = (environment: TestEnvironment, { backends = true } = {}) => ({
   IMMICH_PORT: String(port),
   IMMICH_MEDIA_LOCATION: environment.mediaLocation,
   IMMICH_CONFIG_FILE: environment.configFile,
+  IMMICH_EXPORT_LOCATION: environment.exportLocation,
   IMMICH_BUILD_DATA: join(environment.root, 'build'),
   IMMICH_LOG_LEVEL: 'log',
   NO_COLOR: 'true',

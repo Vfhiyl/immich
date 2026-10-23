@@ -789,6 +789,73 @@ describe('storage backends on an S3 service', () => {
     expect(exported.some((path) => /\/el_torcal_rocks( \(\d+\))?\.jpg$/.test(path))).toBe(true);
   });
 
+  it('should export the originals when an administrator starts it, named by the storage template', async () => {
+    type Export = {
+      location: string | null;
+      usesStorageTemplate: boolean;
+      state: {
+        status: string;
+        total: number;
+        exported: number;
+        skipped: number;
+        failed: number;
+        lastError: string | null;
+      } | null;
+    };
+    const [{ email, fileCreatedAt }] = await environment.query<{ email: string; fileCreatedAt: Date }>(
+      `select u.email, a."fileCreatedAt" from asset a join "user" u on u.id = a."ownerId" where a.id = $1`,
+      [assetId],
+    );
+    // the storage template names the files of exports; the settings are in the configuration file
+    const config = JSON.parse(await readFile(environment.configFile, 'utf8'));
+    await writeFile(
+      environment.configFile,
+      JSON.stringify({ ...config, storageTemplate: { enabled: true, template: '{{y}}/{{filename}}' } }),
+    );
+    await server.stop();
+    server = await ImmichServer.start(environment);
+
+    const { body: before } = await api.json<Export>('/admin/storage/export');
+    expect(before).toMatchObject({ location: environment.exportLocation, usesStorageTemplate: true });
+    const run = async () => {
+      await expect(api.json('/admin/storage/export', { method: 'POST', body: {} })).resolves.toMatchObject({
+        status: 204,
+      });
+      return eventually(
+        async () => {
+          const { body } = await api.json<Export>('/admin/storage/export');
+          expect(body.state?.status).toBe('done');
+          return body.state!;
+        },
+        { timeout: 60_000 },
+      );
+    };
+
+    const first = await run();
+    // the original damaged by the check above is reported, the others are exported
+    expect(first).toMatchObject({ failed: 1, lastError: expect.stringContaining('failed integrity check') });
+    expect(first.exported).toBe(first.total - 1);
+    const folder = join(environment.exportLocation, email, String(fileCreatedAt.getFullYear()));
+    const names = await readdir(folder);
+    const exportedName = await (async () => {
+      for (const name of names) {
+        if (!name.endsWith('.json')) {
+          continue;
+        }
+        const { id } = JSON.parse(await readFile(join(folder, name), 'utf8'));
+        if (id === assetId) {
+          return name.slice(0, -'.json'.length);
+        }
+      }
+    })();
+    expect(exportedName).toMatch(/^el_torcal_rocks( \(\d+\))?\.jpg$/);
+    await expect(readFile(join(folder, exportedName!))).resolves.toEqual(photo);
+    await expect(readFile(join(folder, `${exportedName}.xmp`), 'utf8')).resolves.toContain('exif:DateTimeOriginal');
+
+    // started again: what was exported is kept
+    await expect(run()).resolves.toMatchObject({ exported: 0, skipped: first.exported, failed: 1 });
+  });
+
   it('should remove every object of permanently deleted assets', async () => {
     await eventually(
       async () => {

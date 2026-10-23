@@ -374,6 +374,7 @@ export type JobItem =
   | { name: JobName.StorageReplicaReconcile; data?: IStorageCheckJob }
   | { name: JobName.StorageReplicaVerify; data?: IStorageCheckJob }
   | { name: JobName.StorageRestoreDrill; data?: IStorageCheckJob }
+  | { name: JobName.StorageExport; data?: IBaseJob }
   | { name: JobName.StorageUsageSnapshot; data?: IBaseJob }
 
   // Backups
@@ -585,6 +586,22 @@ export type StorageDeletionState = {
   approvedDueOriginals?: number;
 };
 
+/** An export of the originals to the export location, which goes on in chunks */
+export interface StorageExportState {
+  status: 'running' | 'done' | 'failed' | 'cancelled';
+  /** The users whose originals are exported; null for every user */
+  userIds: string[] | null;
+  startedAt: string;
+  finishedAt: string | null;
+  /** The last original handled, in the order of the export */
+  cursor: { localDateTime: string; id: string } | null;
+  total: number;
+  exported: number;
+  skipped: number;
+  failed: number;
+  lastError: string | null;
+}
+
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
@@ -601,6 +618,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.SyncDeleteRetention]: SyncDeleteRetentionState;
   /** The reminders about budgets sent, by backend: `<month>:projected` and `<month>:exceeded` */
   [SystemMetadataKey.StorageBudgetReminders]: Record<string, string[]>;
+  [SystemMetadataKey.StorageExportState]: StorageExportState;
 }
 
 export type UserPreferences = {

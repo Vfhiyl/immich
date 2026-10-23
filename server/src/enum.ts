@@ -405,6 +405,7 @@ export enum SystemMetadataKey {
   StorageDeletionState = 'storage-deletion-state',
   SyncDeleteRetention = 'sync-delete-retention',
   StorageBudgetReminders = 'storage-budget-reminders',
+  StorageExportState = 'storage-export-state',
 }
 
 export enum UserMetadataKey {
@@ -976,6 +977,7 @@ export enum JobName {
   StorageReplicaReconcile = 'StorageReplicaReconcile',
   StorageReplicaVerify = 'StorageReplicaVerify',
   StorageRestoreDrill = 'StorageRestoreDrill',
+  StorageExport = 'StorageExport',
   StorageUsageSnapshot = 'StorageUsageSnapshot',
   AssetGenerateThumbnailsQueueAll = 'AssetGenerateThumbnailsQueueAll',
   AssetGenerateThumbnails = 'AssetGenerateThumbnails',
