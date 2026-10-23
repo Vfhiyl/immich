@@ -192,6 +192,11 @@ export class StorageBackendRepository {
     this.logger.setContext(StorageBackendRepository.name);
   }
 
+  /** A repository of its own, configured separately: to check a configuration without changing the one in use */
+  createDetached() {
+    return new StorageBackendRepository(this.db, this.logger);
+  }
+
   /** Read and validate the storage backend configuration file */
   async readConfig(path: string): Promise<StorageBackendsConfig> {
     const content = await readFile(path, 'utf8');

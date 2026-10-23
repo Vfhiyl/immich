@@ -1180,6 +1180,180 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/maintenance/storage": {
+      "get": {
+        "description": "What is wrong with the storage configuration of a new server, and what storage holds; without authentication before an administrator exists",
+        "operationId": "getMaintenanceStorageSetup",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageSetupResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Check the storage in maintenance mode",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/maintenance/storage/continue": {
+      "post": {
+        "description": "Check the storage again and, when nothing is wrong, end maintenance mode to start normally",
+        "operationId": "continueAfterStorageSetup",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageSetupResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Continue after the storage setup",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/maintenance/storage/database-backups": {
+      "get": {
+        "description": "The database backups on the storage backend for backups, to restore one",
+        "operationId": "getMaintenanceStoredDatabaseBackups",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredDatabaseBackupListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the database backups in storage in maintenance mode",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/maintenance/storage/database-backups/{key}/fetch": {
+      "post": {
+        "description": "Copy a database backup from the storage backend for backups into the backups folder, to restore it",
+        "operationId": "fetchMaintenanceStoredDatabaseBackup",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "description": "Key of the stored backup",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredDatabaseBackupFetchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Fetch a database backup from storage in maintenance mode",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/notifications": {
       "post": {
         "description": "Create a new notification for a specific user.",
@@ -2595,6 +2769,40 @@
           }
         ],
         "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/storage/setup": {
+      "get": {
+        "description": "What a new server finds in its storage configuration and storage (e.g. database backups of the server it replaces), for the welcome page; only before an administrator exists",
+        "operationId": "getStorageSetup",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageSetupResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Check the storage of a new server",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
         "x-immich-state": "Alpha"
       }
     },
@@ -24473,7 +24681,8 @@
           "start",
           "end",
           "select_database_restore",
-          "restore_database"
+          "restore_database",
+          "storage_setup"
         ],
         "type": "string"
       },
@@ -32459,6 +32668,148 @@
           "delete",
           "read",
           "write"
+        ],
+        "type": "object"
+      },
+      "StorageSetupProblemKind": {
+        "description": "What is wrong, each with what to do about it",
+        "enum": [
+          "configuration_missing",
+          "configuration_invalid",
+          "master_key_file_missing",
+          "master_keys_invalid",
+          "master_key_not_found",
+          "backend_failed"
+        ],
+        "type": "string"
+      },
+      "StorageSetupResponseDto": {
+        "properties": {
+          "backends": {
+            "items": {
+              "properties": {
+                "driver": {
+                  "type": "string"
+                },
+                "encrypted": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "ok": {
+                  "description": "Whether the backend passed its check",
+                  "type": "boolean"
+                },
+                "role": {
+                  "$ref": "#/components/schemas/StorageBackendRole"
+                }
+              },
+              "required": [
+                "id",
+                "role",
+                "driver",
+                "encrypted",
+                "ok"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "configFile": {
+            "description": "The storage configuration file (IMMICH_STORAGE_BACKENDS), null if files are kept in the media location",
+            "nullable": true,
+            "type": "string"
+          },
+          "databaseBackups": {
+            "description": "The database backups on the backend for backups, the newest first",
+            "items": {
+              "properties": {
+                "createdAt": {
+                  "type": "string"
+                },
+                "filename": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "size": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "key",
+                "filename",
+                "size",
+                "createdAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "hasOriginals": {
+            "description": "Whether the backend for originals holds files already",
+            "type": "boolean"
+          },
+          "masterKeyCommand": {
+            "description": "The program of the master key command of the configuration",
+            "nullable": true,
+            "type": "string"
+          },
+          "masterKeyFile": {
+            "description": "The master key file of the configuration",
+            "nullable": true,
+            "type": "string"
+          },
+          "masterKeyId": {
+            "description": "The current master key, when the keys could be read",
+            "nullable": true,
+            "type": "string"
+          },
+          "problems": {
+            "items": {
+              "properties": {
+                "backendId": {
+                  "description": "The storage backend it is about",
+                  "type": "string"
+                },
+                "keyId": {
+                  "description": "The master key it is about",
+                  "type": "string"
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/StorageSetupProblemKind"
+                },
+                "message": {
+                  "description": "What went wrong, as the server saw it",
+                  "type": "string"
+                },
+                "path": {
+                  "description": "The file it is about, inside the container",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "message"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "backends",
+          "configFile",
+          "databaseBackups",
+          "hasOriginals",
+          "masterKeyCommand",
+          "masterKeyFile",
+          "masterKeyId",
+          "problems"
         ],
         "type": "object"
       },

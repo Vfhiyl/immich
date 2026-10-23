@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Kysely, sql } from 'kysely';
 import { partition } from 'lodash-es';
 import { randomUUID } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { createReadStream } from 'node:fs';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -25,7 +25,7 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { BlobStore } from 'src/repositories/blob-store.js';
-import { BlobManifest, EncryptedBlobStore } from 'src/repositories/encrypted-blob-store.js';
+import { EncryptedBlobStore } from 'src/repositories/encrypted-blob-store.js';
 import { VerifiableFile } from 'src/repositories/storage-check.repository.js';
 import { DB } from 'src/schema/index.js';
 import { StorageCheckStats } from 'src/schema/tables/storage-check.table.js';
@@ -34,9 +34,12 @@ import { DatabaseBackupService, createSqlOwnerTransformStream } from 'src/servic
 import { StorageCheckService } from 'src/services/storage-check.service.js';
 import { isValidDatabaseBackupName, isValidDatabaseRoutineBackupName } from 'src/utils/database-backups.js';
 import { getKyselyConfig } from 'src/utils/database.js';
-
-/** What an object on the backend for backups says it is, in its encrypted manifest */
-const DATABASE_BACKUP_KIND = 'database-backup';
+import {
+  DATABASE_BACKUP_KIND,
+  StoredDatabaseBackup,
+  fetchStoredDatabaseBackup,
+  listStoredDatabaseBackups,
+} from 'src/utils/stored-database-backups.js';
 
 /** A restore drill runs every three months, and when an administrator starts one */
 const RESTORE_DRILL_INTERVAL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -61,17 +64,6 @@ export const databaseNameOf = (connection: DatabaseConnectionParams) =>
   connection.connectionType === 'url'
     ? decodeURIComponent(new URL(connection.url).pathname.slice(1)) || 'postgres'
     : connection.database;
-
-export interface StoredDatabaseBackup {
-  key: string;
-  filename: string;
-  size: number;
-  sha1: Buffer;
-  encryption: Buffer;
-  createdAt: string;
-  /** How many newer backups had to exist before this one could go, when it was taken */
-  keepLast: number;
-}
 
 /**
  * Database backups on the backend for backups. The routine backups Immich writes to its backups folder are stored
@@ -178,24 +170,14 @@ export class StorageBackupService extends BaseService {
       throw new NotFoundException('Stored database backup not found');
     }
 
-    const filename = `uploaded-${backup.filename}`;
-    if (!isValidDatabaseBackupName(filename)) {
+    if (!isValidDatabaseBackupName(`uploaded-${backup.filename}`)) {
       throw new BadRequestException('Invalid backup name!');
     }
-    const path = join(StorageCore.getBaseFolder(StorageFolder.Backups), filename);
-    const temporary = `${path}.${randomUUID()}.tmp`;
-    const store = this.storageBackendRepository.getWriteStore(backendId);
-    try {
-      const content = await store.get(key, {
-        encryption: backup.encryption,
-        expect: { size: backup.size, sha1: backup.sha1 },
-      });
-      await pipeline(content, createWriteStream(temporary, { flags: 'wx' }));
-      await this.storageRepository.rename(temporary, path);
-    } finally {
-      await this.storageRepository.unlink(temporary).catch(() => {});
-    }
-    return { filename };
+    return fetchStoredDatabaseBackup(
+      this.storageBackendRepository.getEncryptedStore(backendId),
+      backup,
+      this.storageRepository,
+    );
   }
 
   /**
@@ -352,32 +334,10 @@ export class StorageBackupService extends BaseService {
     return this.listBackups(this.storageBackendRepository.getEncryptedStore(backendId));
   }
 
-  private async listBackups(store: EncryptedBlobStore): Promise<StoredDatabaseBackup[]> {
-    const backups: StoredDatabaseBackup[] = [];
-    for await (const { key } of store.list()) {
-      let manifest: BlobManifest;
-      let header: Buffer;
-      try {
-        ({ manifest, header } = await store.describe(key));
-      } catch (error) {
-        this.logger.warn(`Unable to read what the stored object ${key} is: ${error}`);
-        continue;
-      }
-      if (manifest.kind !== DATABASE_BACKUP_KIND || typeof manifest.filename !== 'string') {
-        continue;
-      }
-      backups.push({
-        key,
-        filename: manifest.filename,
-        size: manifest.size,
-        sha1: Buffer.from(manifest.sha1, 'hex'),
-        encryption: header,
-        createdAt: String(manifest.createdAt ?? ''),
-        keepLast: Number(manifest.keepLast) || 0,
-      });
-    }
-    // routine backups are named after when they were taken
-    return backups.toSorted((a, b) => b.filename.localeCompare(a.filename));
+  private listBackups(store: EncryptedBlobStore): Promise<StoredDatabaseBackup[]> {
+    return listStoredDatabaseBackups(store, (key, error) =>
+      this.logger.warn(`Unable to read what the stored object ${key} is: ${error}`),
+    );
   }
 
   /**

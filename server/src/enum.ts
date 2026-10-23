@@ -1122,6 +1122,8 @@ export enum MaintenanceAction {
   End = 'end',
   SelectDatabaseRestore = 'select_database_restore',
   RestoreDatabase = 'restore_database',
+  /** A new server whose storage configuration needs attention: what is wrong is shown until it is fixed */
+  StorageSetup = 'storage_setup',
 }
 
 export const MaintenanceActionSchema = z
@@ -1422,3 +1424,19 @@ export enum SearchOrderField {
 }
 
 export const SearchOrderFieldSchema = z.enum(SearchOrderField).meta({ id: 'SearchOrderField' });
+
+/** What can be wrong with the storage of a server, each with what to do about it (told by the web app) */
+export enum StorageSetupProblemKind {
+  /** IMMICH_STORAGE_BACKENDS names a file that is not there */
+  ConfigurationMissing = 'configuration_missing',
+  /** The file cannot be read as a storage configuration */
+  ConfigurationInvalid = 'configuration_invalid',
+  /** The master key file is not there */
+  MasterKeyFileMissing = 'master_key_file_missing',
+  /** The master key file or command gives no valid keys */
+  MasterKeysInvalid = 'master_keys_invalid',
+  /** Files in storage were encrypted with a master key that is not among the configured ones */
+  MasterKeyNotFound = 'master_key_not_found',
+  /** A backend cannot be written to, read from or deleted from */
+  BackendFailed = 'backend_failed',
+}

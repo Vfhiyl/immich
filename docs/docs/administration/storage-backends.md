@@ -252,10 +252,11 @@ Every three months (and when started on the storage page), Immich runs a **resto
 
 **The server is lost, the buckets and the master key file are not**:
 
-1. Install Immich on a new server with the same `.env`, the same storage configuration, the secret files and the master key file.
-2. Start it with an empty database and create an admin user.
-3. Fetch the latest database backup: `POST /api/admin/storage/database-backups/<key>/fetch` (list them first).
-4. Restore it from the backups in maintenance mode, as described in [Backup and Restore](./backup-and-restore.md). Every phone then syncs its library anew.
+1. Install Immich on a new server with the same `.env` (`IMMICH_STORAGE_BACKENDS` and the rest), and put the storage configuration file, the secret files of the credentials and the master key file at the same paths as before (e.g. the downloaded `immich-master-keys-….txt`, saved as `master.key`). Start it.
+2. Open the web app. The welcome page shows what Immich found: whether the configuration works, and the database backups in storage (_"The storage holds 3 database backups of a server…"_). Choose **Restore from backup**.
+3. The first step shows the storage again; the folders of the media location are empty, which is expected with storage backends. Choose **Next**, then **Restore** next to a backup under **Database backups in storage**: it is decrypted with the master key and restored, and Immich restarts with the database of the lost server. Sign in as before; every phone then syncs its library anew.
+
+**The storage configuration of a new server does not work** (a file is missing, a setting is wrong, the master key does not match the storage, a bucket cannot be reached): instead of stopping, Immich shows the storage setup page, with what is wrong, the path it expects and what to do. The configuration is not changed on that page: correct the files (or `.env`, then recreate the container) and choose **Check again**, then **Continue**. A server that already has an administrator keeps refusing to start instead, and its log says why.
 
 **A bucket is lost**: point the backend at its replica, see [Replicas](#replicas).
 

@@ -1,11 +1,18 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { SignJWT } from 'jose';
-import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
+import { MaintenanceAction, StorageSetupProblemKind, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { MaintenanceWebsocketRepository } from 'src/maintenance/maintenance-websocket.repository.js';
 import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
+import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { AutoMocked, ServiceMocks, automock, getMocks } from 'test/utils.js';
+
+const withBackendsFile = (mocks: ServiceMocks, backendsFile?: string) =>
+  mocks.config.getEnv.mockReturnValue({
+    ...mockEnvData({}),
+    storage: { ...mockEnvData({}).storage, backendsFile },
+  });
 
 describe(MaintenanceWorkerService.name, () => {
   let sut: MaintenanceWorkerService;
@@ -50,6 +57,8 @@ describe(MaintenanceWorkerService.name, () => {
       mocks.process,
       mocks.database as never,
       databaseBackupServiceMock,
+      mocks.user as never,
+      mocks.storageBackend as never,
     );
 
     sut.mock({
@@ -293,6 +302,50 @@ describe(MaintenanceWorkerService.name, () => {
       });
 
       expect(mocks.logger.log).toHaveBeenCalledTimes(0);
+    });
+  });
+
+  describe('storage setup', () => {
+    it('should show the storage setup to anyone on a new server, and only after logging in once an admin exists', async () => {
+      withBackendsFile(mocks, undefined);
+      mocks.user.hasAdmin.mockResolvedValue(false);
+      await expect(sut.getStorageSetup({})).resolves.toMatchObject({ configFile: null, problems: [] });
+
+      mocks.user.hasAdmin.mockResolvedValue(true);
+      await expect(sut.getStorageSetup({})).rejects.toThrowError(UnauthorizedException);
+    });
+
+    it('should tell what is wrong, and stay in maintenance mode until it is fixed', async () => {
+      withBackendsFile(mocks, '/config/storage.yaml');
+      mocks.user.hasAdmin.mockResolvedValue(false);
+      mocks.storageBackend.readConfig.mockRejectedValue(
+        Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' }),
+      );
+
+      const report = await sut.continueAfterStorageSetup({});
+
+      expect(report.problems).toEqual([
+        expect.objectContaining({ kind: StorageSetupProblemKind.ConfigurationMissing, path: '/config/storage.yaml' }),
+      ]);
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+      expect(mocks.app.exitApp).not.toHaveBeenCalled();
+    });
+
+    it('should end maintenance mode once nothing is wrong', async () => {
+      withBackendsFile(mocks, undefined);
+      mocks.user.hasAdmin.mockResolvedValue(false);
+
+      await sut.continueAfterStorageSetup({});
+
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.MaintenanceMode, {
+        isMaintenanceMode: false,
+      });
+      expect(mocks.app.exitApp).toHaveBeenCalled();
+    });
+
+    it('should not run anything as an action', async () => {
+      await sut.runAction({ action: MaintenanceAction.StorageSetup });
+      expect(mocks.app.exitApp).not.toHaveBeenCalled();
     });
   });
 

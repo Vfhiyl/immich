@@ -8,6 +8,10 @@ const UNAUTHENTICATED_ADMIN_ROUTES = new Set([
   'GET admin/maintenance/status',
   'POST admin/maintenance/login',
   'POST admin/database-backups/start-restore',
+  // the storage of a new server: only before an administrator exists (as start-restore), or in maintenance mode
+  'GET admin/storage/setup',
+  'GET admin/maintenance/storage',
+  'POST admin/maintenance/storage/continue',
 ]);
 
 /** Admin-only routes that live outside `admin/`, i.e. `@Authenticated({ admin: true })` */

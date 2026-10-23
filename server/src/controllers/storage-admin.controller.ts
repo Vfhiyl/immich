@@ -7,6 +7,7 @@ import {
   StorageMasterKeyExportDto,
   StorageMasterKeyExportResponseDto,
 } from 'src/dtos/storage-backend.dto.js';
+import { StorageSetupResponseDto } from 'src/dtos/storage-setup.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { StorageService } from 'src/services/storage.service.js';
@@ -26,6 +27,18 @@ export class StorageAdminController {
   @Authenticated({ permission: Permission.Maintenance, admin: true })
   getStorageConfiguration(): Promise<StorageConfigurationResponseDto> {
     return this.service.getConfiguration();
+  }
+
+  @Get('setup')
+  @Endpoint({
+    summary: 'Check the storage of a new server',
+    description:
+      'What a new server finds in its storage configuration and storage (e.g. database backups of the server it replaces), for the welcome page; only before an administrator exists',
+    history: new HistoryBuilder().added('v3.3.5').alpha('v3.3.5'),
+  })
+  @Authenticated({ public: true, setup: true })
+  getStorageSetup(): Promise<StorageSetupResponseDto> {
+    return this.service.getStorageSetup();
   }
 
   @Post('master-keys/export')

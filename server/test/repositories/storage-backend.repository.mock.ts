@@ -15,6 +15,7 @@ export const newStorageBackendRepositoryMock = (): Mocked<RepositoryInterface<St
   real.registerWrite = () => Promise.resolve();
   return {
     registerWrite: vitest.fn().mockResolvedValue(undefined),
+    createDetached: vitest.fn(() => real.createDetached()),
     readConfig: vitest.fn(),
     readMasterKeys: vitest.fn(),
     configure: vitest.fn((backends, keys, deletion, databaseBackups) =>

@@ -2,6 +2,7 @@
   /* eslint-disable unicorn/no-optional-chaining-on-undeclared-variable */
   import AuthPageLayout from '$lib/components/layouts/AuthPageLayout.svelte';
   import MaintenanceRestoreFlow from './MaintenanceRestoreFlow.svelte';
+  import MaintenanceStorageSetup from './MaintenanceStorageSetup.svelte';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { handleSetMaintenanceMode } from '$lib/services/maintenance.service';
   import { maintenanceStore } from '$lib/stores/maintenance.store';
@@ -65,6 +66,9 @@
           <Text>{$t('maintenance_task_rollback')}</Text>
         {/if}
       {/if}
+    {:else if $status?.action === MaintenanceAction.StorageSetup}
+      <!-- open without logging in: a new server, whose storage configuration needs attention -->
+      <MaintenanceStorageSetup />
     {:else if $status?.action === MaintenanceAction.SelectDatabaseRestore && $auth}
       <MaintenanceRestoreFlow {end} expectedVersion={data.expectedVersion} />
     {:else}

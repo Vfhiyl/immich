@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { parse } from 'cookie';
 import { NextFunction, Request, Response } from 'express';
 import { jwtVerify } from 'jose';
@@ -14,7 +14,8 @@ import {
   SetMaintenanceModeDto,
 } from 'src/dtos/maintenance.dto.js';
 import { ServerConfigDto, ServerPingResponse, ServerVersionResponseDto } from 'src/dtos/server.dto.js';
-import { DatabaseLock, ImmichCookie, MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
+import { StorageSetupResponseDto } from 'src/dtos/storage-setup.dto.js';
+import { DatabaseLock, ImmichCookie, MaintenanceAction, StorageBackendRole, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { MaintenanceWebsocketRepository } from 'src/maintenance/maintenance-websocket.repository.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
@@ -22,8 +23,10 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
+import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { type ApiService as _ApiService } from 'src/services/api.service.js';
 import { type BaseService as _BaseService } from 'src/services/base.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
@@ -32,6 +35,8 @@ import { type VersionService as _VersionService } from 'src/services/version.ser
 import { getConfig } from 'src/utils/config.js';
 import { createMaintenanceLoginUrl, detectPriorInstall } from 'src/utils/maintenance.js';
 import { getExternalDomain } from 'src/utils/misc.js';
+import { checkStorageSetup } from 'src/utils/storage-setup.js';
+import { fetchStoredDatabaseBackup, listStoredDatabaseBackups } from 'src/utils/stored-database-backups.js';
 
 /**
  * This service is available inside of maintenance mode to manage maintenance mode
@@ -55,6 +60,8 @@ export class MaintenanceWorkerService {
     private processRepository: ProcessRepository,
     private databaseRepository: DatabaseRepository,
     private databaseBackupService: DatabaseBackupService,
+    private userRepository: UserRepository,
+    private storageBackendRepository: StorageBackendRepository,
   ) {
     this.logger.setContext(this.constructor.name);
   }
@@ -257,6 +264,55 @@ export class MaintenanceWorkerService {
     return detectPriorInstall(this.storageRepository);
   }
 
+  /**
+   * Check the storage configuration and the storage: anyone may see it on a new server (as anyone may start setting it
+   * up, or restore it), only who is logged into maintenance mode once an administrator exists
+   */
+  async getStorageSetup(headers: IncomingHttpHeaders, { probe = true } = {}): Promise<StorageSetupResponseDto> {
+    if (await this.userRepository.hasAdmin()) {
+      await this.authenticate(headers);
+    }
+    return checkStorageSetup({
+      backendsFile: this.configRepository.getEnv().storage.backendsFile,
+      repository: this.storageBackendRepository,
+      probe,
+    });
+  }
+
+  /** Check the storage again and start normally when nothing is wrong (a normal start checks everything again) */
+  async continueAfterStorageSetup(headers: IncomingHttpHeaders): Promise<StorageSetupResponseDto> {
+    const report = await this.getStorageSetup(headers);
+    if (report.problems.length > 0) {
+      return report;
+    }
+    this.logger.log('The storage configuration passed its check, ending maintenance mode');
+    await this.endMaintenance();
+    return report;
+  }
+
+  /** The database backups on the backend for backups, to restore one of them */
+  async getStoredDatabaseBackups(headers: IncomingHttpHeaders) {
+    const { databaseBackups } = await this.getStorageSetup(headers, { probe: false });
+    return { backups: databaseBackups };
+  }
+
+  /** Copy a database backup from the backend for backups into the backups folder, decrypted, to restore it */
+  async fetchStoredDatabaseBackup(headers: IncomingHttpHeaders, key: string) {
+    const report = await this.getStorageSetup(headers, { probe: false });
+    const backendId = report.backends.find(({ role, ok }) => role === StorageBackendRole.Backup && ok)?.id;
+    if (!backendId) {
+      throw new BadRequestException('No storage backend for backups can be read');
+    }
+    const store = this.storageBackendRepository.getEncryptedStore(backendId);
+    const backups = await listStoredDatabaseBackups(store, () => {});
+    const backup = backups.find((backup) => backup.key === key);
+    if (!backup) {
+      throw new NotFoundException('Stored database backup not found');
+    }
+    this.logger.log(`Fetching the stored database backup ${backup.filename} to restore it`);
+    return fetchStoredDatabaseBackup(store, backup, this.storageRepository);
+  }
+
   async login(jwt?: string): Promise<MaintenanceAuthDto> {
     if (!jwt) {
       throw new UnauthorizedException('Missing JWT Token');
@@ -282,7 +338,8 @@ export class MaintenanceWorkerService {
   async runAction(action: SetMaintenanceModeDto) {
     switch (action.action) {
       case MaintenanceAction.Start:
-      case MaintenanceAction.SelectDatabaseRestore: {
+      case MaintenanceAction.SelectDatabaseRestore:
+      case MaintenanceAction.StorageSetup: {
         return;
       }
       case MaintenanceAction.End: {

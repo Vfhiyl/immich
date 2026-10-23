@@ -28,6 +28,7 @@ import { repositories } from 'src/repositories/index.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
+import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TelemetryRepository, teardownTelemetry } from 'src/repositories/telemetry.repository.js';
@@ -125,6 +126,7 @@ export class ApiModule extends BaseModule {}
     MaintenanceHealthRepository,
     MaintenanceWebsocketRepository,
     SessionRepository,
+    StorageBackendRepository,
     DatabaseBackupService,
     MaintenanceWorkerService,
     ...commonMiddleware,

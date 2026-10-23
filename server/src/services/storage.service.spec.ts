@@ -2,7 +2,14 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { JobName, JobStatus, StorageBackendDriver, StorageBackendRole, SystemMetadataKey } from 'src/enum.js';
+import {
+  JobName,
+  JobStatus,
+  MaintenanceAction,
+  StorageBackendDriver,
+  StorageBackendRole,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { EncryptedBlobStore } from 'src/repositories/encrypted-blob-store.js';
 import { MasterKeys, getMasterKeyId } from 'src/repositories/key-provider.js';
 import { StorageService } from 'src/services/storage.service.js';
@@ -232,11 +239,39 @@ describe(StorageService.name, () => {
 
     beforeEach(async () => {
       root = await fs.mkdtemp(join(tmpdir(), 'immich-storage-backends-'));
-      mocks.crypto.randomUUID.mockReturnValue('probe-id');
+      // a server in use, unless a test says otherwise
+      mocks.user.hasAdmin.mockResolvedValue(true);
     });
 
     afterEach(async () => {
       await fs.rm(root, { recursive: true, force: true });
+    });
+
+    it('should restart a new server in maintenance mode, to show what is wrong with its storage', async () => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ storage: { ignoreMountCheckErrors: false, backendsFile } }));
+      mocks.storageBackend.readConfig.mockRejectedValue(new Error('ENOENT: no such file'));
+      mocks.user.hasAdmin.mockResolvedValue(false);
+
+      void sut.onBootstrapStorageBackends();
+
+      await vi.waitFor(() => expect(mocks.app.exitApp).toHaveBeenCalled());
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.MaintenanceMode, {
+        isMaintenanceMode: true,
+        secret: expect.any(String),
+        action: { action: MaintenanceAction.StorageSetup },
+      });
+    });
+
+    it('should keep refusing to start a server in use with a storage configuration that does not work', async () => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ storage: { ignoreMountCheckErrors: false, backendsFile } }));
+      mocks.storageBackend.readConfig.mockRejectedValue(new Error('ENOENT: no such file'));
+      mocks.user.hasAdmin.mockResolvedValue(true);
+
+      await expect(sut.onBootstrapStorageBackends()).rejects.toThrow(
+        'Unable to load the storage backend configuration',
+      );
+      expect(mocks.app.exitApp).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
     });
 
     it('should only keep the built-in backends without a configuration file', async () => {

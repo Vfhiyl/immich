@@ -1,8 +1,6 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { chunk, partition } from 'lodash-es';
 import { join } from 'node:path';
-import { Readable } from 'node:stream';
-import { buffer } from 'node:stream/consumers';
 import type { JobOf, SystemFlags } from 'src/types.js';
 import { ErrorMessages } from 'src/constants.js';
 import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
@@ -15,6 +13,7 @@ import {
   StorageMasterKeyExportDto,
   StorageMasterKeyExportResponseDto,
 } from 'src/dtos/storage-backend.dto.js';
+import { StorageSetupResponseDto } from 'src/dtos/storage-setup.dto.js';
 import {
   BootstrapEventPriority,
   BuiltinStorageBackend,
@@ -22,6 +21,7 @@ import {
   ImmichWorker,
   JobName,
   JobStatus,
+  MaintenanceAction,
   NotificationLevel,
   NotificationType,
   QueueName,
@@ -30,9 +30,11 @@ import {
 } from 'src/enum.js';
 import { KeyProvider } from 'src/repositories/key-provider.js';
 import { PersonId } from 'src/repositories/person.repository.js';
-import { STORAGE_PROBE_PREFIX, isBuiltinStorageBackend } from 'src/repositories/storage-backend.repository.js';
+import { isBuiltinStorageBackend } from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { generateMaintenanceSecret } from 'src/utils/maintenance.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
+import { checkStorageSetup, probeStorageBackend } from 'src/utils/storage-setup.js';
 
 /** What a write that was cut off left on a local backend is removed after this long */
 const TEMPORARY_FILE_MAX_AGE_MS = 2 * 24 * 60 * 60 * 1000;
@@ -162,6 +164,44 @@ export class StorageService extends BaseService {
 
   @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.StorageBackends })
   async onBootstrapStorageBackends() {
+    try {
+      await this.configureStorageBackends();
+    } catch (error) {
+      // a new server shows what is wrong in the web app instead of stopping; one in use keeps refusing to start
+      if (error instanceof ImmichStartupError && (await this.isSetupAvailable())) {
+        await this.startStorageSetup(error);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Restart in maintenance mode, where the web app shows what is wrong with the storage configuration and how to fix it
+   * (the storage setup page), until a deployer fixed it and continues
+   */
+  private async startStorageSetup(error: ImmichStartupError) {
+    this.logger.error(`${error.message}. Restarting in maintenance mode, to show the storage setup in the web app`);
+    await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, {
+      isMaintenanceMode: true,
+      secret: generateMaintenanceSecret(),
+      action: { action: MaintenanceAction.StorageSetup },
+    });
+    this.appRepository.exitApp();
+    // the startup ends with the restart
+    await new Promise<never>(() => {});
+  }
+
+  /** What a new server finds in its storage configuration and storage, for the welcome page */
+  getStorageSetup(): Promise<StorageSetupResponseDto> {
+    return checkStorageSetup({
+      backendsFile: this.configRepository.getEnv().storage.backendsFile,
+      repository: this.storageBackendRepository.createDetached(),
+      // the server checked the backends as it started
+      probe: false,
+    });
+  }
+
+  private async configureStorageBackends() {
     const { backendsFile } = this.configRepository.getEnv().storage;
     let backends: StorageBackendConfig[] = [];
     let encryption: StorageBackendsConfig['encryption'];
@@ -293,21 +333,10 @@ export class StorageService extends BaseService {
 
   /** Check that a backend accepts writes and returns what was written (encrypted, if it encrypts), then remove the probe */
   private async probeStorageBackend(backendId: string) {
-    const store = this.storageBackendRepository.getWriteStore(backendId);
-    const key = `${STORAGE_PROBE_PREFIX}/${this.cryptoRepository.randomUUID()}`;
-    const content = Buffer.from(`immich storage probe ${key}`);
-
     try {
-      const written = await store.put(key, Readable.from([content]));
-      const read = await buffer(await store.get(key, { expect: written, encryption: written.encryption }));
-      if (!read.equals(content)) {
-        throw new Error('the probe read back different content');
-      }
-      // deleted with the credentials of the cleanup, which are checked too
-      const { failed } = await this.storageBackendRepository.getDeletionStore(backendId).deleteMany([key]);
-      if (failed.length > 0) {
-        this.logger.warn(`Unable to remove the probe ${key} from storage backend ${backendId}`);
-      }
+      await probeStorageBackend(this.storageBackendRepository, backendId, (key) =>
+        this.logger.warn(`Unable to remove the probe ${key} from storage backend ${backendId}`),
+      );
     } catch (error) {
       throw new ImmichStartupError(`Storage backend ${backendId} failed the startup check: ${error}`);
     }

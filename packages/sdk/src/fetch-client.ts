@@ -520,6 +520,60 @@ export type MaintenanceStatusResponseDto = {
     progress?: number;
     task?: string;
 };
+export type StorageSetupResponseDto = {
+    backends: {
+        driver: string;
+        encrypted: boolean;
+        id: string;
+        /** Whether the backend passed its check */
+        ok: boolean;
+        role: StorageBackendRole;
+    }[];
+    /** The storage configuration file (IMMICH_STORAGE_BACKENDS), null if files are kept in the media location */
+    configFile: string | null;
+    /** The database backups on the backend for backups, the newest first */
+    databaseBackups: {
+        createdAt: string;
+        filename: string;
+        key: string;
+        size: number;
+    }[];
+    /** Whether the backend for originals holds files already */
+    hasOriginals: boolean;
+    /** The program of the master key command of the configuration */
+    masterKeyCommand: string | null;
+    /** The master key file of the configuration */
+    masterKeyFile: string | null;
+    /** The current master key, when the keys could be read */
+    masterKeyId: string | null;
+    problems: {
+        /** The storage backend it is about */
+        backendId?: string;
+        /** The master key it is about */
+        keyId?: string;
+        kind: StorageSetupProblemKind;
+        /** What went wrong, as the server saw it */
+        message: string;
+        /** The file it is about, inside the container */
+        path?: string;
+    }[];
+};
+export type StoredDatabaseBackupListResponseDto = {
+    backups: {
+        /** When the backup was stored */
+        createdAt: string;
+        /** File name of the backup */
+        filename: string;
+        /** Key of the backup on the storage backend for backups */
+        key: string;
+        /** Size of the backup in bytes */
+        size: number;
+    }[];
+};
+export type StoredDatabaseBackupFetchResponseDto = {
+    /** File name of the backup in the backups folder, ready to restore */
+    filename: string;
+};
 export type NotificationCreateDto = {
     /** Additional notification data */
     data?: {
@@ -655,22 +709,6 @@ export type StorageIssueDto = {
 export type StorageIssuesResponseDto = {
     items: StorageIssueDto[];
     nextCursor?: string;
-};
-export type StoredDatabaseBackupListResponseDto = {
-    backups: {
-        /** When the backup was stored */
-        createdAt: string;
-        /** File name of the backup */
-        filename: string;
-        /** Key of the backup on the storage backend for backups */
-        key: string;
-        /** Size of the backup in bytes */
-        size: number;
-    }[];
-};
-export type StoredDatabaseBackupFetchResponseDto = {
-    /** File name of the backup in the backups folder, ready to restore */
-    filename: string;
 };
 export type StorageDeletionStatusResponseDto = {
     /** How long deleted originals are kept (from the configuration file) */
@@ -4476,6 +4514,54 @@ export function getMaintenanceStatus(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Check the storage in maintenance mode
+ */
+export function getMaintenanceStorageSetup(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageSetupResponseDto;
+    }>("/admin/maintenance/storage", {
+        ...opts
+    }));
+}
+/**
+ * Continue after the storage setup
+ */
+export function continueAfterStorageSetup(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StorageSetupResponseDto;
+    }>("/admin/maintenance/storage/continue", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * List the database backups in storage in maintenance mode
+ */
+export function getMaintenanceStoredDatabaseBackups(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StoredDatabaseBackupListResponseDto;
+    }>("/admin/maintenance/storage/database-backups", {
+        ...opts
+    }));
+}
+/**
+ * Fetch a database backup from storage in maintenance mode
+ */
+export function fetchMaintenanceStoredDatabaseBackup({ key }: {
+    key: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StoredDatabaseBackupFetchResponseDto;
+    }>(`/admin/maintenance/storage/database-backups/${encodeURIComponent(key)}/fetch`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Create a notification
  */
 export function createNotification({ notificationCreateDto }: {
@@ -4805,6 +4891,17 @@ export function retryStorageReplicaCopies({ id }: {
     }>(`/admin/storage/replicas/${encodeURIComponent(id)}/retry`, {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Check the storage of a new server
+ */
+export function getStorageSetup(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageSetupResponseDto;
+    }>("/admin/storage/setup", {
+        ...opts
     }));
 }
 /**
@@ -8687,7 +8784,8 @@ export enum MaintenanceAction {
     Start = "start",
     End = "end",
     SelectDatabaseRestore = "select_database_restore",
-    RestoreDatabase = "restore_database"
+    RestoreDatabase = "restore_database",
+    StorageSetup = "storage_setup"
 }
 export enum StorageFolder {
     EncodedVideo = "encoded-video",
@@ -8696,6 +8794,20 @@ export enum StorageFolder {
     Profile = "profile",
     Thumbs = "thumbs",
     Backups = "backups"
+}
+export enum StorageBackendRole {
+    Originals = "originals",
+    Derived = "derived",
+    Backup = "backup",
+    Replica = "replica"
+}
+export enum StorageSetupProblemKind {
+    ConfigurationMissing = "configuration_missing",
+    ConfigurationInvalid = "configuration_invalid",
+    MasterKeyFileMissing = "master_key_file_missing",
+    MasterKeysInvalid = "master_keys_invalid",
+    MasterKeyNotFound = "master_key_not_found",
+    BackendFailed = "backend_failed"
 }
 export enum NotificationLevel {
     Success = "success",
@@ -8720,12 +8832,6 @@ export enum StorageBackendDriver {
 export enum StorageReplicatedRole {
     Originals = "originals",
     Backup = "backup"
-}
-export enum StorageBackendRole {
-    Originals = "originals",
-    Derived = "derived",
-    Backup = "backup",
-    Replica = "replica"
 }
 export enum StorageMasterKeySource {
     File = "file",

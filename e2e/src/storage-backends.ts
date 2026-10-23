@@ -225,6 +225,19 @@ export class TestEnvironment {
     }
   }
 
+  /**
+   * What a new server that replaces a lost one has: an empty database and media location, but the same storage
+   * configuration, master key file and storage. The server must be stopped.
+   */
+  async loseServer() {
+    await withDatabase('postgres', async (client) => {
+      await client.query(`DROP DATABASE IF EXISTS ${this.database} WITH (FORCE)`);
+      await client.query(`CREATE DATABASE ${this.database}`);
+    });
+    await rm(this.mediaLocation, { recursive: true, force: true });
+    await mkdir(this.mediaLocation, { recursive: true });
+  }
+
   get mediaLocation() {
     return join(this.root, 'media');
   }
@@ -452,7 +465,11 @@ export const runCli = async (args: string[], { configDirectory, key }: { configD
 
 /** A running server; `start` resolves once both workers are ready, or rejects with the output if it exits */
 export class ImmichServer {
-  static async start(environment: TestEnvironment, { backends = true }: { backends?: boolean } = {}) {
+  /** With `maintenance`, the server is expected to come up in maintenance mode (e.g. for its storage setup) */
+  static async start(
+    environment: TestEnvironment,
+    { backends = true, maintenance = false }: { backends?: boolean; maintenance?: boolean } = {},
+  ) {
     const child = spawn(process.execPath, ['dist/main.js'], {
       cwd: serverRoot,
       // a process group, so that the workers are stopped with the server
@@ -461,7 +478,7 @@ export class ImmichServer {
     });
 
     const server = new this(child);
-    await server.waitUntilReady();
+    await server.waitUntilReady(maintenance);
     return server;
   }
 
@@ -478,13 +495,17 @@ export class ImmichServer {
     process.on('exit', (code) => (this.exited = code));
   }
 
-  private async waitUntilReady() {
+  private async waitUntilReady(maintenance: boolean) {
     for (let attempt = 0; attempt < 300; attempt++) {
       if (this.exited !== undefined) {
         throw new Error(`The server exited with code ${this.exited}:\n${this.logs}`);
       }
 
-      if (this.logs.includes('Immich Microservices is running') && (await isApiUp())) {
+      if (
+        maintenance
+          ? await isInMaintenanceMode()
+          : this.logs.includes('Immich Microservices is running') && (await isApiUp())
+      ) {
         return;
       }
 
@@ -546,6 +567,15 @@ const descendantsOf = async (root: number) => {
     }
   }
   return found;
+};
+
+const isInMaintenanceMode = async () => {
+  try {
+    const response = await fetch(`${baseUrl}/server/config`);
+    return response.ok && ((await response.json()) as { maintenanceMode?: boolean }).maintenanceMode === true;
+  } catch {
+    return false;
+  }
 };
 
 const isApiUp = async () => {

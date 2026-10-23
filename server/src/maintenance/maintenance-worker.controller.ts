@@ -25,6 +25,12 @@ import {
   SetMaintenanceModeDto,
 } from 'src/dtos/maintenance.dto.js';
 import { ServerConfigDto, ServerPingResponse, ServerVersionResponseDto } from 'src/dtos/server.dto.js';
+import {
+  StoredDatabaseBackupFetchResponseDto,
+  StoredDatabaseBackupKeyParamDto,
+  StoredDatabaseBackupListResponseDto,
+} from 'src/dtos/storage-backup.dto.js';
+import { StorageSetupResponseDto } from 'src/dtos/storage-setup.dto.js';
 import { ImmichCookie } from 'src/enum.js';
 import { MaintenanceRoute } from 'src/maintenance/maintenance-auth.guard.js';
 import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.service.js';
@@ -113,6 +119,33 @@ export class MaintenanceWorkerController {
   @Get('admin/maintenance/detect-install')
   detectPriorInstall(): Promise<MaintenanceDetectInstallResponseDto> {
     return this.service.detectPriorInstall();
+  }
+
+  // the guard lets these through: the service decides, as they are open on a new server
+
+  @Get('admin/maintenance/storage')
+  getStorageSetup(@Req() request: Request): Promise<StorageSetupResponseDto> {
+    return this.service.getStorageSetup(request.headers);
+  }
+
+  @Post('admin/maintenance/storage/continue')
+  continueAfterStorageSetup(@Req() request: Request): Promise<StorageSetupResponseDto> {
+    return this.service.continueAfterStorageSetup(request.headers);
+  }
+
+  @Get('admin/maintenance/storage/database-backups')
+  @MaintenanceRoute()
+  getStoredDatabaseBackups(@Req() request: Request): Promise<StoredDatabaseBackupListResponseDto> {
+    return this.service.getStoredDatabaseBackups(request.headers);
+  }
+
+  @Post('admin/maintenance/storage/database-backups/:key/fetch')
+  @MaintenanceRoute()
+  fetchStoredDatabaseBackup(
+    @Req() request: Request,
+    @Param() { key }: StoredDatabaseBackupKeyParamDto,
+  ): Promise<StoredDatabaseBackupFetchResponseDto> {
+    return this.service.fetchStoredDatabaseBackup(request.headers, key);
   }
 
   @Post('admin/maintenance/login')
