@@ -435,6 +435,27 @@ class BackgroundUploadService {
         ]),
     };
 
+    if (CurrentPlatform.isIOS) {
+      final resumable = await _getResumableUploadTask(
+        file,
+        endpoint: serverEndpoint,
+        headers: headers,
+        assetData: toResumableAssetData(originalFileName ?? filename, fieldsMap),
+        filename: filename,
+        baseDirectory: baseDirectory,
+        directory: directory,
+        taskId: deviceAssetId,
+        displayName: originalFileName ?? filename,
+        metadata: metadata,
+        group: group,
+        requiresWiFi: requiresWiFi,
+        priority: priority,
+      );
+      if (resumable != null) {
+        return resumable;
+      }
+    }
+
     return UploadTask(
       taskId: deviceAssetId,
       displayName: originalFileName ?? filename,
@@ -446,6 +467,60 @@ class BackgroundUploadService {
       baseDirectory: baseDirectory,
       directory: directory,
       fileField: 'assetData',
+      metaData: metadata ?? '',
+      group: group,
+      requiresWiFi: requiresWiFi,
+      priority: priority ?? 5,
+      updates: Updates.statusAndProgress,
+      retries: 3,
+    );
+  }
+
+  /// On iOS, the file as the whole content of a request to the resumable upload endpoint, when the server has one:
+  /// URLSession of iOS 17 and later resumes an upload of a background session by itself when the connection breaks
+  /// (with the draft of the protocol it speaks; it falls back to a regular upload otherwise). A file larger than the
+  /// largest request the deployment allows (e.g. behind a proxy that limits request bodies) cannot go in one request:
+  /// it is left to the upload in parts of the app.
+  Future<UploadTask?> _getResumableUploadTask(
+    File file, {
+    required String endpoint,
+    required Map<String, String> headers,
+    required Map<String, Object?> assetData,
+    required String filename,
+    required BaseDirectory baseDirectory,
+    required String directory,
+    required String? taskId,
+    required String displayName,
+    required String? metadata,
+    required String group,
+    required bool requiresWiFi,
+    required int? priority,
+  }) async {
+    final options = await _uploadRepository.getResumableUploadOptions();
+    if (options == null) {
+      return null;
+    }
+    final maxAppendSize = options.maxAppendSize;
+    if (maxAppendSize != null && await file.length() > maxAppendSize) {
+      return null;
+    }
+
+    return UploadTask(
+      taskId: taskId,
+      displayName: displayName,
+      httpRequestMethod: 'POST',
+      url: Uri.parse('$endpoint/upload').toString(),
+      headers: {
+        ...headers,
+        'X-Immich-Asset-Data': base64Url.encode(utf8.encode(jsonEncode(assetData))),
+        // the server does not need a file name: it is in the asset data
+        'Content-Disposition': '',
+      },
+      post: 'binary',
+      mimeType: 'application/octet-stream',
+      filename: filename,
+      baseDirectory: baseDirectory,
+      directory: directory,
       metaData: metadata ?? '',
       group: group,
       requiresWiFi: requiresWiFi,

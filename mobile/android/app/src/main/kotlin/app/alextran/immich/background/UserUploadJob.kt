@@ -114,8 +114,12 @@ class UserUploadJobService : JobService() {
 class UserUploadApiImpl(context: Context) : UserUploadApi {
   private val ctx: Context = context.applicationContext
 
-  override fun start(): Boolean =
+  // the notification of the job says what it does (BackgroundWorkerPreferences)
+  override fun start(title: String, subtitle: String): Boolean =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && UserUploadJobService.start(ctx)
+
+  // the notification of the job does not show progress
+  override fun progress(completed: Long, total: Long) {}
 
   override fun finish() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {

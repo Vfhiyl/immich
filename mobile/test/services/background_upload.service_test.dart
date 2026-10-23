@@ -12,6 +12,7 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/store.model.dart';
 import 'package:immich_mobile/domain/services/store.service.dart';
 import 'package:immich_mobile/entities/store.entity.dart';
+import 'package:immich_mobile/infrastructure/repositories/resumable_upload.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/settings.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/store.repository.dart';
 import 'package:immich_mobile/services/background_upload.service.dart';
@@ -65,6 +66,8 @@ void main() {
       mockAssetService,
     );
 
+    // servers without resumable uploads, unless a test says otherwise
+    when(() => mockUploadRepository.getResumableUploadOptions()).thenAnswer((_) async => null);
     mockUploadRepository.onUploadStatus = (_) {};
     mockUploadRepository.onTaskProgress = (_) {};
   });
@@ -186,6 +189,97 @@ void main() {
       final task = await sut.getUploadTask(asset);
       expect(task, isNotNull);
       expect(task!.fields['filename'], equals('DJI_0001.jpg'));
+    });
+  });
+
+  group('getUploadTask on iOS with a server that takes resumable uploads', () {
+    late Directory directory;
+    late File file;
+
+    setUp(() async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      directory = await Directory.systemTemp.createTemp('immich-upload-');
+      file = File('${directory.path}/IMG_0001.jpg')..writeAsBytesSync(List.filled(1000, 1));
+    });
+
+    tearDown(() async {
+      debugDefaultTargetPlatformOverride = null;
+      await directory.delete(recursive: true);
+    });
+
+    void stubAsset(LocalAsset asset, {bool isLivePhoto = false}) {
+      final entity = MockAssetEntity();
+      when(() => entity.isLivePhoto).thenReturn(isLivePhoto);
+      when(() => mockStorageRepository.getAssetEntityForAsset(asset)).thenAnswer((_) async => entity);
+      when(() => mockStorageRepository.getFileForAsset(asset.id)).thenAnswer((_) async => file);
+      when(() => mockStorageRepository.getMotionFileForAsset(asset)).thenAnswer((_) async => file);
+      when(() => mockAssetMediaRepository.getOriginalFilename(asset.id)).thenAnswer((_) async => 'IMG_0001.jpg');
+    }
+
+    Map<String, dynamic> assetDataOf(UploadTask task) =>
+        jsonDecode(utf8.decode(base64Url.decode(task.headers['X-Immich-Asset-Data']!))) as Map<String, dynamic>;
+
+    test('should send the file as the whole content of a request, which URLSession resumes by itself', () async {
+      when(
+        () => mockUploadRepository.getResumableUploadOptions(),
+      ).thenAnswer((_) async => const ResumableUploadOptions());
+      final asset = LocalAssetStub.image1;
+      stubAsset(asset);
+
+      final task = await sut.getUploadTask(asset);
+
+      expect(task, isNotNull);
+      expect(task!.url, equals('http://test-server.com/upload'));
+      expect(task.post, equals('binary'));
+      expect(task.mimeType, equals('application/octet-stream'));
+      expect(task.headers['Content-Disposition'], equals(''));
+      expect(
+        assetDataOf(task),
+        allOf(
+          containsPair('filename', 'IMG_0001.jpg'),
+          containsPair('deviceAssetId', asset.id),
+          containsPair('deviceId', 'test-device-id'),
+          containsPair('isFavorite', false),
+          contains('fileCreatedAt'),
+        ),
+      );
+    });
+
+    test('should keep the video of a live photo hidden, as an upload in one request does', () async {
+      when(
+        () => mockUploadRepository.getResumableUploadOptions(),
+      ).thenAnswer((_) async => const ResumableUploadOptions());
+      final asset = LocalAssetStub.image1;
+      stubAsset(asset, isLivePhoto: true);
+
+      final task = await sut.getUploadTask(asset);
+      final still = await sut.getLivePhotoUploadTask(asset, 'video-id');
+
+      expect(assetDataOf(task!), containsPair('visibility', 'hidden'));
+      expect(assetDataOf(still!), containsPair('livePhotoVideoId', 'video-id'));
+    });
+
+    test('should upload a file larger than the largest request the server takes as before', () async {
+      when(
+        () => mockUploadRepository.getResumableUploadOptions(),
+      ).thenAnswer((_) async => const ResumableUploadOptions(maxAppendSize: 999));
+      final asset = LocalAssetStub.image1;
+      stubAsset(asset);
+
+      final task = await sut.getUploadTask(asset);
+
+      expect(task!.url, equals('http://test-server.com/assets'));
+      expect(task.post, isNull);
+      expect(task.fields['filename'], equals('IMG_0001.jpg'));
+    });
+
+    test('should upload as before to a server without resumable uploads', () async {
+      final asset = LocalAssetStub.image1;
+      stubAsset(asset);
+
+      final task = await sut.getUploadTask(asset);
+
+      expect(task!.url, equals('http://test-server.com/assets'));
     });
   });
 

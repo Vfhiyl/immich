@@ -28,8 +28,9 @@ void main() {
     foregroundUploadService = MockForegroundUploadService();
     backgroundUploadService = MockBackgroundUploadService();
     userUploadJob = MockUserUploadJobService();
-    when(() => userUploadJob.start()).thenAnswer((_) async => false);
+    when(() => userUploadJob.start(isUserInitiated: any(named: 'isUserInitiated'))).thenAnswer((_) async => false);
     when(() => userUploadJob.finish()).thenAnswer((_) async {});
+    when(() => userUploadJob.progress(any(), any())).thenAnswer((_) async {});
     notifier = BackupNotifier(foregroundUploadService, backgroundUploadService, UploadSpeedManager(), userUploadJob);
     addTearDown(() {
       if (notifier.mounted) {
@@ -122,7 +123,7 @@ void main() {
 
     test('goes on when the user leaves the app, and ends with the backup', () async {
       mockCounts(total: 3, remainder: 3);
-      when(() => userUploadJob.start()).thenAnswer((_) async => true);
+      when(() => userUploadJob.start(isUserInitiated: any(named: 'isUserInitiated'))).thenAnswer((_) async => true);
       final uploading = Completer<void>();
       final done = Completer<void>();
       mockUpload((_) {
@@ -151,13 +152,13 @@ void main() {
 
       await notifier.startForegroundBackup('user-1');
 
-      verifyNever(() => userUploadJob.start());
+      verifyNever(() => userUploadJob.start(isUserInitiated: any(named: 'isUserInitiated')));
       expect(notifier.isBackingUp, isFalse);
     });
 
     test('stops with the backup', () async {
       mockCounts(total: 3, remainder: 3);
-      when(() => userUploadJob.start()).thenAnswer((_) async => true);
+      when(() => userUploadJob.start(isUserInitiated: any(named: 'isUserInitiated'))).thenAnswer((_) async => true);
       mockUpload((cancelToken) => cancelToken.future);
 
       final run = notifier.startForegroundBackup('user-1');
@@ -173,7 +174,7 @@ void main() {
 
     test('is not ended by a backup that was replaced', () async {
       mockCounts(total: 3, remainder: 3);
-      when(() => userUploadJob.start()).thenAnswer((_) async => true);
+      when(() => userUploadJob.start(isUserInitiated: any(named: 'isUserInitiated'))).thenAnswer((_) async => true);
       final runs = <Completer<void>>[];
       mockUpload((cancelToken) {
         runs.add(cancelToken);
@@ -196,14 +197,76 @@ void main() {
       verify(() => userUploadJob.finish()).called(1);
     });
 
+    test('passes on whether the user started it, which iOS needs', () async {
+      mockCounts(total: 3, remainder: 3);
+      mockUpload((_) async {});
+
+      await notifier.startForegroundBackup('user-1', isUserInitiated: true);
+      await notifier.startForegroundBackup('user-1');
+
+      verify(() => userUploadJob.start(isUserInitiated: true)).called(1);
+      verify(() => userUploadJob.start(isUserInitiated: false)).called(1);
+    });
+
+    test('reports its progress, counting the files that are uploading', () async {
+      mockCounts(total: 3, remainder: 2);
+      when(() => userUploadJob.start(isUserInitiated: any(named: 'isUserInitiated'))).thenAnswer((_) async => true);
+      late UploadCallbacks callbacks;
+      final done = Completer<void>();
+      when(() => foregroundUploadService.uploadCandidates(any(), any(), callbacks: any(named: 'callbacks'))).thenAnswer(
+        (invocation) {
+          callbacks = invocation.namedArguments[#callbacks] as UploadCallbacks;
+          return done.future;
+        },
+      );
+
+      final run = notifier.startForegroundBackup('user-1', isUserInitiated: true);
+      await untilCalled(
+        () => foregroundUploadService.uploadCandidates(any(), any(), callbacks: any(named: 'callbacks')),
+      );
+      verify(() => userUploadJob.progress(0, 2000)).called(1);
+
+      // after a second, the next change is reported: one file done, the other half uploaded
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+      callbacks.onSuccess!('asset-1', 'remote-1');
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+      callbacks.onProgress!('asset-2', 'b.jpg', 50, 100);
+      verify(() => userUploadJob.progress(1000, 2000)).called(1);
+      verify(() => userUploadJob.progress(1500, 2000)).called(1);
+
+      done.complete();
+      await run;
+    });
+
+    test('stops when it is stopped in the background', () async {
+      final onStopped =
+          verify(() => userUploadJob.onStoppedInBackground = captureAny()).captured.single as void Function();
+      mockCounts(total: 3, remainder: 3);
+      when(() => userUploadJob.start(isUserInitiated: any(named: 'isUserInitiated'))).thenAnswer((_) async => true);
+      mockUpload((cancelToken) => cancelToken.future);
+
+      final run = notifier.startForegroundBackup('user-1', isUserInitiated: true);
+      await untilCalled(
+        () => foregroundUploadService.uploadCandidates(any(), any(), callbacks: any(named: 'callbacks')),
+      );
+      onStopped();
+      await run;
+
+      expect(notifier.isBackingUp, isFalse);
+      expect(notifier.continuesInBackground, isFalse);
+      verify(() => userUploadJob.finish()).called(1);
+    });
+
     test('is ended when the backup stops while it is started', () async {
       mockCounts(total: 3, remainder: 3);
       final starting = Completer<bool>();
-      when(() => userUploadJob.start()).thenAnswer((_) => starting.future);
+      when(
+        () => userUploadJob.start(isUserInitiated: any(named: 'isUserInitiated')),
+      ).thenAnswer((_) => starting.future);
       mockUpload((_) async {});
 
       final run = notifier.startForegroundBackup('user-1');
-      await untilCalled(() => userUploadJob.start());
+      await untilCalled(() => userUploadJob.start(isUserInitiated: any(named: 'isUserInitiated')));
       notifier.stopForegroundBackup(reason: 'test');
       starting.complete(true);
       await run;

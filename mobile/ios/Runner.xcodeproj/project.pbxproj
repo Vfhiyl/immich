@@ -21,6 +21,9 @@
 		B25D377A2E72CA15008B6CA7 /* Connectivity.g.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25D37782E72CA15008B6CA7 /* Connectivity.g.swift */; };
 		B25D377C2E72CA26008B6CA7 /* ConnectivityApiImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25D377B2E72CA20008B6CA7 /* ConnectivityApiImpl.swift */; };
 		B2BE315F2E5E5229006EEF88 /* BackgroundWorker.g.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2BE315E2E5E5229006EEF88 /* BackgroundWorker.g.swift */; };
+		1C7D0A012F90000100A1B2C3 /* BackgroundConditions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7D0A022F90000100A1B2C3 /* BackgroundConditions.swift */; };
+		1C7D0A032F90000100A1B2C3 /* UserUpload.g.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7D0A042F90000100A1B2C3 /* UserUpload.g.swift */; };
+		1C7D0A052F90000100A1B2C3 /* UserUploadApiImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7D0A062F90000100A1B2C3 /* UserUploadApiImpl.swift */; };
 		B2EE00022E72CA15008B6CA7 /* PermissionApi.g.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2EE00012E72CA15008B6CA7 /* PermissionApi.g.swift */; };
 		B2EE00042E72CA15008B6CA7 /* PermissionApiImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2EE00032E72CA15008B6CA7 /* PermissionApiImpl.swift */; };
 		D3BED739C0BC29BB32E18EB2 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CC499FBCE6B29B2DAFED7130 /* Pods_Runner.framework */; };
@@ -112,6 +115,9 @@
 		B25D37782E72CA15008B6CA7 /* Connectivity.g.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Connectivity.g.swift; sourceTree = "<group>"; };
 		B25D377B2E72CA20008B6CA7 /* ConnectivityApiImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectivityApiImpl.swift; sourceTree = "<group>"; };
 		B2BE315E2E5E5229006EEF88 /* BackgroundWorker.g.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundWorker.g.swift; sourceTree = "<group>"; };
+		1C7D0A022F90000100A1B2C3 /* BackgroundConditions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundConditions.swift; sourceTree = "<group>"; };
+		1C7D0A042F90000100A1B2C3 /* UserUpload.g.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserUpload.g.swift; sourceTree = "<group>"; };
+		1C7D0A062F90000100A1B2C3 /* UserUploadApiImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserUploadApiImpl.swift; sourceTree = "<group>"; };
 		B2EE00012E72CA15008B6CA7 /* PermissionApi.g.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionApi.g.swift; sourceTree = "<group>"; };
 		B2EE00032E72CA15008B6CA7 /* PermissionApiImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionApiImpl.swift; sourceTree = "<group>"; };
 		C4A6A71F33CE37B3C913115C /* Pods-ShareExtension.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ShareExtension.profile.xcconfig"; path = "Target Support Files/Pods-ShareExtension/Pods-ShareExtension.profile.xcconfig"; sourceTree = "<group>"; };
@@ -315,6 +321,9 @@
 				B2BE315E2E5E5229006EEF88 /* BackgroundWorker.g.swift */,
 				B21E34AB2E5B09100031FDB9 /* BackgroundWorker.swift */,
 				B21E34A92E5AFD210031FDB9 /* BackgroundWorkerApiImpl.swift */,
+				1C7D0A022F90000100A1B2C3 /* BackgroundConditions.swift */,
+				1C7D0A042F90000100A1B2C3 /* UserUpload.g.swift */,
+				1C7D0A062F90000100A1B2C3 /* UserUploadApiImpl.swift */,
 			);
 			path = Background;
 			sourceTree = "<group>";
@@ -633,6 +642,9 @@
 				B21E34AA2E5AFD2B0031FDB9 /* BackgroundWorkerApiImpl.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				B2BE315F2E5E5229006EEF88 /* BackgroundWorker.g.swift in Sources */,
+				1C7D0A012F90000100A1B2C3 /* BackgroundConditions.swift in Sources */,
+				1C7D0A032F90000100A1B2C3 /* UserUpload.g.swift in Sources */,
+				1C7D0A052F90000100A1B2C3 /* UserUploadApiImpl.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -22,6 +22,8 @@ import native_video_player
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     let messenger = engineBridge.applicationRegistrar.messenger()
     AppDelegate.registerPlugins(with: engineBridge.pluginRegistry, messenger: messenger)
+    // the engine of the app only: a backup the user started keeps going in the background
+    UserUploadApiSetup.setUp(binaryMessenger: messenger, api: UserUploadApiImpl(messenger: messenger))
   }
 
   public static func registerPlugins(with registry: FlutterPluginRegistry, messenger: FlutterBinaryMessenger) {

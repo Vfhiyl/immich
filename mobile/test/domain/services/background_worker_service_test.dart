@@ -86,7 +86,7 @@ void main() {
       final remoteSync = Completer<bool>();
       when(() => mockRemoteSyncService.sync()).thenAnswer((_) => remoteSync.future);
 
-      final upload = sut.onIosUpload(true, 20);
+      final upload = sut.onIosUpload(false, 20);
       await pumpEventQueue();
       verifyNever(() => mockBackgroundUploadService.uploadBackupCandidates(any()));
 
@@ -98,7 +98,7 @@ void main() {
     test('does not list a new batch when the remote sync fails', () async {
       when(() => mockRemoteSyncService.sync()).thenAnswer((_) async => false);
 
-      await sut.onIosUpload(true, 20);
+      await sut.onIosUpload(false, 20);
 
       verifyNever(() => mockBackgroundUploadService.uploadBackupCandidates(any()));
     });
@@ -108,7 +108,7 @@ void main() {
         final remoteSync = Completer<bool>();
         when(() => mockRemoteSyncService.sync()).thenAnswer((_) => remoteSync.future);
 
-        unawaited(sut.onIosUpload(true, 20));
+        unawaited(sut.onIosUpload(false, 20));
         async.elapse(const Duration(seconds: 20));
         // a cancelled sync can still return true
         remoteSync.complete(true);
@@ -118,6 +118,19 @@ void main() {
       });
     });
 
+    test('only syncs in a refresh task, which iOS runs while the phone may be in use', () async {
+      when(() => mockRemoteSyncService.sync()).thenAnswer((_) async => true);
+      when(
+        () => mockBackgroundUploadService.getActiveTasks(kBackupGroup),
+      ).thenAnswer((_) async => [UploadTask(url: 'https://example.com', filename: 'photo.jpg')]);
+
+      await sut.onIosUpload(true, 20);
+
+      verify(() => mockRemoteSyncService.sync()).called(1);
+      verifyNever(() => mockBackgroundUploadService.uploadBackupCandidates(any()));
+      verifyNever(() => mockBackgroundUploadService.resume());
+    });
+
     test('resumes pending uploads without waiting for the remote sync', () async {
       final remoteSync = Completer<bool>();
       when(() => mockRemoteSyncService.sync()).thenAnswer((_) => remoteSync.future);
@@ -125,7 +138,7 @@ void main() {
         () => mockBackgroundUploadService.getActiveTasks(kBackupGroup),
       ).thenAnswer((_) async => [UploadTask(url: 'https://example.com', filename: 'photo.jpg')]);
 
-      final upload = sut.onIosUpload(true, 20);
+      final upload = sut.onIosUpload(false, 20);
       await pumpEventQueue();
       verify(() => mockBackgroundUploadService.resume()).called(1);
 

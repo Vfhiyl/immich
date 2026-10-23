@@ -145,19 +145,22 @@ class BackgroundWorkerBgService extends BackgroundWorkerFlutterApi {
         await _optimizeDB();
       }
 
-      // Run sync local, sync remote, hash and backup concurrently so the bg
-      // refresh task (20s budget) can make progress on all four instead of
-      // racing them sequentially. Hash tolerates stale reads, but a new backup
-      // batch waits for the remote sync. The single budget caps the
-      // whole batch; no phase needs its own timeout.
+      // Run sync local, sync remote, hash and backup concurrently so that each
+      // makes progress within the budget instead of racing them sequentially.
+      // Hash tolerates stale reads, but a new backup batch waits for the remote
+      // sync. The single budget caps the whole batch; no phase needs its own
+      // timeout. Only the processing task backs up: iOS runs it while the phone
+      // is not in use and charges (requiresExternalPower), the refresh task at
+      // any time, so that one only syncs.
       final remoteSync = _remoteSyncService.sync();
       final all = Future.wait<dynamic>([
         _localSyncService.sync(),
         remoteSync,
         _hashService.hashAssets(),
-        _handleBackup(
-          remoteSync: remoteSync.then((ok) => ok && !_cancellationToken.isCompleted).catchError((_) => false),
-        ),
+        if (!isRefresh)
+          _handleBackup(
+            remoteSync: remoteSync.then((ok) => ok && !_cancellationToken.isCompleted).catchError((_) => false),
+          ),
       ]);
       if (budget != null) {
         await all.timeout(

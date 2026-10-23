@@ -78,7 +78,9 @@ class BackupNotifier extends StateNotifier<BackupState> {
           uploadItems: {},
           error: BackupError.none,
         ),
-      );
+      ) {
+    _userUploadJob.onStoppedInBackground = () => stopForegroundBackup(reason: "being stopped in the background");
+  }
 
   final ForegroundUploadService _foregroundUploadService;
   final BackgroundUploadService _backgroundUploadService;
@@ -86,6 +88,15 @@ class BackupNotifier extends StateNotifier<BackupState> {
   final UserUploadJobService _userUploadJob;
   Completer<void>? _cancelToken;
   bool _continuesInBackground = false;
+
+  /// What the backup that goes on in the background reports as its progress: the files it had to upload when it
+  /// started, and how many of them are done (uploaded or failed)
+  int _jobTotal = 0;
+  final _jobDone = <String>{};
+  final _jobProgressReported = Stopwatch();
+
+  /// Units of progress per file, so that a large file shows progress while it uploads
+  static const _jobUnitsPerFile = 1000;
 
   /// Whether a backup runs now
   bool get isBackingUp => _cancelToken != null;
@@ -139,7 +150,9 @@ class BackupNotifier extends StateNotifier<BackupState> {
     state = state.copyWith(isSyncing: isSyncing);
   }
 
-  Future<void> startForegroundBackup(String userId) async {
+  /// Back up what is left. [isUserInitiated]: the user started it just now (e.g. by a tap), so that on iOS it may go
+  /// on when the user leaves the app
+  Future<void> startForegroundBackup(String userId, {bool isUserInitiated = false}) async {
     // Cancel any existing backup before starting a new one
     if (_cancelToken != null) {
       stopForegroundBackup(reason: "restarting the backup");
@@ -156,9 +169,12 @@ class BackupNotifier extends StateNotifier<BackupState> {
     await getBackupStatus(userId);
 
     if (state.remainderCount > 0 && !cancelToken.isCompleted) {
-      final continues = await _userUploadJob.start();
+      final continues = await _userUploadJob.start(isUserInitiated: isUserInitiated);
       if (identical(_cancelToken, cancelToken)) {
         _continuesInBackground = continues;
+        _jobTotal = state.remainderCount;
+        _jobDone.clear();
+        _reportJobProgress(force: true);
       } else if (continues) {
         // stopped meanwhile
         await _userUploadJob.finish();
@@ -197,7 +213,26 @@ class BackupNotifier extends StateNotifier<BackupState> {
     state = state.copyWith(
       uploadItems: Map.fromEntries(state.uploadItems.entries.where((item) => item.value.isFailed != true)),
     );
-    return startForegroundBackup(userId);
+    return startForegroundBackup(userId, isUserInitiated: true);
+  }
+
+  void _reportJobProgress({bool force = false}) {
+    if (!_continuesInBackground || _jobTotal == 0) {
+      return;
+    }
+    // often enough for the system to see that the backup moves, not for every chunk of every file
+    if (!force && _jobProgressReported.isRunning && _jobProgressReported.elapsed < const Duration(seconds: 1)) {
+      return;
+    }
+    _jobProgressReported
+      ..reset()
+      ..start();
+    final uploading = state.uploadItems.entries
+        .where((item) => !_jobDone.contains(item.key) && item.value.isFailed != true)
+        .fold(0.0, (sum, item) => sum + item.value.progress.clamp(0.0, 1.0));
+    final total = _jobTotal * _jobUnitsPerFile;
+    final completed = ((_jobDone.length + uploading) * _jobUnitsPerFile).round().clamp(0, total);
+    unawaited(_userUploadJob.progress(completed, total));
   }
 
   void _endBackgroundJob() {
@@ -264,6 +299,7 @@ class BackupNotifier extends StateNotifier<BackupState> {
         },
       );
     }
+    _reportJobProgress();
   }
 
   void _handleForegroundBackupSuccess(String localAssetId, String remoteAssetId) {
@@ -273,6 +309,8 @@ class BackupNotifier extends StateNotifier<BackupState> {
     }
     state = state.copyWith(backupCount: state.backupCount + 1, remainderCount: state.remainderCount - 1);
     _uploadSpeedManager.removeTask(localAssetId);
+    _jobDone.add(localAssetId);
+    _reportJobProgress();
 
     Future.delayed(const Duration(milliseconds: 1000), () {
       _removeUploadItem(localAssetId);
@@ -307,6 +345,8 @@ class BackupNotifier extends StateNotifier<BackupState> {
       );
     }
 
+    _jobDone.add(localAssetId);
+    _reportJobProgress();
     _uploadSpeedManager.removeTask(localAssetId);
   }
 

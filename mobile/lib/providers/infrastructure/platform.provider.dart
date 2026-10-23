@@ -17,7 +17,12 @@ final backgroundWorkerLockServiceProvider = Provider<BackgroundWorkerLockService
   (_) => BackgroundWorkerLockService(BackgroundWorkerLockApi()),
 );
 
-final userUploadJobServiceProvider = Provider<UserUploadJobService>((_) => UserUploadJobService(UserUploadApi()));
+final userUploadJobServiceProvider = Provider<UserUploadJobService>((ref) {
+  final service = UserUploadJobService(UserUploadApi());
+  UserUploadFlutterApi.setUp(service);
+  ref.onDispose(() => UserUploadFlutterApi.setUp(null));
+  return service;
+});
 
 final nativeSyncApiProvider = Provider<NativeSyncApi>((_) => NativeSyncApi());
 

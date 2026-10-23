@@ -8,7 +8,9 @@ sidebar_position: 1
 
 Immich supports uploading photos and videos from your mobile device to the server automatically.
 
-When backup is enabled, Immich will upload new photos and videos from selected albums when you open or resume the app, as well as periodically in the background.
+When backup is enabled, Immich will upload new photos and videos from selected albums when you open or resume the app, as well as in the background while the phone is locked and charging, so that backing up does not get in your way or drain the battery. It also waits in power saving (Low Power) mode and while the phone is hot. Uploads that are interrupted continue where they stopped.
+
+A backup you start on the backup page keeps going when you leave the app on Android 14 and later (with a notification) and on iOS 26 and later (with its progress shown by the system, where you can also stop it). Otherwise it stops when you leave the app and continues the next time you open it.
 
 <img
 src={require('./img/enable-backup-button.webp').default}
@@ -65,7 +67,6 @@ title="Android backup options"
 />
 
 - It is a well-known problem that some Android models are very strict with battery optimization settings, which can cause a problem with the background worker. Please visit [Don't kill my app](https://dontkillmyapp.com/) for a guide on disabling this setting on your phone.
-- You can allow the background task to run only when the device is charging.
 - You can set the minimum delay from the time a photo is taken to when the background upload task will run.
 
 ### iOS
@@ -77,6 +78,7 @@ title="Android backup options"
 </div>
 
 - iOS automatically manages background tasks; the app cannot control when the background upload task will run. The more frequently you open the app, the more often background tasks will run.
+- iOS backs up in the background while the phone is not in use and connected to power. Uploads that iOS has already been handed go on at its discretion. Files larger than what the server takes in one request (see `IMMICH_UPLOAD_MAX_APPEND_SIZE` on the storage backends page) are uploaded while the app is open.
 
 #### iCloud Backup
 

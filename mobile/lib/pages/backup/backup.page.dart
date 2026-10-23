@@ -100,7 +100,8 @@ class _BackupPageState extends ConsumerState<BackupPage> {
         Logger("BackupPage").warning("Remote sync did not complete successfully, skipping backup");
         return;
       }
-      await backupNotifier.startForegroundBackup(currentUser.id);
+      // started by the user's tap: on iOS it may go on in the background
+      await backupNotifier.startForegroundBackup(currentUser.id, isUserInitiated: true);
     }
 
     return Scaffold(

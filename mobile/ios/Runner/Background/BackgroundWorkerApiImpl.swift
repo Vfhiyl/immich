@@ -66,6 +66,8 @@ class BackgroundWorkerApiImpl: BackgroundWorkerFgHostApi {
     let backgroundProcessing = BGProcessingTaskRequest(identifier: processingTaskID)
     
     backgroundProcessing.requiresNetworkConnectivity = true
+    // backups in the background only while the phone is not in use (as processing tasks are) and charges
+    backgroundProcessing.requiresExternalPower = true
     backgroundProcessing.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15 mins
     
     do {
@@ -88,6 +90,11 @@ class BackgroundWorkerApiImpl: BackgroundWorkerFgHostApi {
   
   private static func handleBackgroundProcessing(task: BGProcessingTask) {
     scheduleProcessingWorker()
+    if let reason = DispatchQueue.main.sync(execute: { BackgroundConditions.pauseReason() }) {
+      print("Background backup waits: \(reason.rawValue)")
+      task.setTaskCompleted(success: true)
+      return
+    }
     taskSemaphore.wait()
     // There are no restrictions for processing tasks. Although, the OS could signal expiration at any time
     runBackgroundWorker(task: task, taskType: .processing, maxSeconds: nil)
@@ -125,11 +132,22 @@ class BackgroundWorkerApiImpl: BackgroundWorkerFgHostApi {
       }
     }
 
+    var observers: [NSObjectProtocol] = []
     DispatchQueue.main.async {
+      if taskType == .processing {
+        // stop when the phone is unplugged, gets warm or goes into Low Power Mode
+        observers = BackgroundConditions.observe { reason in
+          print("Background backup stops: \(reason.rawValue)")
+          backgroundWorker.close()
+        }
+      }
       backgroundWorker.run()
     }
 
     semaphore.wait()
+    DispatchQueue.main.sync {
+      BackgroundConditions.stopObserving(observers)
+    }
     task.setTaskCompleted(success: isSuccess)
     print("Background task completed with success: \(isSuccess)")
   }

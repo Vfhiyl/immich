@@ -14,34 +14,47 @@ void main() {
   setUp(() {
     api = MockUserUploadApi();
     sut = UserUploadJobService(api);
+    when(() => api.start(any(), any())).thenAnswer((_) async => true);
+    when(() => api.progress(any(), any())).thenAnswer((_) async {});
+    when(() => api.finish()).thenAnswer((_) async {});
   });
 
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-  test('keeps the backup going on Android', () async {
+  test('keeps the backup going on Android, also when the app started it by itself', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
-    when(() => api.start()).thenAnswer((_) async => true);
-    when(() => api.finish()).thenAnswer((_) async {});
 
-    expect(await sut.start(), isTrue);
+    expect(await sut.start(isUserInitiated: false), isTrue);
+    await sut.progress(1, 2);
     await sut.finish();
 
+    verify(() => api.progress(1, 2)).called(1);
     verify(() => api.finish()).called(1);
   });
 
   test('tells that the backup stops when the system does not take the job', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
-    when(() => api.start()).thenThrow(PlatformException(code: 'error'));
+    when(() => api.start(any(), any())).thenThrow(PlatformException(code: 'error'));
 
-    expect(await sut.start(), isFalse);
+    expect(await sut.start(isUserInitiated: true), isFalse);
   });
 
-  test('does nothing on iOS', () async {
+  test('keeps the backup going on iOS only when the user started it', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
 
-    expect(await sut.start(), isFalse);
-    await sut.finish();
+    expect(await sut.start(isUserInitiated: false), isFalse);
+    verifyNever(() => api.start(any(), any()));
 
-    verifyZeroInteractions(api);
+    expect(await sut.start(isUserInitiated: true), isTrue);
+    verify(() => api.start(any(that: isNotEmpty), any(that: isNotEmpty))).called(1);
+  });
+
+  test('passes on that the backup was stopped in the background', () {
+    var stopped = 0;
+    sut.onStoppedInBackground = () => stopped++;
+
+    sut.onStopped();
+
+    expect(stopped, 1);
   });
 }

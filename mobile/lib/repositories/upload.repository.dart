@@ -154,6 +154,10 @@ class UploadRepository {
     }
   }
 
+  /// Whether the server takes resumable uploads, and its limits (null: it does not, or it could not be asked)
+  Future<ResumableUploadOptions?> getResumableUploadOptions() =>
+      _getResumableUploadOptions(Store.get(StoreKey.serverEndpoint), NetworkRepository.client);
+
   /// What servers allow for resumable uploads, by endpoint, as they answered (null: they do not take them)
   static final _resumableUploadOptions = <String, ResumableUploadOptions?>{};
 
