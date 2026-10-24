@@ -874,6 +874,16 @@ export class PersonRepository {
     await query.selectFrom(dummy).execute();
   }
 
+  /** Replaces the embeddings of faces, e.g. with those of another model for the faces it found in the same place */
+  @GenerateSql({ params: [[{ faceId: DummyValue.UUID, embedding: DummyValue.VECTOR }]] })
+  async updateFaceEmbeddings(embeddings: Insertable<FaceSearchTable>[]): Promise<void> {
+    await this.db
+      .insertInto('face_search')
+      .values(embeddings)
+      .onConflict((oc) => oc.column('faceId').doUpdateSet((eb) => ({ embedding: eb.ref('excluded.embedding') })))
+      .execute();
+  }
+
   async update(person: Updateable<PersonTable> & PersonId) {
     return this.db
       .updateTable('person')

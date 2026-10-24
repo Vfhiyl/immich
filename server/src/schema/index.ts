@@ -47,6 +47,7 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
+import { AssetMachineLearningResultTable } from 'src/schema/tables/asset-ml-result.table.js';
 import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
 import { AssetOriginalFileTable } from 'src/schema/tables/asset-original-file.table.js';
@@ -62,6 +63,7 @@ import { MemoryAssetAuditTable } from 'src/schema/tables/memory-asset-audit.tabl
 import { MemoryAssetTable } from 'src/schema/tables/memory-asset.table.js';
 import { MemoryAuditTable } from 'src/schema/tables/memory-audit.table.js';
 import { MemoryTable } from 'src/schema/tables/memory.table.js';
+import { MachineLearningModelTable } from 'src/schema/tables/ml-model.table.js';
 import { MoveTable } from 'src/schema/tables/move.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
 import { NotificationTable } from 'src/schema/tables/notification.table.js';
@@ -79,6 +81,7 @@ import { PluginTable } from 'src/schema/tables/plugin.table.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { SharedLinkAssetTable } from 'src/schema/tables/shared-link-asset.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
+import { SmartSearchRebuildTable } from 'src/schema/tables/smart-search-rebuild.table.js';
 import { SmartSearchTable } from 'src/schema/tables/smart-search.table.js';
 import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
@@ -182,6 +185,9 @@ export class ImmichDatabase {
     UploadSessionTable,
     LoginCodeTable,
     StorageMasterKeyTable,
+    MachineLearningModelTable,
+    AssetMachineLearningResultTable,
+    SmartSearchRebuildTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
@@ -331,6 +337,9 @@ export interface DB {
   upload_session: UploadSessionTable;
   login_code: LoginCodeTable;
   storage_master_key: StorageMasterKeyTable;
+  ml_model: MachineLearningModelTable;
+  asset_ml_result: AssetMachineLearningResultTable;
+  smart_search_rebuild: SmartSearchRebuildTable;
 
   system_metadata: SystemMetadataTable;
 

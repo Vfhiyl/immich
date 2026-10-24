@@ -1311,6 +1311,15 @@ from
       1
   ) as "dummy"
 
+-- PersonRepository.updateFaceEmbeddings
+insert into
+  "face_search" ("faceId", "embedding")
+values
+  ($1, $2)
+on conflict ("faceId") do update
+set
+  "embedding" = "excluded"."embedding"
+
 -- PersonRepository.updateForWritableOwners
 update "person"
 set

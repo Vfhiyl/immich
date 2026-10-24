@@ -22,6 +22,7 @@ import { MapService } from 'src/services/map.service.js';
 import { MediaService } from 'src/services/media.service.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { MetadataService } from 'src/services/metadata.service.js';
+import { MachineLearningModelService } from 'src/services/ml-model.service.js';
 import { NotificationAdminService } from 'src/services/notification-admin.service.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { OcrService } from 'src/services/ocr.service.js';
@@ -105,6 +106,7 @@ export const services = [
   StorageReplicaService,
   StorageUsageService,
   StorageService,
+  MachineLearningModelService,
   StorageTemplateService,
   SyncService,
   SystemConfigService,

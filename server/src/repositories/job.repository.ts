@@ -182,15 +182,18 @@ export class JobRepository {
     return this.getQueue(name).clean(0, 1000, type);
   }
 
-  getJobCounts(name: QueueName): Promise<JobCounts> {
-    return this.getQueue(name).getJobCounts(
+  async getJobCounts(name: QueueName): Promise<JobCounts> {
+    const { prioritized = 0, ...counts } = await this.getQueue(name).getJobCounts(
       'active',
       'completed',
       'failed',
       'delayed',
       'waiting',
       'paused',
-    ) as unknown as Promise<JobCounts>;
+      'prioritized',
+    );
+    // jobs with a priority (those of a rebuild of a model) wait in a list of their own
+    return { ...counts, waiting: (counts.waiting ?? 0) + prioritized } as unknown as JobCounts;
   }
 
   private getQueueName(name: JobName) {
@@ -269,6 +272,16 @@ export class JobRepository {
       }
       case JobName.PersonGenerateThumbnail: {
         return { priority: 1 };
+      }
+      case JobName.SmartSearch:
+      case JobName.AssetDetectFaces:
+      case JobName.Ocr: {
+        return item.data.priority ? { priority: item.data.priority } : null;
+      }
+      case JobName.SmartSearchRebuild:
+      case JobName.FaceDetectionRebuild:
+      case JobName.OcrRebuild: {
+        return { priority: item.data.priority, delay: item.data.delay };
       }
       case JobName.FacialRecognitionQueueAll: {
         return { deduplication: { id: JobName.FacialRecognitionQueueAll } };

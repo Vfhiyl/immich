@@ -26,6 +26,7 @@ import { MapRepository } from 'src/repositories/map.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { MachineLearningModelRepository } from 'src/repositories/ml-model.repository.js';
 import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
@@ -110,6 +111,7 @@ export const repositories = [
   StorageDeletionRepository,
   StorageReplicaRepository,
   StorageUsageRepository,
+  MachineLearningModelRepository,
   StorageRepository,
   SyncRepository,
   SyncCheckpointRepository,

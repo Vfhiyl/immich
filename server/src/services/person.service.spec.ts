@@ -23,6 +23,7 @@ import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
 import {
+  faceModel,
   getAsDetectedFace,
   getDehydrated,
   getForAsset,
@@ -1145,7 +1146,12 @@ describe(PersonService.name, () => {
 
     it('should detect faces in a leased local copy of the preview and release it afterwards', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();
-      mocks.machineLearning.detectFaces.mockResolvedValue({ imageHeight: 500, imageWidth: 400, faces: [] });
+      mocks.machineLearning.detectFaces.mockResolvedValue({
+        imageHeight: 500,
+        imageWidth: 400,
+        faces: [],
+        model: faceModel,
+      });
       mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
       const release = vi.fn().mockResolvedValue(undefined);
       mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/preview.jpg', [Symbol.asyncDispose]: release });
@@ -1161,7 +1167,12 @@ describe(PersonService.name, () => {
       const start = Date.now();
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).exif().build();
 
-      mocks.machineLearning.detectFaces.mockResolvedValue({ imageHeight: 500, imageWidth: 400, faces: [] });
+      mocks.machineLearning.detectFaces.mockResolvedValue({
+        imageHeight: 500,
+        imageWidth: 400,
+        faces: [],
+        model: faceModel,
+      });
       mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
       await sut.handleDetectFaces({ id: asset.id });
       expect(mocks.machineLearning.detectFaces).toHaveBeenCalledWith(
@@ -1205,7 +1216,12 @@ describe(PersonService.name, () => {
 
     it('should delete an existing face not among the new detected faces', async () => {
       const asset = AssetFactory.from().face().file({ type: AssetFileType.Preview }).exif().build();
-      mocks.machineLearning.detectFaces.mockResolvedValue({ faces: [], imageHeight: 500, imageWidth: 400 });
+      mocks.machineLearning.detectFaces.mockResolvedValue({
+        faces: [],
+        imageHeight: 500,
+        imageWidth: 400,
+        model: faceModel,
+      });
       mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
 
       await sut.handleDetectFaces({ id: asset.id });

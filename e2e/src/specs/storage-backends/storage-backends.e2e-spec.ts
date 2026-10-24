@@ -218,11 +218,15 @@ describe('storage backends for originals and derived files', () => {
     await server.stop();
     server = await ImmichServer.start(environment);
 
-    await eventually(async () => {
-      await expect(environment.listBackend('originals')).resolves.toEqual([]);
-      await expect(environment.listBackend('derived')).resolves.toEqual([]);
-      await expect(environment.query(`select key from storage_deletion`)).resolves.toEqual([]);
-    });
+    // by the deletion job the restarted server queues, behind its other work at startup
+    await eventually(
+      async () => {
+        await expect(environment.listBackend('originals')).resolves.toEqual([]);
+        await expect(environment.listBackend('derived')).resolves.toEqual([]);
+        await expect(environment.query(`select key from storage_deletion`)).resolves.toEqual([]);
+      },
+      { timeout: 60_000 },
+    );
   });
 
   it('should refuse to start while a backend that holds files is not configured', async () => {

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Duration } from 'luxon';
 import { readFile } from 'node:fs/promises';
+import type { ReportedModel } from 'src/utils/ml-models.js';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
@@ -36,12 +37,16 @@ export type OcrOptions = ModelOptions & {
   minRecognitionScore: number;
   maxResolution: number;
 };
-type VisualResponse = { imageHeight: number; imageWidth: number };
+/** The models that made an answer, by task and type (`machine-learning/immich_ml/main.py`); not in upstream's */
+type ModelsResponse = {
+  models?: Partial<Record<string, Partial<Record<string, { name: string; fingerprint: string; format: string }>>>>;
+};
+type VisualResponse = { imageHeight: number; imageWidth: number } & ModelsResponse;
 export type ClipVisualRequest = { [ModelTask.SEARCH]: { [ModelType.VISUAL]: ModelOptions } };
 export type ClipVisualResponse = { [ModelTask.SEARCH]: string } & VisualResponse;
 
 export type ClipTextualRequest = { [ModelTask.SEARCH]: { [ModelType.TEXTUAL]: ModelOptions } };
-export type ClipTextualResponse = { [ModelTask.SEARCH]: string };
+export type ClipTextualResponse = { [ModelTask.SEARCH]: string } & ModelsResponse;
 
 export type OCR = {
   text: string[];
@@ -72,6 +77,27 @@ export interface Face {
 }
 
 export type FacialRecognitionResponse = { [ModelTask.FACIAL_RECOGNITION]: Face[] } & VisualResponse;
+/**
+ * The model of a task that made an answer: the files of all its models (detection and recognition) in one
+ * fingerprint, none when the service does not tell them (upstream's)
+ */
+export const getReportedModel = (response: ModelsResponse, task: ModelTask, name: string): ReportedModel => {
+  const models = Object.entries(response.models?.[task] ?? {}).toSorted(([a], [b]) => a.localeCompare(b));
+  if (models.length === 0 || models.some(([, model]) => !model?.fingerprint)) {
+    return { name, fingerprint: null, format: null };
+  }
+  const fingerprints = [...new Set(models.map(([, model]) => model!.fingerprint))];
+  const formats = [...new Set(models.map(([, model]) => model!.format))];
+  return {
+    name,
+    fingerprint:
+      fingerprints.length === 1
+        ? fingerprints[0]
+        : models.map(([type, model]) => `${type}:${model!.fingerprint}`).join('+'),
+    format: formats.join('+'),
+  };
+};
+
 export type MachineLearningRequest = ClipVisualRequest | ClipTextualRequest | FacialRecognitionRequest | OcrRequest;
 export type TextEncodingOptions = ModelOptions & { language?: string };
 
@@ -199,13 +225,14 @@ export class MachineLearningRepository {
       imageHeight: response.imageHeight,
       imageWidth: response.imageWidth,
       faces: response[ModelTask.FACIAL_RECOGNITION],
+      model: getReportedModel(response, ModelTask.FACIAL_RECOGNITION, modelName),
     };
   }
 
   async encodeImage(imagePath: string, { modelName }: MachineLearningConfig['clip']) {
     const request = { [ModelTask.SEARCH]: { [ModelType.VISUAL]: { modelName } } };
     const response = await this.predict<ClipVisualResponse>({ imagePath }, request);
-    return response[ModelTask.SEARCH];
+    return { embedding: response[ModelTask.SEARCH], model: getReportedModel(response, ModelTask.SEARCH, modelName) };
   }
 
   async encodeText(text: string, { language, modelName }: TextEncodingOptions) {
@@ -222,7 +249,7 @@ export class MachineLearningRepository {
       },
     };
     const response = await this.predict<OcrResponse>({ imagePath }, request);
-    return response[ModelTask.OCR];
+    return { ...response[ModelTask.OCR], model: getReportedModel(response, ModelTask.OCR, modelName) };
   }
 
   private async getFormData(payload: ModelPayload, config: MachineLearningRequest): Promise<FormData> {

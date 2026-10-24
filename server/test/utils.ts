@@ -47,6 +47,7 @@ import { MapRepository } from 'src/repositories/map.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { MachineLearningModelRepository } from 'src/repositories/ml-model.repository.js';
 import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
@@ -93,6 +94,7 @@ import { newCryptoRepositoryMock } from 'test/repositories/crypto.repository.moc
 import { newJobRepositoryMock } from 'test/repositories/job.repository.mock.js';
 import { newMediaRepositoryMock } from 'test/repositories/media.repository.mock.js';
 import { newMetadataRepositoryMock } from 'test/repositories/metadata.repository.mock.js';
+import { newMachineLearningModelRepositoryMock } from 'test/repositories/ml-model.repository.mock.js';
 import { newStorageBackendRepositoryMock } from 'test/repositories/storage-backend.repository.mock.js';
 import { newStorageDeletionRepositoryMock } from 'test/repositories/storage-deletion.repository.mock.js';
 import { newStorageReplicaRepositoryMock } from 'test/repositories/storage-replica.repository.mock.js';
@@ -294,6 +296,7 @@ export type ServiceOverrides = {
   storageDeletion: StorageDeletionRepository;
   storageReplica: StorageReplicaRepository;
   storageUsage: StorageUsageRepository;
+  machineLearningModel: MachineLearningModelRepository;
   storage: StorageRepository;
   sync: SyncRepository;
   syncCheckpoint: SyncCheckpointRepository;
@@ -388,6 +391,7 @@ export const getMocks = () => {
     storageDeletion: newStorageDeletionRepositoryMock(),
     storageReplica: newStorageReplicaRepositoryMock(),
     storageUsage: newStorageUsageRepositoryMock(),
+    machineLearningModel: newMachineLearningModelRepositoryMock(),
     storage: newStorageRepositoryMock(),
     sync: automock(SyncRepository),
     syncCheckpoint: automock(SyncCheckpointRepository),
@@ -468,6 +472,7 @@ export const newTestService = <T extends BaseService>(
     overrides.storageDeletion || (mocks.storageDeletion as As<StorageDeletionRepository>),
     overrides.storageReplica || (mocks.storageReplica as As<StorageReplicaRepository>),
     overrides.storageUsage || (mocks.storageUsage as As<StorageUsageRepository>),
+    overrides.machineLearningModel || (mocks.machineLearningModel as As<MachineLearningModelRepository>),
     overrides.storage || (mocks.storage as As<StorageRepository>),
     overrides.sync || (mocks.sync as As<SyncRepository>),
     overrides.syncCheckpoint || (mocks.syncCheckpoint as As<SyncCheckpointRepository>),

@@ -25,6 +25,7 @@ from immich_ml.schemas import ModelGraph, ModelInput, ModelSession, ModelSource,
 class BaseCLIPVisualEncoder(InferenceModel[VisualOptions]):
     depends = []
     identity = (ModelType.VISUAL, ModelTask.SEARCH)
+    paired = (ModelType.TEXTUAL, ModelType.VISUAL)  # a text is searched among the images
 
     def _predict(self, inputs: Image.Image | bytes, options: VisualOptions) -> str:
         image = decode_pil(inputs)

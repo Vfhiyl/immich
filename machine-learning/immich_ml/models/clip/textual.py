@@ -28,6 +28,7 @@ def _mapped(model_path: Path, name: str) -> NDArray[Any]:
 class BaseCLIPTextualEncoder(InferenceModel[TextualOptions]):
     depends = []
     identity = (ModelType.TEXTUAL, ModelTask.SEARCH)
+    paired = (ModelType.TEXTUAL, ModelType.VISUAL)  # a text is searched among the images
     threads = 4  # lower search latency
 
     def _predict(self, inputs: str, options: TextualOptions) -> str:

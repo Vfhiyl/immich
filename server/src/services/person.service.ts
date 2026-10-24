@@ -5,6 +5,7 @@ import type { JobItem, JobOf } from 'src/types.js';
 import { Chunked, OnJob } from 'src/decorators.js';
 import { BulkIdErrorReason, BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
+import { SystemConfig } from 'src/dtos/config.dto.js';
 import {
   AssetFaceCreateDto,
   AssetFaceDeleteDto,
@@ -42,7 +43,7 @@ import {
   SystemMetadataKey,
   VectorIndex,
 } from 'src/enum.js';
-import { BoundingBox } from 'src/repositories/machine-learning.repository.js';
+import { BoundingBox, ModelTask } from 'src/repositories/machine-learning.repository.js';
 import { PersonId } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
@@ -54,6 +55,7 @@ import { ImmichFileResponse } from 'src/utils/file.js';
 import { isHttpException } from 'src/utils/logger.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, findOrFail, hasSomeDefined, isFacialRecognitionEnabled } from 'src/utils/misc.js';
+import { isRebuilding } from 'src/utils/ml-models.js';
 import { Point, transformPoints } from 'src/utils/transform.js';
 
 const personKey = ({ ownerId, personGroupId }: PersonId) => `${ownerId}/${personGroupId}`;
@@ -399,11 +401,21 @@ export class PersonService extends BaseService {
     }
 
     await using preview = await this.storageBackendRepository.lease(previewFile);
-    const { imageHeight, imageWidth, faces } = await this.machineLearningRepository.detectFaces(
+    const { imageHeight, imageWidth, faces, model } = await this.machineLearningRepository.detectFaces(
       preview.path,
       machineLearning.facialRecognition,
     );
     this.logger.debug(`${faces.length} faces detected in ${previewFile.path}`);
+
+    const observed = await this.machineLearningModels.observe(ModelTask.FACIAL_RECOGNITION, model, machineLearning);
+    if (!observed.keep) {
+      return observed.conflict ? JobStatus.Failed : JobStatus.Skipped;
+    }
+    // the faces found before by another model keep their place and person, with an embedding of this model
+    const selection = await this.machineLearningModels.getSelection(ModelTask.FACIAL_RECOGNITION, observed.state);
+    const previousModelId = await this.machineLearningModelRepository.getResult(asset.id, ModelTask.FACIAL_RECOGNITION);
+    const isStale = previousModelId ? !selection.modelIds.includes(previousModelId) : !selection.legacy;
+    const embeddingsToUpdate: FaceSearchTable[] = [];
 
     const facesToAdd: (Insertable<AssetFaceTable> & { id: string })[] = [];
     const embeddings: FaceSearchTable[] = [];
@@ -428,6 +440,8 @@ export class PersonService extends BaseService {
 
       if (match && !mlFaceIds.delete(match.id)) {
         embeddings.push({ faceId: match.id, embedding });
+      } else if (match && isStale) {
+        embeddingsToUpdate.push({ faceId: match.id, embedding });
       } else if (!match) {
         const faceId = this.cryptoRepository.randomUUID();
         facesToAdd.push({
@@ -448,12 +462,19 @@ export class PersonService extends BaseService {
     if (facesToAdd.length > 0 || faceIdsToRemove.length > 0 || embeddings.length > 0) {
       await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);
     }
+    if (embeddingsToUpdate.length > 0) {
+      await this.personRepository.updateFaceEmbeddings(embeddingsToUpdate);
+    }
+    await this.machineLearningModelRepository.setResult(asset.id, ModelTask.FACIAL_RECOGNITION, observed.modelId);
 
     if (faceIdsToRemove.length > 0) {
       this.logger.log(`Removed ${faceIdsToRemove.length} faces below detection threshold in asset ${id}`);
     }
 
-    if (facesToAdd.length > 0) {
+    if (facesToAdd.length > 0 && isRebuilding(observed.state)) {
+      // recognized once the faces of every photo are of this model
+      this.logger.log(`Detected ${facesToAdd.length} new faces in asset ${id}`);
+    } else if (facesToAdd.length > 0) {
       this.logger.log(`Detected ${facesToAdd.length} new faces in asset ${id}`);
       const jobs = facesToAdd.map((face) => ({ name: JobName.FacialRecognition, data: { id: face.id } }) as const);
       await this.jobRepository.queueAll([{ name: JobName.FacialRecognitionQueueAll, data: { force: false } }, ...jobs]);
@@ -464,6 +485,10 @@ export class PersonService extends BaseService {
     await this.assetRepository.upsertJobStatus({ assetId: asset.id, facesRecognizedAt: new Date() });
 
     return JobStatus.Success;
+  }
+
+  private async isFaceRebuilding(machineLearning: SystemConfig['machineLearning']) {
+    return isRebuilding(await this.machineLearningModels.getState(ModelTask.FACIAL_RECOGNITION, machineLearning));
   }
 
   private iou(
@@ -491,6 +516,11 @@ export class PersonService extends BaseService {
   }: JobOf<JobName.FacialRecognitionQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isFacialRecognitionEnabled(machineLearning)) {
+      return JobStatus.Skipped;
+    }
+
+    if (await this.isFaceRebuilding(machineLearning)) {
+      this.logger.debug('Skipping facial recognition while the faces are detected again for another model');
       return JobStatus.Skipped;
     }
 
@@ -566,6 +596,11 @@ export class PersonService extends BaseService {
 
     if (face.personGroupId) {
       this.logger.debug(`Face ${id} already has a person assigned`);
+      return JobStatus.Skipped;
+    }
+
+    if (await this.isFaceRebuilding(machineLearning)) {
+      // embeddings of two models are not compared: the face is recognized once the rebuild is done
       return JobStatus.Skipped;
     }
 

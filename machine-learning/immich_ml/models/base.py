@@ -15,10 +15,20 @@ import immich_ml.sessions.rknn as rknn
 from immich_ml.sessions.ort import OrtSession
 
 from ..config import clean_name, log, settings
-from ..schemas import ModelFormat, ModelIdentity, ModelSession, ModelSource, ModelTask, ModelType, Options
+from ..schemas import (
+    ModelDescription,
+    ModelFormat,
+    ModelIdentity,
+    ModelSession,
+    ModelSource,
+    ModelTask,
+    ModelType,
+    Options,
+)
 from ..sessions.ann import AnnSession
 from ..sessions.policy import ShapePolicy
 from .constants import get_model_source
+from .fingerprint import fingerprint
 
 _IGNORED_PATTERNS: dict[ModelFormat, list[str]] = {
     ModelFormat.ONNX: ["*.armnn", "*.rknn"],
@@ -34,6 +44,9 @@ class InferenceModel[O: Options](ABC):
     # the shapes this model feeds, which pick the artifact and tell the engine what it may pin
     shape_policy: ShapePolicy = ShapePolicy()
     threads: ClassVar[int] = 2  # how many threads one run takes for CPU inference
+    # the models of the repository whose results go together with this one's (both encoders of CLIP): they share a
+    # fingerprint
+    paired: ClassVar[tuple[ModelType, ...]] = ()
 
     def __init__(
         self,
@@ -44,6 +57,7 @@ class InferenceModel[O: Options](ABC):
     ) -> None:
         self.loaded = session is not None
         self.load_attempts = 0
+        self._fingerprint: str | None = None
         self._load_lock = Lock()
         self.model_name = clean_name(model_name)
         self.cache_dir = Path(cache_dir) if cache_dir is not None else self._cache_dir_default
@@ -85,6 +99,7 @@ class InferenceModel[O: Options](ABC):
             attempt = f"Attempt #{self.load_attempts} to load" if self.load_attempts > 1 else "Loading"
             log.info(f"{attempt} {self.model_type.replace('-', ' ')} model '{self.model_name}' to memory")
             self.session = self._load()
+            self._fingerprint = fingerprint(self.cache_dir, self.fingerprint_dirs)
             self.loaded = True
 
     def unload(self) -> None:
@@ -92,6 +107,7 @@ class InferenceModel[O: Options](ABC):
             if self.loaded:
                 del self.session
                 self.loaded = False
+                self._fingerprint = None
 
     def build(self) -> None:
         self.load()
@@ -128,6 +144,21 @@ class InferenceModel[O: Options](ABC):
             )
             self.cache_dir.unlink()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def fingerprint_dirs(self) -> list[Path]:
+        return [self.cache_dir / model_type.value for model_type in self.paired] if self.paired else [self.model_dir]
+
+    @property
+    def fingerprint(self) -> str:
+        """The SHA-256 of the files the results depend on (see `fingerprint.py`), worked out as the model loads."""
+        if self._fingerprint is None:
+            self._fingerprint = fingerprint(self.cache_dir, self.fingerprint_dirs)
+        return self._fingerprint
+
+    def describe(self, name: str) -> ModelDescription:
+        """What made a result, for the server to keep with it."""
+        return {"name": name, "fingerprint": self.fingerprint, "format": self.model_format.value}
 
     def _make_session(self) -> ModelSession:
         match self.model_format:

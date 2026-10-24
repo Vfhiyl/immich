@@ -1,10 +1,12 @@
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { AssetFileType, AssetVisibility, ImmichWorker, JobName, JobStatus } from 'src/enum.js';
+import { AssetFileType, AssetVisibility, ImmichWorker, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { getCLIPModelInfo } from 'src/utils/misc.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
 import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
+
+const clipModel = { name: 'ViT-B-32__openai', fingerprint: 'files', format: 'onnx' };
 
 describe(SmartInfoService.name, () => {
   let sut: SmartInfoService;
@@ -127,20 +129,34 @@ describe(SmartInfoService.name, () => {
       expect(mocks.database.setDimensionSize).toHaveBeenCalledWith(768);
     });
 
-    it('should clear embeddings if old and new models are different', async () => {
+    it('should keep the embeddings that are searched when the model changes, which a rebuild replaces', async () => {
       mocks.database.getDimensionSize.mockResolvedValue(512);
+      vi.mocked(mocks.systemMetadata.get as (key: SystemMetadataKey) => Promise<unknown>).mockImplementation((key) =>
+        Promise.resolve(
+          key === SystemMetadataKey.MachineLearningModels
+            ? {
+                clip: {
+                  legacyName: 'ViT-B-16__openai',
+                  target: { name: 'ViT-L-14-quickgelu__dfn2b', modelId: null },
+                  active: { name: 'ViT-B-16__openai', modelId: null },
+                  generation: 2,
+                  rebuild: { startedAt: new Date().toISOString() },
+                },
+              }
+            : undefined,
+        ),
+      );
 
       await sut.onConfigUpdate({
         newConfig: {
-          machineLearning: { clip: { modelName: 'ViT-B-32__openai', enabled: true }, enabled: true },
+          machineLearning: { clip: { modelName: 'ViT-L-14-quickgelu__dfn2b', enabled: true }, enabled: true },
         } as SystemConfig,
         oldConfig: {
           machineLearning: { clip: { modelName: 'ViT-B-16__openai', enabled: true }, enabled: true },
         } as SystemConfig,
       });
 
-      expect(mocks.database.deleteAllSearchEmbeddings).toHaveBeenCalled();
-      expect(mocks.database.getDimensionSize).toHaveBeenCalledTimes(1);
+      expect(mocks.database.deleteAllSearchEmbeddings).not.toHaveBeenCalled();
       expect(mocks.database.setDimensionSize).not.toHaveBeenCalled();
     });
   });
@@ -199,7 +215,7 @@ describe(SmartInfoService.name, () => {
 
     it('should save the returned objects', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
-      mocks.machineLearning.encodeImage.mockResolvedValue('[0.01, 0.02, 0.03]');
+      mocks.machineLearning.encodeImage.mockResolvedValue({ embedding: '[0.01, 0.02, 0.03]', model: clipModel });
       mocks.assetJob.getForClipEncoding.mockResolvedValue(asset);
 
       expect(await sut.handleEncodeClip({ id: asset.id })).toEqual(JobStatus.Success);
@@ -213,7 +229,7 @@ describe(SmartInfoService.name, () => {
 
     it('should encode the preview from a leased local file and release it before waiting for the database', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
-      mocks.machineLearning.encodeImage.mockResolvedValue('[0.01, 0.02, 0.03]');
+      mocks.machineLearning.encodeImage.mockResolvedValue({ embedding: '[0.01, 0.02, 0.03]', model: clipModel });
       mocks.assetJob.getForClipEncoding.mockResolvedValue(asset);
       const release = vi.fn().mockResolvedValue(undefined);
       mocks.storageBackend.lease.mockResolvedValue({ path: '/staging/preview.jpg', [Symbol.asyncDispose]: release });
@@ -253,7 +269,7 @@ describe(SmartInfoService.name, () => {
 
     it('should wait for database', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
-      mocks.machineLearning.encodeImage.mockResolvedValue('[0.01, 0.02, 0.03]');
+      mocks.machineLearning.encodeImage.mockResolvedValue({ embedding: '[0.01, 0.02, 0.03]', model: clipModel });
       mocks.database.isBusy.mockReturnValue(true);
       mocks.assetJob.getForClipEncoding.mockResolvedValue(asset);
 

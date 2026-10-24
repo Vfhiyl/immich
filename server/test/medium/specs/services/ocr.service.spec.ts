@@ -3,9 +3,11 @@ import { AssetFileType, JobStatus } from 'src/enum.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { MachineLearningModelRepository } from 'src/repositories/ml-model.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { StorageBackendRepository } from 'src/repositories/storage-backend.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -26,6 +28,8 @@ const setup = (db?: Kysely<DB>) => {
       OcrRepository,
       StorageBackendRepository,
       SystemMetadataRepository,
+      DatabaseRepository,
+      MachineLearningModelRepository,
     ],
     mock: [JobRepository, LoggingRepository, MachineLearningRepository],
   });
@@ -53,6 +57,7 @@ describe(OcrService.name, () => {
       boxScore: [0.99],
       text: ['Test OCR'],
       textScore: [0.95],
+      model: { name: 'PP-OCRv5_mobile', fingerprint: 'files', format: 'onnx' },
     });
 
     await expect(sut.handleOcr({ id: asset.id })).resolves.toBe(JobStatus.Success);
@@ -105,6 +110,7 @@ describe(OcrService.name, () => {
       boxScore: [0.7, 0.67, 0.65, 0.62, 0.6],
       text: ['One', 'Two', 'Three', 'Four', 'Five'],
       textScore: [0.9, 0.89, 0.88, 0.87, 0.86],
+      model: { name: 'PP-OCRv5_mobile', fingerprint: 'files', format: 'onnx' },
     });
 
     await expect(sut.handleOcr({ id: asset.id })).resolves.toBe(JobStatus.Success);
@@ -224,7 +230,13 @@ describe(OcrService.name, () => {
     await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'preview.jpg' });
 
     const machineLearningMock = ctx.getMock(MachineLearningRepository);
-    machineLearningMock.ocr.mockResolvedValue({ box: [], boxScore: [], text: [], textScore: [] });
+    machineLearningMock.ocr.mockResolvedValue({
+      box: [],
+      boxScore: [],
+      text: [],
+      textScore: [],
+      model: { name: 'PP-OCRv5_mobile', fingerprint: 'files', format: 'onnx' },
+    });
 
     await expect(sut.handleOcr({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
@@ -254,10 +266,17 @@ describe(OcrService.name, () => {
       boxScore: [0.99],
       text: ['Test OCR'],
       textScore: [0.95],
+      model: { name: 'PP-OCRv5_mobile', fingerprint: 'files', format: 'onnx' },
     });
     await expect(sut.handleOcr({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
-    machineLearningMock.ocr.mockResolvedValue({ box: [], boxScore: [], text: [], textScore: [] });
+    machineLearningMock.ocr.mockResolvedValue({
+      box: [],
+      boxScore: [],
+      text: [],
+      textScore: [],
+      model: { name: 'PP-OCRv5_mobile', fingerprint: 'files', format: 'onnx' },
+    });
     await expect(sut.handleOcr({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
     const ocrRepository = ctx.get(OcrRepository);

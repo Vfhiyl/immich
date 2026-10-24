@@ -3,10 +3,37 @@ import { Injectable } from '@nestjs/common';
 import type { JobOf } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
 import { AssetVisibility, JobName, JobStatus, QueueName } from 'src/enum.js';
-import { OCR } from 'src/repositories/machine-learning.repository.js';
+import { ModelTask, OCR } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { tokenizeForSearch } from 'src/utils/database.js';
 import { batched, isOcrEnabled } from 'src/utils/misc.js';
+
+const CORNERS = ['x1', 'y1', 'x2', 'y2', 'x3', 'y3', 'x4', 'y4'] as const;
+type OcrLine = Record<(typeof CORNERS)[number], number> & { text: string };
+
+/** How far (in parts of the width and height of the photo) a corner of a line may move and the line stay the same */
+export const OCR_LINE_TOLERANCE = 0.01;
+
+/**
+ * What changed between the lines found before and those found now: a line with the same text whose corners all
+ * moved by no more than `OCR_LINE_TOLERANCE` is the same line, and is kept as it was
+ */
+export const diffOcrLines = <T extends OcrLine, E extends OcrLine & { id: string }>(existing: E[], found: T[]) => {
+  const unmatched = [...existing];
+  const add: T[] = [];
+  for (const line of found) {
+    const index = unmatched.findIndex(
+      (old) =>
+        old.text === line.text && CORNERS.every((corner) => Math.abs(old[corner] - line[corner]) <= OCR_LINE_TOLERANCE),
+    );
+    if (index === -1) {
+      add.push(line);
+    } else {
+      unmatched.splice(index, 1);
+    }
+  }
+  return { add, removeIds: unmatched.map(({ id }) => id) };
+};
 
 @Injectable()
 export class OcrService extends BaseService {
@@ -46,8 +73,16 @@ export class OcrService extends BaseService {
 
     await using preview = await this.storageBackendRepository.lease(asset.previewFile);
     const ocrResults = await this.machineLearningRepository.ocr(preview.path, machineLearning.ocr);
+    const observed = await this.machineLearningModels.observe(ModelTask.OCR, ocrResults.model, machineLearning);
+    if (!observed.keep) {
+      return observed.conflict ? JobStatus.Failed : JobStatus.Skipped;
+    }
+
     const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults);
-    await this.ocrRepository.upsert(id, ocrDataList, searchText);
+    const existing = await this.ocrRepository.getByAssetId(id, {});
+    const { add, removeIds } = diffOcrLines(existing, ocrDataList);
+    await this.ocrRepository.update(id, removeIds, add, searchText);
+    await this.machineLearningModelRepository.setResult(id, ModelTask.OCR, observed.modelId);
 
     await this.assetRepository.upsertJobStatus({ assetId: id, ocrAt: new Date() });
 

@@ -68,6 +68,21 @@ with
 select
   1 as "dummy"
 
+-- OcrRepository.update
+begin
+delete from "asset_ocr"
+where
+  "assetId" = $1
+  and "id" in ($2)
+insert into
+  "ocr_search" ("assetId", "text")
+values
+  ($1, $2)
+on conflict ("assetId") do update
+set
+  "text" = "excluded"."text"
+rollback
+
 -- OcrRepository.updateOcrVisibilities
 begin
 update "ocr_search"

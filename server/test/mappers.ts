@@ -53,7 +53,11 @@ export const getAsDetectedFace = (face: ReturnType<AssetFaceFactory['build']>) =
   ],
   imageHeight: face.imageHeight,
   imageWidth: face.imageWidth,
+  model: faceModel,
 });
+
+/** The model of faces the machine learning service tells it detected them with */
+export const faceModel = { name: 'buffalo_l', fingerprint: 'files', format: 'onnx' };
 
 export const getForFacialRecognitionJob = (
   face: ReturnType<AssetFaceFactory['build']>,

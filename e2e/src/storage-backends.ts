@@ -2,6 +2,8 @@ import { ContainerClient, StorageSharedKeyCredential } from '@azure/storage-blob
 import { ChildProcess, execFile, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -586,6 +588,94 @@ const isApiUp = async () => {
     return false;
   }
 };
+
+/**
+ * A machine learning service as the server sees it (`POST /predict`, `GET /ping`), answering smart search with an
+ * embedding of the files it pretends to have (`fingerprint`, which a test changes as if the files were replaced),
+ * and telling those files the way this fork's service does; it finds no faces and no text
+ */
+export class FakeMachineLearning {
+  static async start() {
+    const service = new this();
+    await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+    return service;
+  }
+
+  private held = new Map<string, Promise<void>>();
+  private server: Server = createServer((request, response) => {
+    void this.handle(request.url ?? '', request, response);
+  });
+  fingerprint = 'a'.repeat(64);
+  /** The models asked for, by task and type, e.g. `clip/visual ViT-B-32__openai` */
+  readonly requests: string[] = [];
+
+  private constructor() {}
+
+  private async handle(
+    url: string,
+    request: import('node:http').IncomingMessage,
+    response: import('node:http').ServerResponse,
+  ) {
+    if (url === '/ping') {
+      response.end('pong');
+      return;
+    }
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) {
+      chunks.push(chunk as Buffer);
+    }
+    const form = await new Response(Buffer.concat(chunks), {
+      headers: { 'Content-Type': request.headers['content-type'] ?? '' },
+    }).formData();
+    const entries = JSON.parse(String(form.get('entries'))) as Record<string, Record<string, { modelName: string }>>;
+    const answer: Record<string, unknown> = { imageHeight: 100, imageWidth: 100, models: {} };
+    for (const [task, models] of Object.entries(entries)) {
+      const described: Record<string, unknown> = {};
+      for (const [type, { modelName }] of Object.entries(models)) {
+        this.requests.push(`${task}/${type} ${modelName}`);
+        if (type === 'visual') {
+          await this.held.get(modelName);
+        }
+        described[type] = { name: modelName, fingerprint: this.fingerprint, format: 'onnx' };
+      }
+      (answer.models as Record<string, unknown>)[task] = described;
+      const { modelName } = Object.values(models)[0];
+      // the dimension of the model of that name (see the server's list of CLIP models), in one direction per set of
+      // files
+      const dimensions = modelName.includes('ViT-L-14') ? 768 : 512;
+      answer[task] =
+        task === 'clip'
+          ? JSON.stringify(
+              Array.from({ length: dimensions }, (_, index) =>
+                index === this.fingerprint.codePointAt(0)! % dimensions ? 1 : 0.01,
+              ),
+            )
+          : task === 'ocr'
+            ? { text: [], box: [], boxScore: [], textScore: [] }
+            : [];
+    }
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify(answer));
+  }
+
+  /** Answers for photos with a model only once `release` is called, to look at what happens meanwhile */
+  hold(modelName: string) {
+    let release!: () => void;
+    this.held.set(modelName, new Promise<void>((resolve) => (release = resolve)));
+    return () => {
+      this.held.delete(modelName);
+      release();
+    };
+  }
+
+  get url() {
+    return `http://127.0.0.1:${(this.server.address() as AddressInfo).port}`;
+  }
+
+  async stop() {
+    await new Promise((resolve) => this.server.close(resolve));
+  }
+}
 
 /** Retry an assertion until it passes, for results of background jobs */
 export const eventually = async <T>(check: () => Promise<T>, { timeout = 30_000 } = {}): Promise<T> => {

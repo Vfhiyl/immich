@@ -488,6 +488,49 @@ export type IntegrityReportSummaryResponseDto = {
     missing_file: number;
     untracked_file: number;
 };
+export type MachineLearningModelDto = {
+    /** SHA-256 of the files of the model, null until a result came back, or when the service does not tell */
+    fingerprint: string | null;
+    firstSeenAt: string | null;
+    /** The format it ran in when last seen (onnx, armnn, rknn) */
+    format: string | null;
+    lastSeenAt: string | null;
+    name: string;
+};
+export type MachineLearningTaskModelsDto = {
+    /** Smart search only: the model of the embeddings that are searched, until a rebuild switches to the target */
+    active: (MachineLearningModelDto) | null;
+    /** The model named in the configuration */
+    configuredModel: string;
+    /** Files that were replaced came back from a machine learning server: its results are not kept */
+    conflict: {
+        at: string;
+        model: MachineLearningModelDto;
+    } | null;
+    enabled: boolean;
+    /** The last time the results of every photo were made again for another model */
+    rebuild: {
+        /** Of them, those with results of the target */
+        done: number | null;
+        finishedAt: string | null;
+        startedAt: string;
+        /** The photos the task makes results for, while the rebuild runs */
+        total: number | null;
+    } | null;
+    /** The last time the files of the model changed under the same name */
+    replaced: {
+        at: string;
+        "from": MachineLearningModelDto;
+        to: MachineLearningModelDto;
+    } | null;
+    /** The model the task makes its results with */
+    target: MachineLearningModelDto;
+    /** clip (smart search and duplicates), facial-recognition, or ocr */
+    task: string;
+};
+export type MachineLearningModelsResponseDto = {
+    tasks: MachineLearningTaskModelsDto[];
+};
 export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
     /** Restore backup filename */
@@ -4473,6 +4516,17 @@ export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
         status: 200;
         data: IntegrityReportSummaryResponseDto;
     }>("/admin/integrity/summary", {
+        ...opts
+    }));
+}
+/**
+ * Get the models of machine learning
+ */
+export function getMachineLearningModels(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MachineLearningModelsResponseDto;
+    }>("/admin/machine-learning/models", {
         ...opts
     }));
 }
@@ -9322,6 +9376,9 @@ export enum JobName {
     SidecarWrite = "SidecarWrite",
     SmartSearchQueueAll = "SmartSearchQueueAll",
     SmartSearch = "SmartSearch",
+    SmartSearchRebuild = "SmartSearchRebuild",
+    FaceDetectionRebuild = "FaceDetectionRebuild",
+    OcrRebuild = "OcrRebuild",
     StorageTemplateMigration = "StorageTemplateMigration",
     StorageTemplateMigrationSingle = "StorageTemplateMigrationSingle",
     TagCleanup = "TagCleanup",

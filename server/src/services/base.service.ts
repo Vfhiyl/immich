@@ -36,6 +36,7 @@ import { MapRepository } from 'src/repositories/map.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { MachineLearningModelRepository } from 'src/repositories/ml-model.repository.js';
 import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
@@ -80,6 +81,7 @@ import {
   requirePersonAccess,
 } from 'src/utils/access.js';
 import { getConfig, updateConfig } from 'src/utils/config.js';
+import { MachineLearningModels } from 'src/utils/ml-models.js';
 
 export const BASE_SERVICE_DEPENDENCIES = [
   LoggingRepository,
@@ -130,6 +132,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   StorageDeletionRepository,
   StorageReplicaRepository,
   StorageUsageRepository,
+  MachineLearningModelRepository,
   StorageRepository,
   SyncRepository,
   SyncCheckpointRepository,
@@ -199,6 +202,7 @@ export class BaseService {
     protected storageDeletionRepository: StorageDeletionRepository,
     protected storageReplicaRepository: StorageReplicaRepository,
     protected storageUsageRepository: StorageUsageRepository,
+    protected machineLearningModelRepository: MachineLearningModelRepository,
     protected storageRepository: StorageRepository,
     protected syncRepository: SyncRepository,
     protected syncCheckpointRepository: SyncCheckpointRepository,
@@ -277,6 +281,7 @@ export class BaseService {
       ctx.storageDeletionRepository,
       ctx.storageReplicaRepository,
       ctx.storageUsageRepository,
+      ctx.machineLearningModelRepository,
       ctx.storageRepository,
       ctx.syncRepository,
       ctx.syncCheckpointRepository,
@@ -300,6 +305,17 @@ export class BaseService {
 
   get worker() {
     return this.configRepository.getWorker();
+  }
+
+  /** Which models the tasks of machine learning make their results with, and the rebuilds when they change */
+  protected get machineLearningModels() {
+    return new MachineLearningModels({
+      databaseRepository: this.databaseRepository,
+      jobRepository: this.jobRepository,
+      logger: this.logger,
+      machineLearningModelRepository: this.machineLearningModelRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
   }
 
   private get configRepos() {

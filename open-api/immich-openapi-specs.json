@@ -1005,6 +1005,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/machine-learning/models": {
+      "get": {
+        "description": "Which model each task makes its results with, the progress of making them again after the model changed, and what was noticed about the files of the models",
+        "operationId": "getMachineLearningModels",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineLearningModelsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the models of machine learning",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/maintenance": {
       "post": {
         "description": "Put Immich into or take it out of maintenance mode",
@@ -24587,6 +24634,9 @@
           "SidecarWrite",
           "SmartSearchQueueAll",
           "SmartSearch",
+          "SmartSearchRebuild",
+          "FaceDetectionRebuild",
+          "OcrRebuild",
           "StorageTemplateMigration",
           "StorageTemplateMigrationSingle",
           "TagCleanup",
@@ -24872,6 +24922,164 @@
         "required": [
           "redirectUri",
           "successful"
+        ],
+        "type": "object"
+      },
+      "MachineLearningModelDto": {
+        "properties": {
+          "fingerprint": {
+            "description": "SHA-256 of the files of the model, null until a result came back, or when the service does not tell",
+            "nullable": true,
+            "type": "string"
+          },
+          "firstSeenAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "format": {
+            "description": "The format it ran in when last seen (onnx, armnn, rknn)",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "firstSeenAt",
+          "format",
+          "lastSeenAt",
+          "name"
+        ],
+        "type": "object"
+      },
+      "MachineLearningModelsResponseDto": {
+        "properties": {
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/MachineLearningTaskModelsDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tasks"
+        ],
+        "type": "object"
+      },
+      "MachineLearningTaskModelsDto": {
+        "properties": {
+          "active": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MachineLearningModelDto"
+              }
+            ],
+            "description": "Smart search only: the model of the embeddings that are searched, until a rebuild switches to the target",
+            "nullable": true
+          },
+          "configuredModel": {
+            "description": "The model named in the configuration",
+            "type": "string"
+          },
+          "conflict": {
+            "description": "Files that were replaced came back from a machine learning server: its results are not kept",
+            "nullable": true,
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "model": {
+                "$ref": "#/components/schemas/MachineLearningModelDto"
+              }
+            },
+            "required": [
+              "model",
+              "at"
+            ],
+            "type": "object"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "rebuild": {
+            "description": "The last time the results of every photo were made again for another model",
+            "nullable": true,
+            "properties": {
+              "done": {
+                "description": "Of them, those with results of the target",
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "nullable": true,
+                "type": "integer"
+              },
+              "finishedAt": {
+                "nullable": true,
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "string"
+              },
+              "total": {
+                "description": "The photos the task makes results for, while the rebuild runs",
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "nullable": true,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "startedAt",
+              "finishedAt",
+              "total",
+              "done"
+            ],
+            "type": "object"
+          },
+          "replaced": {
+            "description": "The last time the files of the model changed under the same name",
+            "nullable": true,
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "from": {
+                "$ref": "#/components/schemas/MachineLearningModelDto"
+              },
+              "to": {
+                "$ref": "#/components/schemas/MachineLearningModelDto"
+              }
+            },
+            "required": [
+              "from",
+              "to",
+              "at"
+            ],
+            "type": "object"
+          },
+          "target": {
+            "$ref": "#/components/schemas/MachineLearningModelDto",
+            "description": "The model the task makes its results with"
+          },
+          "task": {
+            "description": "clip (smart search and duplicates), facial-recognition, or ocr",
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "configuredModel",
+          "conflict",
+          "enabled",
+          "rebuild",
+          "replaced",
+          "target",
+          "task"
         ],
         "type": "object"
       },

@@ -23,6 +23,7 @@ import {
   mapPlaces,
 } from 'src/dtos/search.dto.js';
 import { AssetOrder, AssetVisibility, Permission } from 'src/enum.js';
+import { ModelTask } from 'src/repositories/machine-learning.repository.js';
 import { AssetSearchScope } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
@@ -328,13 +329,13 @@ export class SearchService extends BaseService {
     machineLearning: SystemConfig['machineLearning'],
   ): Promise<string> {
     if (dto.query) {
-      const key = machineLearning.clip.modelName + dto.query + dto.language;
+      // the model of the embeddings that are searched, which a rebuild changes only once every photo has a new one
+      const { active } = await this.machineLearningModels.getState(ModelTask.SEARCH, machineLearning);
+      const modelName = active?.name ?? machineLearning.clip.modelName;
+      const key = modelName + dto.query + dto.language;
       let embedding = this.embeddingCache.get(key);
       if (!embedding) {
-        embedding = await this.machineLearningRepository.encodeText(dto.query, {
-          modelName: machineLearning.clip.modelName,
-          language: dto.language,
-        });
+        embedding = await this.machineLearningRepository.encodeText(dto.query, { modelName, language: dto.language });
         this.embeddingCache.set(key, embedding);
       }
       return embedding;

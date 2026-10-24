@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import pickle
@@ -38,6 +39,7 @@ from immich_ml.main import (
     update_state,
 )
 from immich_ml.main import run_inference as run_request
+from immich_ml.models import fingerprint as fingerprint_module
 from immich_ml.models.base import InferenceEntry, InferenceModel
 from immich_ml.models.cache import ModelCache
 from immich_ml.models.clip.textual import MClipTextualEncoder, OpenClipTextualEncoder
@@ -2127,6 +2129,8 @@ async def test_feeds_a_model_the_output_of_the_one_it_depends_on(mocker: MockerF
     }
     models[FaceDetector].predict.return_value = "faces"
     models[FaceRecognizer].predict.return_value = "embeddings"
+    for model, model_type in ((models[FaceDetector], "detection"), (models[FaceRecognizer], "recognition")):
+        model.describe.side_effect = lambda name, model_type=model_type: {"name": name, "fingerprint": model_type}
     mocker.patch("immich_ml.main.model_cache.get", side_effect=lambda entry, ttl: models[entry.model])
     entries: list[InferenceEntry[Any]] = [  # the recognition first, so that only waiting on the detection feeds it
         InferenceEntry(FaceRecognizer, "buffalo_l", FaceRecognitionOptions()),
@@ -2136,7 +2140,16 @@ async def test_feeds_a_model_the_output_of_the_one_it_depends_on(mocker: MockerF
     response = await run_request("image", entries)
 
     models[FaceRecognizer].predict.assert_called_once_with("image", "faces", options=FaceRecognitionOptions())
-    assert response == {"facial-recognition": "embeddings"}
+    assert response == {
+        "facial-recognition": "embeddings",
+        # the models that made it, the one whose output only another model reads too
+        "models": {
+            "facial-recognition": {
+                "detection": {"name": "buffalo_l", "fingerprint": "detection"},
+                "recognition": {"name": "buffalo_l", "fingerprint": "recognition"},
+            }
+        },
+    }
 
 
 @pytest.mark.asyncio
@@ -2328,3 +2341,114 @@ class TestPredictionEndpoints:
         assert np.allclose(actual["box"], expected["box"], atol=1e-3)
         assert np.allclose(actual["boxScore"], expected["boxScore"], atol=1e-3)
         assert np.allclose(actual["textScore"], expected["textScore"], atol=1e-3)
+
+
+class TestFingerprint:
+    @pytest.fixture
+    def export(self, tmp_path: Path) -> Path:
+        (tmp_path / "config.json").write_text("{}")
+        for model_type in ("visual", "textual"):
+            (tmp_path / model_type).mkdir()
+            (tmp_path / model_type / "model.onnx").write_bytes(model_type.encode())
+        (tmp_path / "visual" / "preprocess_cfg.json").write_text("{}")
+        return tmp_path
+
+    def fingerprint(self, cache_dir: Path, *model_types: str) -> str:
+        return fingerprint_module.fingerprint(cache_dir, [cache_dir / model_type for model_type in model_types])
+
+    def test_is_the_same_for_the_same_files(self, export: Path, tmp_path_factory: pytest.TempPathFactory) -> None:
+        copy = tmp_path_factory.mktemp("copy")
+        for path in export.rglob("*"):
+            if path.is_file():
+                (copy / path.relative_to(export)).parent.mkdir(parents=True, exist_ok=True)
+                (copy / path.relative_to(export)).write_bytes(path.read_bytes())
+
+        assert self.fingerprint(export, "visual") == self.fingerprint(copy, "visual")
+        assert len(self.fingerprint(export, "visual")) == 64
+
+    @pytest.mark.parametrize("changed", ["visual/model.onnx", "visual/preprocess_cfg.json", "config.json"])
+    def test_changes_with_any_file_of_the_export(self, export: Path, changed: str) -> None:
+        before = self.fingerprint(export, "visual")
+
+        (export / changed).write_bytes(b"replaced")
+
+        assert self.fingerprint(export, "visual") != before
+
+    def test_changes_when_a_file_is_added_or_renamed(self, export: Path) -> None:
+        before = self.fingerprint(export, "visual")
+        (export / "visual" / "model.onnx.data").write_bytes(b"weights")
+        added = self.fingerprint(export, "visual")
+        (export / "visual" / "model.onnx.data").rename(export / "visual" / "weights.bin")
+
+        assert len({before, added, self.fingerprint(export, "visual")}) == 3
+
+    def test_leaves_out_conversions_prepared_graphs_and_download_metadata(self, export: Path) -> None:
+        before = self.fingerprint(export, "visual")
+
+        (export / "visual" / "model.armnn").write_bytes(b"armnn")
+        (export / "visual" / "rk3588").mkdir()
+        (export / "visual" / "rk3588" / "model.rknn").write_bytes(b"rknn")
+        (export / "visual" / "cpu" / "x86_64").mkdir(parents=True)
+        (export / "visual" / "cpu" / "x86_64" / "manifest.json").write_text("{}")
+        (export / ".cache" / "huggingface").mkdir(parents=True)
+        (export / ".cache" / "huggingface" / "download.metadata").write_text("etag")
+        (export / "visual" / ".lock").write_text("")
+
+        assert self.fingerprint(export, "visual") == before
+
+    def test_covers_every_folder_of_a_pair(self, export: Path) -> None:
+        before = self.fingerprint(export, "textual", "visual")
+
+        (export / "textual" / "model.onnx").write_bytes(b"another text encoder")
+
+        assert self.fingerprint(export, "textual", "visual") != before
+        assert self.fingerprint(export, "visual", "textual") == self.fingerprint(export, "textual", "visual")
+
+    def test_reads_a_file_again_only_when_it_changed(self, export: Path, mocker: MockerFixture) -> None:
+        self.fingerprint(export, "visual")
+        read = mocker.spy(hashlib, "file_digest")
+
+        self.fingerprint(export, "visual")
+        assert read.call_count == 0
+
+        path = export / "visual" / "model.onnx"
+        path.write_bytes(b"other")
+        os.utime(path, ns=(path.stat().st_atime_ns, path.stat().st_mtime_ns + 1_000_000))
+        self.fingerprint(export, "visual")
+        assert read.call_count == 1
+
+    def test_pairs_the_encoders_of_clip(self, export: Path) -> None:
+        visual = OpenClipVisualEncoder("ViT-B-32__openai", cache_dir=export)
+        textual = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir=export)
+        detector = FaceDetector("buffalo_l", cache_dir=export)
+
+        assert visual.fingerprint == textual.fingerprint == self.fingerprint(export, "textual", "visual")
+        assert detector.fingerprint == self.fingerprint(export, "detection")
+
+    def test_is_worked_out_as_the_model_loads_and_described_with_the_result(
+        self, export: Path, mocker: MockerFixture
+    ) -> None:
+        mocker.patch.object(OpenClipVisualEncoder, "_load", return_value=mock.Mock())
+        model = OpenClipVisualEncoder("ViT-B-32__openai", cache_dir=export, model_format=ModelFormat.ONNX)
+        computed = mocker.spy(hashlib, "file_digest")
+
+        model.load()
+
+        assert computed.call_count > 0
+        assert model.describe("ViT-B-32__openai") == {
+            "name": "ViT-B-32__openai",
+            "fingerprint": self.fingerprint(export, "textual", "visual"),
+            "format": "onnx",
+        }
+
+    def test_is_worked_out_again_after_the_model_was_unloaded(self, export: Path, mocker: MockerFixture) -> None:
+        mocker.patch.object(OpenClipVisualEncoder, "_load", return_value=mock.Mock())
+        model = OpenClipVisualEncoder("ViT-B-32__openai", cache_dir=export, model_format=ModelFormat.ONNX)
+        model.load()
+        before = model.fingerprint
+
+        model.unload()
+        (export / "visual" / "model.onnx").write_bytes(b"downloaded again")
+        model.load()
+
+        assert model.fingerprint != before

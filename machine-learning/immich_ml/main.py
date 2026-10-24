@@ -30,6 +30,7 @@ from .schemas import (
     FaceDetectionOptions,
     FaceRecognitionOptions,
     InferenceResponse,
+    ModelDescription,
     ModelFormat,
     ModelIdentity,
     Options,
@@ -183,6 +184,7 @@ async def predict(
 
 async def run_inference(payload: Image | str, entries: list[InferenceEntry[Any]]) -> InferenceResponse:
     read: set[ModelIdentity] = set()
+    used: dict[ModelIdentity, ModelDescription] = {}
 
     async def _run_inference[O: Options](entry: InferenceEntry[O]) -> Any:
         model = model_cache.get(entry, ttl=settings.model_ttl)
@@ -191,7 +193,9 @@ async def run_inference(payload: Image | str, entries: list[InferenceEntry[Any]]
             raise HTTPException(400, f"{entry.model.__name__} depends on output of {missing[0]}")
         inputs = [payload, *[await runs[dep] for dep in model.depends]]
         model = await load(model)
-        return await attempt(model, partial(model.predict, *inputs, options=entry.options), MODEL_FILE_ERRORS)
+        output = await attempt(model, partial(model.predict, *inputs, options=entry.options), MODEL_FILE_ERRORS)
+        used[entry.model.identity] = model.describe(entry.name)  # after the run, which may fall back to ONNX
+        return output
 
     runs = {entry.model.identity: asyncio.create_task(_run_inference(entry)) for entry in entries}
     outputs = await asyncio.gather(*runs.values(), return_exceptions=True)
@@ -205,6 +209,11 @@ async def run_inference(payload: Image | str, entries: list[InferenceEntry[Any]]
     }
     if isinstance(payload, Image):
         response["imageHeight"], response["imageWidth"] = payload.height, payload.width
+    # which models made the output, for the server to keep with the results (servers that do not know it ignore it)
+    models: dict[str, dict[str, ModelDescription]] = {}
+    for (model_type, task), description in used.items():
+        models.setdefault(task.value, {})[model_type.value] = description
+    response["models"] = models
 
     return response
 

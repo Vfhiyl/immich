@@ -158,3 +158,11 @@ class TextRecognitionOptions(Options):
 
 
 InferenceResponse = dict[str, Any]
+
+
+class ModelDescription(TypedDict):
+    """The model that made a result: the name it was asked by, the fingerprint of its files and the format it ran"""
+
+    name: str
+    fingerprint: str
+    format: str

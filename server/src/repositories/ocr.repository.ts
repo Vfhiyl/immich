@@ -74,6 +74,34 @@ export class OcrRepository {
     return query.selectNoFrom(sql`1`.as('dummy')).execute();
   }
 
+  /**
+   * Changes the text found in a photo by what changed only: the lines that are gone are deleted and new ones added,
+   * those kept stay as they are (with their id and visibility, so the apps do not sync them again)
+   */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID], [], DummyValue.STRING] })
+  async update(
+    assetId: string,
+    removeIds: string[],
+    add: Insertable<AssetOcrTable>[],
+    searchText: string,
+  ): Promise<void> {
+    await this.db.transaction().execute(async (trx) => {
+      if (removeIds.length > 0) {
+        await trx.deleteFrom('asset_ocr').where('assetId', '=', assetId).where('id', 'in', removeIds).execute();
+      }
+      if (add.length > 0) {
+        await trx.insertInto('asset_ocr').values(add).execute();
+      }
+      await (searchText
+        ? trx
+            .insertInto('ocr_search')
+            .values({ assetId, text: searchText })
+            .onConflict((oc) => oc.column('assetId').doUpdateSet((eb) => ({ text: eb.ref('excluded.text') })))
+            .execute()
+        : trx.deleteFrom('ocr_search').where('assetId', '=', assetId).execute());
+    });
+  }
+
   @GenerateSql({ params: [DummyValue.UUID, [], []] })
   async updateOcrVisibilities(
     assetId: string,

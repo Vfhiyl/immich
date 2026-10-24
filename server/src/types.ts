@@ -1,5 +1,6 @@
 import { ShallowDehydrateObject } from 'kysely';
 import { Mocked } from 'vitest';
+import type { MachineLearningModelsState } from 'src/utils/ml-models.js';
 import type { SyncDeleteRetentionState } from 'src/utils/sync-retention.js';
 import { VECTOR_EXTENSIONS } from 'src/constants.js';
 import { AssetFile } from 'src/database.js';
@@ -239,6 +240,21 @@ export interface IEntityJob extends IBaseJob {
   notify?: boolean;
 }
 
+/** A job of a model for a photo; a rebuild queues it with a priority, behind the photos that were just uploaded */
+export interface IMachineLearningJob extends IEntityJob {
+  priority?: number;
+}
+
+/** A step of a rebuild: the generation it was queued for, which a later change of the model makes stale */
+export interface IModelRebuildJob extends IBaseJob {
+  generation: number;
+  /** Whether this is the last step, which runs after the jobs it queued */
+  finish?: boolean;
+  priority?: number;
+  /** The minimum time to wait to execute this job, in milliseconds */
+  delay?: number;
+}
+
 export interface IAssetDeleteJob extends IEntityJob {
   deleteOnDisk: boolean;
 }
@@ -416,14 +432,16 @@ export type JobItem =
 
   // Facial Recognition
   | { name: JobName.AssetDetectFacesQueueAll; data: IBaseJob }
-  | { name: JobName.AssetDetectFaces; data: IEntityJob }
+  | { name: JobName.AssetDetectFaces; data: IMachineLearningJob }
+  | { name: JobName.FaceDetectionRebuild; data: IModelRebuildJob }
   | { name: JobName.FacialRecognitionQueueAll; data: IFacialRecognitionQueueAll }
   | { name: JobName.FacialRecognition; data: IDeferrableJob }
   | { name: JobName.PersonGenerateThumbnail; data: IPersonJob }
 
   // Smart Search
   | { name: JobName.SmartSearchQueueAll; data: IBaseJob }
-  | { name: JobName.SmartSearch; data: IEntityJob }
+  | { name: JobName.SmartSearch; data: IMachineLearningJob }
+  | { name: JobName.SmartSearchRebuild; data: IModelRebuildJob }
   | { name: JobName.AssetEmptyTrash; data?: IBaseJob }
 
   // Duplicate Detection
@@ -470,7 +488,8 @@ export type JobItem =
 
   // OCR
   | { name: JobName.OcrQueueAll; data: IBaseJob }
-  | { name: JobName.Ocr; data: IEntityJob }
+  | { name: JobName.Ocr; data: IMachineLearningJob }
+  | { name: JobName.OcrRebuild; data: IModelRebuildJob }
 
   // Workflow
   | { name: JobName.WorkflowAssetTrigger; data: { workflowId: string; assetId: string } }
@@ -621,6 +640,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.StorageExportState]: StorageExportState;
   /** When an administrator last downloaded the master keys, for the current key */
   [SystemMetadataKey.StorageMasterKeySaved]: { keyId: string; savedAt: string; userId: string };
+  [SystemMetadataKey.MachineLearningModels]: MachineLearningModelsState;
 }
 
 export type UserPreferences = {

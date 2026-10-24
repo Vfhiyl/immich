@@ -408,6 +408,7 @@ export enum SystemMetadataKey {
   StorageBudgetReminders = 'storage-budget-reminders',
   StorageExportState = 'storage-export-state',
   StorageMasterKeySaved = 'storage-master-key-saved',
+  MachineLearningModels = 'machine-learning-models',
 }
 
 export enum UserMetadataKey {
@@ -1032,6 +1033,12 @@ export enum JobName {
 
   SmartSearchQueueAll = 'SmartSearchQueueAll',
   SmartSearch = 'SmartSearch',
+  /** Makes the embeddings of every photo again for the model smart search changes to, then switches to them */
+  SmartSearchRebuild = 'SmartSearchRebuild',
+  /** Detects the faces of every photo again for the model facial recognition changed to */
+  FaceDetectionRebuild = 'FaceDetectionRebuild',
+  /** Recognizes the text of every photo again for the model OCR changed to */
+  OcrRebuild = 'OcrRebuild',
 
   StorageTemplateMigration = 'StorageTemplateMigration',
   StorageTemplateMigrationSingle = 'StorageTemplateMigrationSingle',
@@ -1115,6 +1122,7 @@ export enum DatabaseLock {
   // far from upstream values so that new upstream locks do not collide
   StorageBackends = 9100,
   StorageReplication = 9101,
+  MachineLearningModels = 9102,
 }
 
 export enum MaintenanceAction {

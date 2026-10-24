@@ -18,7 +18,19 @@ Behind a proxy or in a region where Hugging Face is slow, set `HF_ENDPOINT` on t
 
 - **Name the models in the [config file](/install/config-file.md).** Only the settings that differ from the defaults are saved, so a server whose settings were never changed uses the default models of its version: a new version that changes a default changes the model of such a server. With the names in the config file (`machineLearning.clip.modelName`, `machineLearning.facialRecognition.modelName`, `machineLearning.ocr.modelName`), a model changes only when you change it.
 - **Back up the `model-cache` volume**, or keep it on a disk that survives the container: with the files in the cache, the container never downloads them again.
-- Every container of machine learning should use the same image (CPU, CUDA, OpenVINO, ARM NN, RKNN, …) and the same cache: the hardware formats (ONNX, ARM NN, RKNN) are different files.
+- With several machine learning servers (`machineLearning.urls`), give them the same model files (the same cache, or copies of it): Immich does not mix results of different files (see below).
+
+## When a model changes
+
+Results of two models cannot be compared: the embeddings of smart search, the faces of facial recognition and the text of OCR are only meaningful among results of the same model. The machine learning service tells, with every result, which files made it (a SHA-256 _fingerprint_ of the model's export: its ONNX files, configuration and tokenizer), and the server keeps which model made the results of each photo. When a model changes, because another one is named in the settings or because its files changed (downloaded again after the cache was lost), the server makes the results of every photo again, in the background:
+
+- New photos come first, as always; then the photos without results, the newest first; then those with results of the old model, the newest first.
+- **Smart search** keeps searching the embeddings of the old model (and encodes queries with it) until every photo has an embedding of the new one, then switches to them at once; duplicates are detected again afterwards. A model of another dimension changes the database column in the same step, while searches wait for a moment.
+- **Facial recognition** keeps the faces that are found in the same place, with their person and name, and gives them the embedding of the new model. New faces are grouped into people once every photo is done, so that faces are never compared across models.
+- **Text recognition** keeps the lines that are found again (the same text in the same place, with their visibility), and changes only what changed.
+- Hardware acceleration (CUDA, OpenVINO, ARM NN, RKNN, …) is not a change of model: it runs the same model (see [Hardware-Accelerated Machine Learning](/features/ml-hardware-acceleration.md)).
+
+**Administration → Job Queues** shows the model of each task, the progress of a rebuild, when the files of a model changed, and a machine learning server that answers with files that were replaced (its results are not kept: make every server use the same files). The results made before this version count as made by the model named at the upgrade; the results of a machine learning service that does not tell its files (upstream's image) count as made by the model of that name, whatever its files.
 
 ## Memory
 

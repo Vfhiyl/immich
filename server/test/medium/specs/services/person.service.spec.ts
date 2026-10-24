@@ -15,6 +15,7 @@ import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { MachineLearningModelRepository } from 'src/repositories/ml-model.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonUserRepository } from 'src/repositories/person-user.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
@@ -24,6 +25,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { PersonService } from 'src/services/person.service.js';
+import { faceModel } from 'test/mappers.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory, newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -47,6 +49,7 @@ const setup = (db?: Kysely<DB>) => {
       ClusterGroupRepository,
       PartnerRepository,
       StorageBackendRepository,
+      MachineLearningModelRepository,
     ],
     mock: [JobRepository, LoggingRepository, StorageRepository, MachineLearningRepository],
   });
@@ -529,7 +532,7 @@ describe(PersonService.name, () => {
       });
       ctx
         .getMock(MachineLearningRepository)
-        .detectFaces.mockResolvedValue({ imageHeight: 42, imageWidth: 69, faces: [] });
+        .detectFaces.mockResolvedValue({ imageHeight: 42, imageWidth: 69, faces: [], model: faceModel });
 
       await sut.handleDetectFaces({ id: asset.id });
 

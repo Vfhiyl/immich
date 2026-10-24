@@ -5,9 +5,11 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 
 import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { ModelTask } from 'src/repositories/machine-learning.repository.js';
 import { RecordedFile } from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { batched, getCLIPModelInfo, isSmartSearchEnabled } from 'src/utils/misc.js';
+import { isRebuilding } from 'src/utils/ml-models.js';
 
 @Injectable()
 export class SmartInfoService extends BaseService {
@@ -17,8 +19,8 @@ export class SmartInfoService extends BaseService {
   }
 
   @OnEvent({ name: 'ConfigUpdate', workers: [ImmichWorker.Microservices], server: true })
-  async onConfigUpdate({ oldConfig, newConfig }: ArgOf<'ConfigUpdate'>) {
-    await this.init(newConfig, oldConfig);
+  async onConfigUpdate({ newConfig }: ArgOf<'ConfigUpdate'>) {
+    await this.init(newConfig);
   }
 
   @OnEvent({ name: 'ConfigValidate' })
@@ -32,36 +34,30 @@ export class SmartInfoService extends BaseService {
     }
   }
 
-  private async init(newConfig: SystemConfig, oldConfig?: SystemConfig) {
+  /**
+   * Keeps the column of the embeddings that are searched at the dimension of their model. Upstream deleted every
+   * embedding when the model changed; here a rebuild makes the new ones in the background and switches to them at
+   * once (see `MachineLearningModelService`), so only a column that does not fit its model is changed (and emptied).
+   */
+  private async init(newConfig: SystemConfig) {
     if (!isSmartSearchEnabled(newConfig.machineLearning)) {
       return;
     }
 
     await this.databaseRepository.withLock(DatabaseLock.CLIPDimSize, async () => {
-      const { dimSize } = getCLIPModelInfo(newConfig.machineLearning.clip.modelName);
+      const { active } = await this.machineLearningModels.getState(ModelTask.SEARCH, newConfig.machineLearning);
+      const modelName = active?.name ?? newConfig.machineLearning.clip.modelName;
+      const { dimSize } = getCLIPModelInfo(modelName);
       const dbDimSize = await this.databaseRepository.getDimensionSize('smart_search');
       this.logger.verbose(`Current database CLIP dimension size is ${dbDimSize}`);
-
-      const modelChange =
-        oldConfig && oldConfig.machineLearning.clip.modelName !== newConfig.machineLearning.clip.modelName;
-      const isDimSizeChange = dbDimSize !== dimSize;
-      if (!modelChange && !isDimSizeChange) {
+      if (dbDimSize === dimSize) {
         return;
       }
 
-      if (isDimSizeChange) {
-        this.logger.log(
-          `Dimension size of model ${newConfig.machineLearning.clip.modelName} is ${dimSize}, but database expects ${dbDimSize}.`,
-        );
-        this.logger.log(`Updating database CLIP dimension size to ${dimSize}.`);
-        await this.databaseRepository.setDimensionSize(dimSize);
-        this.logger.log(`Successfully updated database CLIP dimension size from ${dbDimSize} to ${dimSize}.`);
-      } else {
-        await this.databaseRepository.deleteAllSearchEmbeddings();
-      }
-
-      // TODO: A job to reindex all assets should be scheduled, though user
-      // confirmation should probably be requested before doing that.
+      this.logger.log(`Dimension size of model ${modelName} is ${dimSize}, but database expects ${dbDimSize}.`);
+      this.logger.log(`Updating database CLIP dimension size to ${dimSize}.`);
+      await this.databaseRepository.setDimensionSize(dimSize);
+      this.logger.log(`Successfully updated database CLIP dimension size from ${dbDimSize} to ${dimSize}.`);
     });
   }
 
@@ -76,6 +72,8 @@ export class SmartInfoService extends BaseService {
       const { dimSize } = getCLIPModelInfo(machineLearning.clip.modelName);
       // in addition to deleting embeddings, update the dimension size in case it failed earlier
       await this.databaseRepository.setDimensionSize(dimSize);
+      // made again at once with the model they are made with: what a rebuild would have switched to
+      await this.machineLearningModels.setActive(ModelTask.SEARCH, machineLearning);
     }
 
     for await (const assets of batched(this.assetJobRepository.streamForEncodeClip(force))) {
@@ -101,7 +99,11 @@ export class SmartInfoService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const embedding = await this.encodePreview(asset.files[0], machineLearning.clip);
+    const { embedding, model } = await this.encodePreview(asset.files[0], machineLearning.clip);
+    const observed = await this.machineLearningModels.observe(ModelTask.SEARCH, model, machineLearning);
+    if (!observed.keep) {
+      return observed.conflict ? JobStatus.Failed : JobStatus.Skipped;
+    }
 
     if (this.databaseRepository.isBusy(DatabaseLock.CLIPDimSize)) {
       this.logger.verbose(`Waiting for CLIP dimension size to be updated`);
@@ -114,7 +116,35 @@ export class SmartInfoService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    await this.searchRepository.upsert(asset.id, embedding);
+    // as it is now: a switch may have happened while this waited
+    const state = await this.machineLearningModels.getState(ModelTask.SEARCH, machineLearning);
+    const { modelId } = observed;
+    if (!isRebuilding(state) || !state.active) {
+      await this.searchRepository.upsert(asset.id, embedding);
+      return JobStatus.Success;
+    }
+
+    // what is searched holds the embeddings of another model until every photo has one of this model
+    await this.machineLearningModelRepository.upsertRebuildEmbedding(asset.id, modelId, embedding);
+    if (!(await this.searchRepository.getEmbedding(asset.id))) {
+      // a new photo is found by searches before the switch too
+      const searched = await this.encodePreview(asset.files[0], {
+        ...machineLearning.clip,
+        modelName: state.active.name,
+      });
+      const searchedModel = await this.machineLearningModelRepository.create({
+        task: ModelTask.SEARCH,
+        ...searched.model,
+      });
+      if (
+        await this.machineLearningModels.isCompatible(
+          { name: searched.model.name, modelId: searchedModel.id },
+          state.active,
+        )
+      ) {
+        await this.searchRepository.upsert(asset.id, searched.embedding);
+      }
+    }
 
     return JobStatus.Success;
   }
