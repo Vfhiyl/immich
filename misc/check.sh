@@ -8,7 +8,7 @@
 #        misc/fix.sh first formats the changed files and applies the lint fixes that can be applied
 #
 # Needs: Node and pnpm with dependencies installed (`pnpm install`), ffmpeg, redis-server, oazapfts (the version
-# pinned in mise.toml) and Flutter on PATH, OPENAPI_GENERATOR_JAR (the openapi-generator-cli jar), a JDK and the
+# pinned in mise.toml), uv (the version pinned in machine-learning/mise.toml) with Python 3.12 and Flutter on PATH, OPENAPI_GENERATOR_JAR (the openapi-generator-cli jar), a JDK and the
 # Android SDK at ANDROID_HOME (Gradle downloads the rest from Maven Central, or a mirror set in an init script), and
 # PostgreSQL with the vector extension at CHECK_POSTGRES_URL (a server URL without database name,
 # default postgres://postgres:postgres@localhost:5432). Playwright downloads its Chromium (of the version
@@ -88,8 +88,12 @@ e2e_format() { cd "$e2e" && "$(bin "$e2e" prettier)" --check "${e2e_files[@]}"; 
 e2e_lint() { cd "$e2e" && "$(bin "$e2e" eslint)" "${e2e_files[@]}" --max-warnings 0; }
 e2e_types() { cd "$e2e" && "$(bin "$e2e" tsc)" --noEmit; }
 
-# the documentation of storage backends (the other pages are upstream's); its examples are checked by the unit tests
-docs_format() { cd "$repo/docs" && "$(bin "$repo/docs" prettier)" --check docs/administration/storage-backends.md; }
+# the pages of this fork (the others are upstream's); the examples of storage backends are checked by the unit tests
+docs_format() {
+  cd "$repo/docs"
+  "$(bin "$repo/docs" prettier)" --check docs/administration/storage-backends.md \
+    docs/administration/machine-learning-models.md
+}
 
 # the web app, against the SDK built from the generated client (see open_api)
 web="$repo/web"
@@ -117,6 +121,21 @@ cli_check() {
   "$(bin "$cli" tsc)" --noEmit
   "$(bin "$cli" vitest)" --run
   "$(bin "$cli" vite)" build
+}
+
+# the machine learning service, with upstream's checks (machine-learning/mise.toml), on the CPU build; uv installs the
+# locked dependencies into machine-learning/.venv, with the Python of mise.toml (3.12, rather than the 3.13 of
+# .python-version) found on PATH rather than downloaded
+ml="$repo/machine-learning"
+ml_check() {
+  cd "$ml"
+  unset VIRTUAL_ENV
+  export UV_PYTHON_DOWNLOADS=never UV_PYTHON=3.12
+  uv sync --locked --extra cpu
+  uv run ruff format --check immich_ml scripts test_main.py conftest.py
+  uv run ruff check immich_ml scripts test_main.py conftest.py
+  uv run mypy --strict immich_ml/ scripts/ test_main.py conftest.py
+  uv run pytest --cov=immich_ml --cov-report term-missing
 }
 
 # the mobile app, against the Dart client generated from the API description (not tracked, like upstream); needs
@@ -250,6 +269,7 @@ step 'web: types' web_types
 step 'web: unit tests' web_unit
 step 'web: build' web_build
 step 'cli: formatting, lint, types, unit tests and build' cli_check
+step 'machine-learning: formatting, lint, types and unit tests' ml_check
 step 'mobile: generated code' mobile_codegen
 step 'mobile: formatting' mobile_format
 step 'mobile: analysis' mobile_analyze
