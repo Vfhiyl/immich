@@ -150,4 +150,47 @@ describe('models of machine learning', () => {
     await eventually(async () => expect(await search('lakes')).toEqual(assetIds.toSorted(byId)), { timeout: 60_000 });
     expect(ml.requests).toContain('clip/textual ViT-L-14__openai');
   }, 240_000);
+
+  it('should hold the jobs of machine learning back while its memory runs out, and go on once it is free', async () => {
+    const GiB = 1024 ** 3;
+    ml.resources = { memory: { used: 7.9 * GiB, limit: 8 * GiB, source: 'cgroup2' }, pressure: null };
+    await eventually(
+      async () => {
+        const { body } = await api.json<{ backoff: { level: string } | null }>('/admin/machine-learning/models');
+        expect(body.backoff?.level).toBe('paused');
+      },
+      { timeout: 60_000 },
+    );
+
+    ml.requests.length = 0;
+    const { id } = await api.upload(photoPath, Buffer.concat([await readFile(photoPath), Buffer.from('held')]));
+    assetIds.push(id);
+    // thumbnails are made meanwhile, the embedding is not
+    await eventually(async () => {
+      const [{ count }] = await environment.query<{ count: string }>(
+        `select count(*) from asset_file where "assetId" = $1 and type = 'preview'`,
+        [id],
+      );
+      expect(count).toBe('1');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    expect(ml.requests.filter((request) => request.startsWith('clip/visual'))).toEqual([]);
+
+    ml.resources = { memory: { used: GiB, limit: 8 * GiB, source: 'cgroup2' }, pressure: null };
+    await eventually(async () => expect(await search('forest')).toEqual(assetIds.toSorted(byId)), {
+      timeout: 120_000,
+    });
+  }, 240_000);
+
+  it('should tell the resources of the server and whether machine learning answers', async () => {
+    const { body } = await api.json<{
+      memory: { bytes: number };
+      disk: { path: string; free: number };
+      machineLearning: { services: Array<{ url: string; reachable: boolean; memory: unknown }> };
+    }>('/admin/resources');
+
+    expect(body.memory.bytes).toBeGreaterThan(0);
+    expect(body.disk.path).toBe(environment.mediaLocation);
+    expect(body.machineLearning.services).toEqual([{ url: ml.url, reachable: true, memory: expect.anything() }]);
+  });
 });

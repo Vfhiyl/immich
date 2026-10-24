@@ -49,6 +49,7 @@ from immich_ml.models.facial_recognition.recognition import FaceRecognizer
 from immich_ml.models.ocr.ctc import logits, probabilities
 from immich_ml.models.ocr.detection import TextDetector
 from immich_ml.models.ocr.recognition import TextRecognizer
+from immich_ml.resources import read_resources
 from immich_ml.schemas import (
     FaceDetectionOptions,
     FaceRecognitionOptions,
@@ -2452,3 +2453,88 @@ class TestFingerprint:
         model.load()
 
         assert model.fingerprint != before
+
+
+class TestResources:
+    def write(self, root: Path, files: dict[str, str]) -> Path:
+        for name, content in files.items():
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text(content)
+        return root
+
+    meminfo = "MemTotal:       16000000 kB\nMemFree:         1000000 kB\nMemAvailable:   12000000 kB\n"
+
+    def test_reads_the_memory_of_a_container_with_a_limit_without_its_page_cache(self, tmp_path: Path) -> None:
+        root = self.write(
+            tmp_path,
+            {
+                "sys/fs/cgroup/memory.max": "4294967296\n",
+                "sys/fs/cgroup/memory.current": "3221225472\n",
+                "sys/fs/cgroup/memory.stat": "anon 2000000000\ninactive_file 1073741824\nactive_file 5\n",
+                "sys/fs/cgroup/memory.pressure": (
+                    "some avg10=12.50 avg60=3.00 avg300=1.00 total=123\n"
+                    "full avg10=1.25 avg60=0.00 avg300=0.00 total=4\n"
+                ),
+                "proc/meminfo": self.meminfo,
+            },
+        )
+
+        assert read_resources(root) == {
+            "memory": {"used": 2147483648, "limit": 4294967296, "source": "cgroup2"},
+            "pressure": {"some": 12.5, "full": 1.25},
+        }
+
+    def test_reads_the_memory_of_the_machine_for_a_container_without_a_limit(self, tmp_path: Path) -> None:
+        root = self.write(
+            tmp_path,
+            {
+                "sys/fs/cgroup/memory.max": "max\n",
+                "sys/fs/cgroup/memory.current": "3221225472\n",
+                "proc/meminfo": self.meminfo,
+                "proc/pressure/memory": "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+            },
+        )
+
+        assert read_resources(root) == {
+            "memory": {"used": 4000000 * 1024, "limit": 16000000 * 1024, "source": "meminfo"},
+            "pressure": {"some": 0.0, "full": 0.0},
+        }
+
+    def test_reads_cgroup_v1(self, tmp_path: Path) -> None:
+        root = self.write(
+            tmp_path,
+            {
+                "sys/fs/cgroup/memory/memory.limit_in_bytes": "2147483648\n",
+                "sys/fs/cgroup/memory/memory.usage_in_bytes": "1610612736\n",
+                "sys/fs/cgroup/memory/memory.stat": "cache 5\ntotal_inactive_file 536870912\n",
+                "proc/meminfo": self.meminfo,
+            },
+        )
+
+        assert read_resources(root) == {
+            "memory": {"used": 1073741824, "limit": 2147483648, "source": "cgroup1"},
+            "pressure": None,
+        }
+
+    def test_takes_an_unlimited_cgroup_v1_for_the_machine(self, tmp_path: Path) -> None:
+        root = self.write(
+            tmp_path,
+            {
+                "sys/fs/cgroup/memory/memory.limit_in_bytes": "9223372036854771712\n",
+                "sys/fs/cgroup/memory/memory.usage_in_bytes": "1610612736\n",
+                "proc/meminfo": self.meminfo,
+            },
+        )
+
+        assert read_resources(root)["memory"] == {"used": 4000000 * 1024, "limit": 16000000 * 1024, "source": "meminfo"}
+
+    def test_tells_nothing_it_cannot_read(self, tmp_path: Path) -> None:
+        assert read_resources(tmp_path) == {"memory": None, "pressure": None}
+
+    def test_answers_on_its_endpoint(self, mocker: MockerFixture) -> None:
+        mocker.patch("immich_ml.main.read_resources", return_value={"memory": None, "pressure": None})
+
+        response = TestClient(app).get("/resources")
+
+        assert response.status_code == 200
+        assert response.json() == {"memory": None, "pressure": None}

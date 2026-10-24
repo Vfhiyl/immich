@@ -162,6 +162,22 @@ export class JobRepository {
     return count > 0;
   }
 
+  /** Stops this process taking jobs of a queue (the queue itself, and other processes, go on) */
+  async pauseWorker(queueName: QueueName) {
+    const worker = this.workers[queueName];
+    if (worker && !worker.isPaused()) {
+      // the jobs that run finish on their own
+      await worker.pause(true);
+    }
+  }
+
+  resumeWorker(queueName: QueueName) {
+    const worker = this.workers[queueName];
+    if (worker?.isPaused()) {
+      worker.resume();
+    }
+  }
+
   async isPaused(name: QueueName): Promise<boolean> {
     return this.getQueue(name).isPaused();
   }

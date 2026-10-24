@@ -1,5 +1,6 @@
 import { ShallowDehydrateObject } from 'kysely';
 import { Mocked } from 'vitest';
+import type { BackoffLevel, ResourceSample } from 'src/utils/ml-backoff.js';
 import type { MachineLearningModelsState } from 'src/utils/ml-models.js';
 import type { SyncDeleteRetentionState } from 'src/utils/sync-retention.js';
 import { VECTOR_EXTENSIONS } from 'src/constants.js';
@@ -641,6 +642,13 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   /** When an administrator last downloaded the master keys, for the current key */
   [SystemMetadataKey.StorageMasterKeySaved]: { keyId: string; savedAt: string; userId: string };
   [SystemMetadataKey.MachineLearningModels]: MachineLearningModelsState;
+  /** How the jobs of machine learning gave way to its memory, at the last check of a worker of microservices */
+  [SystemMetadataKey.MachineLearningBackoff]: {
+    level: BackoffLevel;
+    checkedAt: string;
+    memory: ResourceSample['memory'];
+    pressure: ResourceSample['pressure'];
+  };
 }
 
 export type UserPreferences = {

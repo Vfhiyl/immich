@@ -22,6 +22,7 @@ import { MapService } from 'src/services/map.service.js';
 import { MediaService } from 'src/services/media.service.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { MetadataService } from 'src/services/metadata.service.js';
+import { MachineLearningBackoffService } from 'src/services/ml-backoff.service.js';
 import { MachineLearningModelService } from 'src/services/ml-model.service.js';
 import { NotificationAdminService } from 'src/services/notification-admin.service.js';
 import { NotificationService } from 'src/services/notification.service.js';
@@ -30,6 +31,7 @@ import { PartnerService } from 'src/services/partner.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
 import { QueueService } from 'src/services/queue.service.js';
+import { ResourceCheckService } from 'src/services/resource-check.service.js';
 import { ResumableUploadService } from 'src/services/resumable-upload.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { ServerService } from 'src/services/server.service.js';
@@ -107,6 +109,8 @@ export const services = [
   StorageUsageService,
   StorageService,
   MachineLearningModelService,
+  MachineLearningBackoffService,
+  ResourceCheckService,
   StorageTemplateService,
   SyncService,
   SystemConfigService,

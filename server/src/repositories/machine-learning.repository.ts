@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Duration } from 'luxon';
 import { readFile } from 'node:fs/promises';
+import type { ResourceSample } from 'src/utils/ml-backoff.js';
 import type { ReportedModel } from 'src/utils/ml-models.js';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -106,6 +107,8 @@ export class MachineLearningRepository {
   private healthyMap: Record<string, boolean> = {};
   private interval?: ReturnType<typeof setInterval>;
   private _config?: MachineLearningConfig;
+  /** While memory is short: what requests for photos wait for (see `MachineLearningBackoffService`) */
+  private held?: { promise: Promise<void>; release: () => void };
 
   private get config(): MachineLearningConfig {
     if (!this._config) {
@@ -185,7 +188,26 @@ export class MachineLearningRepository {
     return this.healthyMap[url];
   }
 
+  /** Makes requests for photos wait, from now until `release` (requests for text, of searches, go on) */
+  hold() {
+    if (this.held) {
+      return;
+    }
+
+    let release!: () => void;
+    const promise = new Promise<void>((resolve) => (release = resolve));
+    this.held = { promise, release };
+  }
+
+  release() {
+    this.held?.release();
+    this.held = undefined;
+  }
+
   private async predict<T>(payload: ModelPayload, config: MachineLearningRequest): Promise<T> {
+    if ('imagePath' in payload && this.held) {
+      await this.held.promise;
+    }
     const formData = await this.getFormData(payload, config);
 
     for (const url of [
@@ -211,6 +233,29 @@ export class MachineLearningRepository {
     }
 
     throw new Error(`Machine learning request '${JSON.stringify(config)}' failed for all URLs`);
+  }
+
+  async ping(url: string): Promise<boolean> {
+    try {
+      const response = await fetch(new URL('ping', url), {
+        signal: AbortSignal.timeout(this.config.availabilityChecks.timeout),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /** What a service tells of its memory, null when it does not answer or cannot tell (upstream's has no such route) */
+  async getResources(url: string): Promise<ResourceSample | null> {
+    try {
+      const response = await fetch(new URL('resources', url), {
+        signal: AbortSignal.timeout(this.config.availabilityChecks.timeout),
+      });
+      return response.ok ? ((await response.json()) as ResourceSample) : null;
+    } catch {
+      return null;
+    }
   }
 
   async detectFaces(imagePath: string, { modelName, minScore }: FaceDetectionOptions) {

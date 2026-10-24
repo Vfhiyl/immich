@@ -1,5 +1,6 @@
 <script lang="ts">
   import MachineLearningModels from '$lib/components/admin/MachineLearningModels.svelte';
+  import ResourceCheckReport from '$lib/components/admin/ResourceCheckReport.svelte';
   import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import JobsPanel from './QueuePanel.svelte';
@@ -52,7 +53,12 @@
   <Container size="medium" center>
     {#if models.tasks.some(({ enabled }) => enabled)}
       <div class="mb-8">
-        <MachineLearningModels tasks={models.tasks} />
+        <MachineLearningModels tasks={models.tasks} backoff={models.backoff} />
+      </div>
+    {/if}
+    {#if data.resources}
+      <div class="mb-8">
+        <ResourceCheckReport check={data.resources} />
       </div>
     {/if}
     {#if queues}

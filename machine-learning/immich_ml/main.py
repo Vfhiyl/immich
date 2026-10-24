@@ -26,6 +26,7 @@ from .config import PreloadModelData, log, settings
 from .models.base import InferenceEntry
 from .models.cache import ModelCache
 from .pipeline import Clip, FacialRecognition, Ocr, PipelineRequest, Slot
+from .resources import read_resources
 from .schemas import (
     FaceDetectionOptions,
     FaceRecognitionOptions,
@@ -161,6 +162,12 @@ async def root() -> ORJSONResponse:
 @app.get("/ping")
 def ping() -> PlainTextResponse:
     return PlainTextResponse("pong")
+
+
+@app.get("/resources")
+def resources() -> ORJSONResponse:
+    """The memory this service has and uses, for the server to hold back its jobs before it runs out"""
+    return ORJSONResponse(read_resources())
 
 
 @app.post("/predict", dependencies=[Depends(update_state)])

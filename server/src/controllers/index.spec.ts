@@ -10,6 +10,7 @@ const UNAUTHENTICATED_ADMIN_ROUTES = new Set([
   'POST admin/database-backups/start-restore',
   // the storage of a new server: only before an administrator exists (as start-restore), or in maintenance mode
   'GET admin/storage/setup',
+  'GET admin/resources/setup',
   'GET admin/maintenance/storage',
   'POST admin/maintenance/storage/continue',
 ]);

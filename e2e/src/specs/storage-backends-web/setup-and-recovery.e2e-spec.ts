@@ -62,6 +62,9 @@ test.describe('setup and recovery', () => {
     await expect(page.getByRole('heading', { name: 'Welcome to Immich' })).toBeVisible({ timeout: 90_000 });
     await expect(page.getByText('The storage configuration works.')).toBeVisible();
     await expect(page.getByText(/originals \(originals, local\): works/)).toBeVisible();
+    // what the server has to run on
+    await expect(page.getByText('Resources', { exact: true })).toBeVisible();
+    await expect(page.getByText(/^Free disk in /)).toBeVisible();
   });
 
   test('restores a lost server from the database backups in its storage', async ({ page }) => {

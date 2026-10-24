@@ -35,3 +35,11 @@ Results of two models cannot be compared: the embeddings of smart search, the fa
 ## Memory
 
 Each model takes memory while it is loaded (it is unloaded after `MACHINE_LEARNING_MODEL_TTL` seconds without use), and the jobs of smart search, face detection and text recognition run at the same time. Immich needs at least 6 GB of RAM with machine learning (see [Requirements](/install/requirements.md)); give every container a memory limit (see [Can I limit CPU and RAM usage?](/FAQ#can-i-limit-cpu-and-ram-usage)), so that a container that needs more than it has is stopped on its own instead of the whole server running out of memory.
+
+The machine learning service tells the server how much memory it has and uses (`GET /resources`: the limit of its container, cgroup v2 or v1, or else the memory of the machine; in use means without the page cache, as `docker stats` counts it), and how long tasks waited for memory (Linux pressure stall information, where the kernel provides it). Every 10 seconds the server looks, and the jobs that send photos to machine learning give way:
+
+- **One at a time**, when 85% of its memory or more is in use, or some tasks waited for memory 10% of the time or more;
+- **Held** until the memory is free again, when 95% or more is in use, or all tasks waited 5% of the time or more;
+- **One step back up**, after three checks in a row with less than 75% in use and some tasks waiting less than 2% of the time.
+
+Searches are never held back. A machine learning service that does not tell its memory (upstream's image) is not held back either. **Administration → Job Queues** shows the memory of machine learning and whether its jobs give way; it also shows, like the welcome page of a new server, the memory, cores and free disk of the server against the requirements, and whether every machine learning service answers.

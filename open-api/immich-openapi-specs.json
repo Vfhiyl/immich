@@ -1590,6 +1590,87 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/resources": {
+      "get": {
+        "description": "The memory, cores and free disk of the server, and the machine learning services, against what is documented as needed",
+        "operationId": "getResourceCheck",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check the resources of the server",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "server.statistics",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/resources/setup": {
+      "get": {
+        "description": "As the check of the resources of the server, for the welcome page; only before an administrator exists",
+        "operationId": "getResourceSetupCheck",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Check the resources of a new server",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/storage": {
       "get": {
         "description": "The configured storage backends without their credentials, and the settings of storing files",
@@ -24925,6 +25006,71 @@
         ],
         "type": "object"
       },
+      "MachineLearningBackoffDto": {
+        "properties": {
+          "checkedAt": {
+            "type": "string"
+          },
+          "level": {
+            "$ref": "#/components/schemas/MachineLearningBackoffLevel"
+          },
+          "memory": {
+            "nullable": true,
+            "properties": {
+              "limit": {
+                "type": "number"
+              },
+              "source": {
+                "description": "cgroup2 or cgroup1 (the container has a limit), or meminfo (the machine)",
+                "type": "string"
+              },
+              "used": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "used",
+              "limit",
+              "source"
+            ],
+            "type": "object"
+          },
+          "pressure": {
+            "nullable": true,
+            "properties": {
+              "full": {
+                "description": "Percent of the last 10 seconds in which all tasks waited for memory",
+                "type": "number"
+              },
+              "some": {
+                "description": "Percent of the last 10 seconds in which some tasks waited for memory",
+                "type": "number"
+              }
+            },
+            "required": [
+              "some",
+              "full"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "checkedAt",
+          "level",
+          "memory",
+          "pressure"
+        ],
+        "type": "object"
+      },
+      "MachineLearningBackoffLevel": {
+        "description": "normal: as configured; reduced: one job at a time; paused: none until the memory is free again",
+        "enum": [
+          "normal",
+          "reduced",
+          "paused"
+        ],
+        "type": "string"
+      },
       "MachineLearningModelDto": {
         "properties": {
           "fingerprint": {
@@ -24960,6 +25106,15 @@
       },
       "MachineLearningModelsResponseDto": {
         "properties": {
+          "backoff": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MachineLearningBackoffDto"
+              }
+            ],
+            "description": "How the jobs that send photos to machine learning give way to its memory, as last checked",
+            "nullable": true
+          },
           "tasks": {
             "items": {
               "$ref": "#/components/schemas/MachineLearningTaskModelsDto"
@@ -24968,6 +25123,7 @@
           }
         },
         "required": [
+          "backoff",
           "tasks"
         ],
         "type": "object"
@@ -29138,6 +29294,170 @@
           "prerelease"
         ],
         "type": "string"
+      },
+      "ResourceCheckLevel": {
+        "description": "Against what upstream documents as needed: below the minimum, below the recommendation, or enough",
+        "enum": [
+          "ok",
+          "below_recommended",
+          "below_minimum"
+        ],
+        "type": "string"
+      },
+      "ResourceCheckResponseDto": {
+        "properties": {
+          "cpus": {
+            "properties": {
+              "cores": {
+                "type": "number"
+              },
+              "level": {
+                "$ref": "#/components/schemas/ResourceCheckLevel"
+              },
+              "source": {
+                "description": "cgroup when the container of the server has a quota below the machine, else machine",
+                "type": "string"
+              }
+            },
+            "required": [
+              "cores",
+              "source",
+              "level"
+            ],
+            "type": "object"
+          },
+          "disk": {
+            "properties": {
+              "free": {
+                "type": "number"
+              },
+              "level": {
+                "$ref": "#/components/schemas/ResourceCheckLevel"
+              },
+              "path": {
+                "description": "The media location, inside the container",
+                "type": "string"
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "path",
+              "free",
+              "total",
+              "level"
+            ],
+            "type": "object"
+          },
+          "machineLearning": {
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "services": {
+                "items": {
+                  "properties": {
+                    "memory": {
+                      "description": "Null when the service does not tell (upstream image) or does not answer",
+                      "nullable": true,
+                      "properties": {
+                        "limit": {
+                          "type": "number"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "used": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "used",
+                        "limit",
+                        "source"
+                      ],
+                      "type": "object"
+                    },
+                    "reachable": {
+                      "type": "boolean"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "reachable",
+                    "memory"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled",
+              "services"
+            ],
+            "type": "object"
+          },
+          "memory": {
+            "properties": {
+              "bytes": {
+                "type": "number"
+              },
+              "level": {
+                "$ref": "#/components/schemas/ResourceCheckLevel"
+              },
+              "source": {
+                "description": "cgroup when the container of the server has a limit below the machine, else machine",
+                "type": "string"
+              }
+            },
+            "required": [
+              "bytes",
+              "source",
+              "level"
+            ],
+            "type": "object"
+          },
+          "requirements": {
+            "properties": {
+              "cpusMinimum": {
+                "type": "number"
+              },
+              "cpusRecommended": {
+                "type": "number"
+              },
+              "diskMinimum": {
+                "type": "number"
+              },
+              "memoryMinimum": {
+                "type": "number"
+              },
+              "memoryRecommended": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "memoryMinimum",
+              "memoryRecommended",
+              "cpusMinimum",
+              "cpusRecommended",
+              "diskMinimum"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "cpus",
+          "disk",
+          "machineLearning",
+          "memory",
+          "requirements"
+        ],
+        "type": "object"
       },
       "ReverseGeocodingStateResponseDto": {
         "properties": {

@@ -18,6 +18,8 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     queueAll: vitest.fn().mockImplementation(() => Promise.resolve()),
     isActive: vitest.fn(),
     isPaused: vitest.fn(),
+    pauseWorker: vitest.fn(),
+    resumeWorker: vitest.fn(),
     getJobCounts: vitest.fn(),
     clear: vitest.fn(),
     waitForQueueCompletion: vitest.fn(),

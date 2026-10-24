@@ -488,6 +488,22 @@ export type IntegrityReportSummaryResponseDto = {
     missing_file: number;
     untracked_file: number;
 };
+export type MachineLearningBackoffDto = {
+    checkedAt: string;
+    level: MachineLearningBackoffLevel;
+    memory: {
+        limit: number;
+        /** cgroup2 or cgroup1 (the container has a limit), or meminfo (the machine) */
+        source: string;
+        used: number;
+    } | null;
+    pressure: {
+        /** Percent of the last 10 seconds in which all tasks waited for memory */
+        full: number;
+        /** Percent of the last 10 seconds in which some tasks waited for memory */
+        some: number;
+    } | null;
+};
 export type MachineLearningModelDto = {
     /** SHA-256 of the files of the model, null until a result came back, or when the service does not tell */
     fingerprint: string | null;
@@ -529,6 +545,8 @@ export type MachineLearningTaskModelsDto = {
     task: string;
 };
 export type MachineLearningModelsResponseDto = {
+    /** How the jobs that send photos to machine learning give way to its memory, as last checked */
+    backoff: (MachineLearningBackoffDto) | null;
     tasks: MachineLearningTaskModelsDto[];
 };
 export type SetMaintenanceModeDto = {
@@ -664,6 +682,47 @@ export type TemplateResponseDto = {
 export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
+};
+export type ResourceCheckResponseDto = {
+    cpus: {
+        cores: number;
+        level: ResourceCheckLevel;
+        /** cgroup when the container of the server has a quota below the machine, else machine */
+        source: string;
+    };
+    disk: {
+        free: number;
+        level: ResourceCheckLevel;
+        /** The media location, inside the container */
+        path: string;
+        total: number;
+    };
+    machineLearning: {
+        enabled: boolean;
+        services: {
+            /** Null when the service does not tell (upstream image) or does not answer */
+            memory: {
+                limit: number;
+                source: string;
+                used: number;
+            } | null;
+            reachable: boolean;
+            url: string;
+        }[];
+    };
+    memory: {
+        bytes: number;
+        level: ResourceCheckLevel;
+        /** cgroup when the container of the server has a limit below the machine, else machine */
+        source: string;
+    };
+    requirements: {
+        cpusMinimum: number;
+        cpusRecommended: number;
+        diskMinimum: number;
+        memoryMinimum: number;
+        memoryRecommended: number;
+    };
 };
 export type StorageConfigurationResponseDto = {
     backends: {
@@ -4672,6 +4731,28 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
         method: "POST",
         body: adminConfigSmtpDto
     })));
+}
+/**
+ * Check the resources of the server
+ */
+export function getResourceCheck(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ResourceCheckResponseDto;
+    }>("/admin/resources", {
+        ...opts
+    }));
+}
+/**
+ * Check the resources of a new server
+ */
+export function getResourceSetupCheck(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ResourceCheckResponseDto;
+    }>("/admin/resources/setup", {
+        ...opts
+    }));
 }
 /**
  * Get the storage configuration
@@ -8887,6 +8968,11 @@ export enum IntegrityReport {
     MissingFile = "missing_file",
     ChecksumMismatch = "checksum_mismatch"
 }
+export enum MachineLearningBackoffLevel {
+    Normal = "normal",
+    Reduced = "reduced",
+    Paused = "paused"
+}
 export enum MaintenanceAction {
     Start = "start",
     End = "end",
@@ -8930,6 +9016,11 @@ export enum NotificationType {
     AlbumUpdate = "AlbumUpdate",
     ClusterGroupRequest = "ClusterGroupRequest",
     Custom = "Custom"
+}
+export enum ResourceCheckLevel {
+    Ok = "ok",
+    BelowRecommended = "below_recommended",
+    BelowMinimum = "below_minimum"
 }
 export enum StorageBackendDriver {
     Local = "local",

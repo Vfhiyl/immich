@@ -4,13 +4,14 @@ import type { JobItem, JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { MachineLearningModelDto, MachineLearningModelsResponseDto } from 'src/dtos/ml-model.dto.js';
-import { DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName, SystemMetadataKey } from 'src/enum.js';
 import { ModelTask } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
   batched,
   getCLIPModelInfo,
   isFacialRecognitionEnabled,
+  isMachineLearningEnabled,
   isOcrEnabled,
   isSmartSearchEnabled,
 } from 'src/utils/misc.js';
@@ -222,7 +223,10 @@ export class MachineLearningModelService extends BaseService {
         };
       }),
     );
-    return { tasks };
+    const backoff = isMachineLearningEnabled(machineLearning)
+      ? await this.systemMetadataRepository.get(SystemMetadataKey.MachineLearningBackoff)
+      : null;
+    return { tasks, backoff: backoff ?? null };
   }
 
   private async describe({ name, modelId }: ModelRef): Promise<MachineLearningModelDto> {

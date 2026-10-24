@@ -1,4 +1,8 @@
-import type { MachineLearningModelDto, MachineLearningTaskModelsDto } from '@immich/sdk';
+import {
+  MachineLearningBackoffLevel,
+  type MachineLearningModelDto,
+  type MachineLearningTaskModelsDto,
+} from '@immich/sdk';
 import { render, screen, within } from '@testing-library/svelte';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
@@ -81,5 +85,20 @@ describe('MachineLearningModels component', () => {
     expect(screen.getByText('admin.machine_learning_models_rebuilt')).toBeInTheDocument();
     expect(screen.getByText('admin.machine_learning_models_replaced')).toBeInTheDocument();
     expect(screen.getByText('admin.machine_learning_models_conflict')).toBeInTheDocument();
+  });
+
+  test('tells when its jobs give way to the memory of machine learning', async () => {
+    const memory = { used: 7 * 1024 ** 3, limit: 8 * 1024 ** 3, source: 'cgroup2' };
+    const { rerender } = render(MachineLearningModels, {
+      tasks: [task({})],
+      backoff: { level: MachineLearningBackoffLevel.Normal, checkedAt: '', memory, pressure: null },
+    });
+    expect(screen.getByText('admin.machine_learning_backoff_memory')).toBeInTheDocument();
+
+    await rerender({
+      tasks: [task({})],
+      backoff: { level: MachineLearningBackoffLevel.Paused, checkedAt: '', memory, pressure: null },
+    });
+    expect(screen.getByText('admin.machine_learning_backoff_paused')).toBeInTheDocument();
   });
 });

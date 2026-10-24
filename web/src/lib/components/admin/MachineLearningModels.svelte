@@ -1,14 +1,38 @@
 <script lang="ts">
   import { formatAge, toPercent } from '$lib/services/storage.service';
-  import type { MachineLearningModelDto, MachineLearningTaskModelsDto } from '@immich/sdk';
+  import { getByteUnitString } from '$lib/utils/byte-units';
+  import {
+    MachineLearningBackoffLevel,
+    type MachineLearningBackoffDto,
+    type MachineLearningModelDto,
+    type MachineLearningTaskModelsDto,
+  } from '@immich/sdk';
   import { Alert, Stack, Text } from '@immich/ui';
   import { t, type Translations } from 'svelte-i18n';
 
   type Props = {
     tasks: MachineLearningTaskModelsDto[];
+    backoff?: MachineLearningBackoffDto | null;
   };
 
-  const { tasks }: Props = $props();
+  const { tasks, backoff = null }: Props = $props();
+
+  const memory = $derived(
+    backoff?.memory
+      ? { used: getByteUnitString(backoff.memory.used), limit: getByteUnitString(backoff.memory.limit) }
+      : null,
+  );
+  const backoffMessage = $derived.by(() => {
+    if (!backoff || backoff.level === MachineLearningBackoffLevel.Normal) {
+      return null;
+    }
+    if (!memory) {
+      return $t('admin.machine_learning_backoff_pressure', { values: { percent: backoff.pressure?.some ?? 0 } });
+    }
+    return backoff.level === MachineLearningBackoffLevel.Paused
+      ? $t('admin.machine_learning_backoff_paused', { values: memory })
+      : $t('admin.machine_learning_backoff_reduced', { values: memory });
+  });
 
   const titles = new Map<string, Translations>([
     ['clip', 'admin.machine_learning_models_task_clip'],
@@ -34,6 +58,15 @@
   <Text size="large" fontWeight="semi-bold">{$t('admin.machine_learning_models')}</Text>
   <Text size="small" color="muted" class="mb-3">{$t('admin.machine_learning_models_description')}</Text>
   <Stack gap={4}>
+    {#if backoffMessage}
+      <Alert
+        color={backoff?.level === MachineLearningBackoffLevel.Paused ? 'danger' : 'warning'}
+        size="small"
+        title={backoffMessage}
+      />
+    {:else if memory}
+      <Text size="small" color="muted">{$t('admin.machine_learning_backoff_memory', { values: memory })}</Text>
+    {/if}
     {#each tasks as task (task.task)}
       <div class="flex flex-col gap-1" data-testid="ml-task-{task.task}">
         <Text fontWeight="bold">{title(task.task)}</Text>

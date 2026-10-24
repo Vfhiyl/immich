@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { BackoffLevel } from 'src/utils/ml-backoff.js';
 
 const MachineLearningModelSchema = z
   .object({
@@ -43,8 +44,36 @@ const MachineLearningTaskModelsSchema = z
   })
   .meta({ id: 'MachineLearningTaskModelsDto' });
 
+const MachineLearningBackoffSchema = z
+  .object({
+    level: z
+      .enum(BackoffLevel)
+      .describe('normal: as configured; reduced: one job at a time; paused: none until the memory is free again')
+      .meta({ id: 'MachineLearningBackoffLevel' }),
+    checkedAt: z.string(),
+    memory: z
+      .object({
+        used: z.number(),
+        limit: z.number(),
+        source: z.string().describe('cgroup2 or cgroup1 (the container has a limit), or meminfo (the machine)'),
+      })
+      .nullable(),
+    pressure: z
+      .object({
+        some: z.number().describe('Percent of the last 10 seconds in which some tasks waited for memory'),
+        full: z.number().describe('Percent of the last 10 seconds in which all tasks waited for memory'),
+      })
+      .nullable(),
+  })
+  .meta({ id: 'MachineLearningBackoffDto' });
+
 const MachineLearningModelsResponseSchema = z
-  .object({ tasks: z.array(MachineLearningTaskModelsSchema) })
+  .object({
+    tasks: z.array(MachineLearningTaskModelsSchema),
+    backoff: MachineLearningBackoffSchema.nullable().describe(
+      'How the jobs that send photos to machine learning give way to its memory, as last checked',
+    ),
+  })
   .meta({ id: 'MachineLearningModelsResponseDto' });
 
 export class MachineLearningModelsResponseDto extends createZodDto(MachineLearningModelsResponseSchema) {}

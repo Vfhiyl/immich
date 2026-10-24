@@ -606,6 +606,11 @@ export class FakeMachineLearning {
     void this.handle(request.url ?? '', request, response);
   });
   fingerprint = 'a'.repeat(64);
+  /** What `GET /resources` answers, as this fork's service does; null answers 404, as upstream's does */
+  resources: { memory: { used: number; limit: number; source: string } | null; pressure: null } | null = {
+    memory: { used: 1024 ** 3, limit: 8 * 1024 ** 3, source: 'cgroup2' },
+    pressure: null,
+  };
   /** The models asked for, by task and type, e.g. `clip/visual ViT-B-32__openai` */
   readonly requests: string[] = [];
 
@@ -618,6 +623,12 @@ export class FakeMachineLearning {
   ) {
     if (url === '/ping') {
       response.end('pong');
+      return;
+    }
+    if (url === '/resources') {
+      response.statusCode = this.resources ? 200 : 404;
+      response.setHeader('Content-Type', 'application/json');
+      response.end(JSON.stringify(this.resources ?? {}));
       return;
     }
     const chunks: Buffer[] = [];

@@ -409,6 +409,7 @@ export enum SystemMetadataKey {
   StorageExportState = 'storage-export-state',
   StorageMasterKeySaved = 'storage-master-key-saved',
   MachineLearningModels = 'machine-learning-models',
+  MachineLearningBackoff = 'machine-learning-backoff',
 }
 
 export enum UserMetadataKey {
