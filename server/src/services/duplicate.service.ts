@@ -62,6 +62,7 @@ const getUniqueCoordinate = (assets: MapAsset[], key: 'latitude' | 'longitude'):
   const unique = new Set(values);
   return unique.size === 1 ? [...unique][0] : null;
 };
+import { getDuplicateMaxDistance } from 'src/utils/ml-thresholds.js';
 
 @Injectable()
 export class DuplicateService extends BaseService {
@@ -351,7 +352,7 @@ export class DuplicateService extends BaseService {
     const duplicateAssets = await this.duplicateRepository.search({
       assetId: asset.id,
       embedding: asset.embedding,
-      maxDistance: machineLearning.duplicateDetection.maxDistance,
+      maxDistance: getDuplicateMaxDistance(machineLearning),
       type: asset.type,
       userIds: [asset.ownerId],
     });

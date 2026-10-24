@@ -157,21 +157,6 @@
             bind:checked={configToEdit.machineLearning.duplicateDetection.enabled}
             disabled={disabled || !configToEdit.machineLearning.enabled || !configToEdit.machineLearning.clip.enabled}
           />
-
-          <hr />
-
-          <SettingInputField
-            inputType={SettingInputFieldType.NUMBER}
-            label={$t('admin.machine_learning_max_detection_distance')}
-            bind:value={configToEdit.machineLearning.duplicateDetection.maxDistance}
-            step="0.0005"
-            min={0.001}
-            max={0.1}
-            description={$t('admin.machine_learning_max_detection_distance_description')}
-            disabled={disabled || !featureFlagsManager.value.duplicateDetection}
-            isEdited={configToEdit.machineLearning.duplicateDetection.maxDistance !==
-              config.machineLearning.duplicateDetection.maxDistance}
-          />
         </div>
       </SettingAccordion>
 
@@ -206,50 +191,6 @@
               !configToEdit.machineLearning.facialRecognition.enabled}
             isEdited={configToEdit.machineLearning.facialRecognition.modelName !==
               config.machineLearning.facialRecognition.modelName}
-          />
-
-          <SettingInputField
-            inputType={SettingInputFieldType.NUMBER}
-            label={$t('admin.machine_learning_min_detection_score')}
-            description={$t('admin.machine_learning_min_detection_score_description')}
-            bind:value={configToEdit.machineLearning.facialRecognition.minScore}
-            step="0.01"
-            min={0.1}
-            max={1}
-            disabled={disabled ||
-              !configToEdit.machineLearning.enabled ||
-              !configToEdit.machineLearning.facialRecognition.enabled}
-            isEdited={configToEdit.machineLearning.facialRecognition.minScore !==
-              config.machineLearning.facialRecognition.minScore}
-          />
-
-          <SettingInputField
-            inputType={SettingInputFieldType.NUMBER}
-            label={$t('admin.machine_learning_max_recognition_distance')}
-            description={$t('admin.machine_learning_max_recognition_distance_description')}
-            bind:value={configToEdit.machineLearning.facialRecognition.maxDistance}
-            step="0.01"
-            min={0.1}
-            max={2}
-            disabled={disabled ||
-              !configToEdit.machineLearning.enabled ||
-              !configToEdit.machineLearning.facialRecognition.enabled}
-            isEdited={configToEdit.machineLearning.facialRecognition.maxDistance !==
-              config.machineLearning.facialRecognition.maxDistance}
-          />
-
-          <SettingInputField
-            inputType={SettingInputFieldType.NUMBER}
-            label={$t('admin.machine_learning_min_recognized_faces')}
-            description={$t('admin.machine_learning_min_recognized_faces_description')}
-            bind:value={configToEdit.machineLearning.facialRecognition.minFaces}
-            step="1"
-            min={1}
-            disabled={disabled ||
-              !configToEdit.machineLearning.enabled ||
-              !configToEdit.machineLearning.facialRecognition.enabled}
-            isEdited={configToEdit.machineLearning.facialRecognition.minFaces !==
-              config.machineLearning.facialRecognition.minFaces}
           />
         </div>
       </SettingAccordion>
@@ -295,42 +236,6 @@
             ]}
             disabled={disabled || !configToEdit.machineLearning.enabled || !configToEdit.machineLearning.ocr.enabled}
             isEdited={configToEdit.machineLearning.ocr.modelName !== config.machineLearning.ocr.modelName}
-          />
-
-          <SettingInputField
-            inputType={SettingInputFieldType.NUMBER}
-            label={$t('admin.machine_learning_ocr_min_detection_score')}
-            description={$t('admin.machine_learning_ocr_min_detection_score_description')}
-            bind:value={configToEdit.machineLearning.ocr.minDetectionScore}
-            step="0.1"
-            min={0.1}
-            max={1}
-            disabled={disabled || !configToEdit.machineLearning.enabled || !configToEdit.machineLearning.ocr.enabled}
-            isEdited={configToEdit.machineLearning.ocr.minDetectionScore !==
-              config.machineLearning.ocr.minDetectionScore}
-          />
-
-          <SettingInputField
-            inputType={SettingInputFieldType.NUMBER}
-            label={$t('admin.machine_learning_ocr_min_recognition_score')}
-            description={$t('admin.machine_learning_ocr_min_score_recognition_description')}
-            bind:value={configToEdit.machineLearning.ocr.minRecognitionScore}
-            step="0.1"
-            min={0.1}
-            max={1}
-            disabled={disabled || !configToEdit.machineLearning.enabled || !configToEdit.machineLearning.ocr.enabled}
-            isEdited={configToEdit.machineLearning.ocr.minRecognitionScore !==
-              config.machineLearning.ocr.minRecognitionScore}
-          />
-
-          <SettingInputField
-            inputType={SettingInputFieldType.NUMBER}
-            label={$t('admin.machine_learning_ocr_max_resolution')}
-            description={$t('admin.machine_learning_ocr_max_resolution_description')}
-            bind:value={configToEdit.machineLearning.ocr.maxResolution}
-            min={1}
-            disabled={disabled || !configToEdit.machineLearning.enabled || !configToEdit.machineLearning.ocr.enabled}
-            isEdited={configToEdit.machineLearning.ocr.maxResolution !== config.machineLearning.ocr.maxResolution}
           />
         </div>
       </SettingAccordion>

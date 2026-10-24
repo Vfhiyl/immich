@@ -20,6 +20,10 @@ Behind a proxy or in a region where Hugging Face is slow, set `HF_ENDPOINT` on t
 - **Back up the `model-cache` volume**, or keep it on a disk that survives the container: with the files in the cache, the container never downloads them again.
 - With several machine learning servers (`machineLearning.urls`), give them the same model files (the same cache, or copies of it): Immich does not mix results of different files (see below).
 
+## Thresholds
+
+The thresholds of the models (the lowest score of a detected face, the distance under which two faces are the same person, the number of faces that make a person, the distance under which two photos are duplicates, the scores and resolution of text recognition) belong to the model they were measured for, like the dimension of a CLIP model: they are fixed in the code for every model that can be chosen, and change with the model. They are not settings; the settings of earlier versions for them are ignored (the server logs it once at startup), and a model without thresholds of its own is refused in the settings.
+
 ## When a model changes
 
 Results of two models cannot be compared: the embeddings of smart search, the faces of facial recognition and the text of OCR are only meaningful among results of the same model. The machine learning service tells, with every result, which files made it (a SHA-256 _fingerprint_ of the model's export: its ONNX files, configuration and tokenizer), and the server keeps which model made the results of each photo. When a model changes, because another one is named in the settings or because its files changed (downloaded again after the cache was lost), the server makes the results of every photo again, in the background:

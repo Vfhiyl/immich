@@ -149,7 +149,7 @@ describe(OcrService.name, () => {
       );
     });
 
-    it('should apply config settings', async () => {
+    it('should use the model of the settings, with the thresholds of that model rather than of the settings', async () => {
       const asset = AssetFactory.create();
       mocks.systemMetadata.get.mockResolvedValue({
         machineLearning: {
@@ -177,9 +177,9 @@ describe(OcrService.name, () => {
         '/uploads/user-id/thumbs/path.jpg',
         expect.objectContaining({
           modelName: 'PP-OCRv5_server',
-          minDetectionScore: 0.8,
-          minRecognitionScore: 0.9,
-          maxResolution: 1500,
+          minDetectionScore: 0.5,
+          minRecognitionScore: 0.8,
+          maxResolution: 736,
         }),
       );
       expect(mocks.ocr.update).toHaveBeenCalledWith(asset.id, [], [], '');

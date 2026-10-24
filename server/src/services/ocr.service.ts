@@ -34,6 +34,7 @@ export const diffOcrLines = <T extends OcrLine, E extends OcrLine & { id: string
   }
   return { add, removeIds: unmatched.map(({ id }) => id) };
 };
+import { getOcrThresholds } from 'src/utils/ml-thresholds.js';
 
 @Injectable()
 export class OcrService extends BaseService {
@@ -72,7 +73,10 @@ export class OcrService extends BaseService {
     }
 
     await using preview = await this.storageBackendRepository.lease(asset.previewFile);
-    const ocrResults = await this.machineLearningRepository.ocr(preview.path, machineLearning.ocr);
+    const ocrResults = await this.machineLearningRepository.ocr(preview.path, {
+      modelName: machineLearning.ocr.modelName,
+      ...getOcrThresholds(machineLearning),
+    });
     const observed = await this.machineLearningModels.observe(ModelTask.OCR, ocrResults.model, machineLearning);
     if (!observed.keep) {
       return observed.conflict ? JobStatus.Failed : JobStatus.Skipped;

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { SystemConfig } from 'src/dtos/config.dto.js';
+import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { MachineLearningModelDto, MachineLearningModelsResponseDto } from 'src/dtos/ml-model.dto.js';
 import { DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName, SystemMetadataKey } from 'src/enum.js';
 import { ModelTask } from 'src/repositories/machine-learning.repository.js';
@@ -45,11 +45,39 @@ const FINISH_RETRY_MS = 60_000;
  * new files of the same model), in the background behind new photos: smart search switches to the new embeddings at
  * once when every photo has one, faces keep their place and person, text keeps the lines that did not change
  */
+import { IGNORED_THRESHOLD_SETTINGS, getFaceThresholds, getOcrThresholds } from 'src/utils/ml-thresholds.js';
+
 @Injectable()
 export class MachineLearningModelService extends BaseService {
   @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
   async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
+    this.warnIgnoredThresholds(newConfig.machineLearning);
     await this.followConfig(newConfig.machineLearning, true);
+  }
+
+  /** Only models with thresholds of their own can be used (as CLIP models must have a known dimension) */
+  @OnEvent({ name: 'ConfigValidate' })
+  onConfigValidate({ newConfig }: ArgOf<'ConfigValidate'>) {
+    for (const check of [getFaceThresholds, getOcrThresholds]) {
+      try {
+        check(newConfig.machineLearning);
+      } catch (error) {
+        throw new Error(
+          `${(error as Error).message}. Please check the model name for typos and confirm this is a supported model.`,
+          { cause: error },
+        );
+      }
+    }
+  }
+
+  private warnIgnoredThresholds(machineLearning: MachineLearningConfig) {
+    const configured = IGNORED_THRESHOLD_SETTINGS(machineLearning);
+    const fixed = IGNORED_THRESHOLD_SETTINGS(defaults.machineLearning);
+    for (const [key, value] of Object.entries(configured)) {
+      if (value !== fixed[key as keyof typeof fixed]) {
+        this.logger.warn(`The setting ${key} (${value}) is ignored: thresholds are fixed per model`);
+      }
+    }
   }
 
   @OnEvent({ name: 'ConfigUpdate', workers: [ImmichWorker.Microservices], server: true })

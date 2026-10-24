@@ -229,4 +229,25 @@ describe(MachineLearningModelService.name, () => {
       );
     });
   });
+
+  describe('thresholds', () => {
+    it('should refuse a model without thresholds of its own', () => {
+      const newConfig = withModel('facialRecognition', 'my-own-model');
+      expect(() => sut.onConfigValidate({ newConfig, oldConfig: config })).toThrow(
+        'Unknown facial recognition model: my-own-model',
+      );
+      expect(() => sut.onConfigValidate({ newConfig: config, oldConfig: config })).not.toThrow();
+    });
+
+    it('should tell that thresholds in the settings are ignored', async () => {
+      config.machineLearning.facialRecognition.maxDistance = 0.6;
+
+      await sut.onConfigInit({ newConfig: config });
+
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        'The setting machineLearning.facialRecognition.maxDistance (0.6) is ignored: thresholds are fixed per model',
+      );
+      expect(mocks.logger.warn).toHaveBeenCalledTimes(1);
+    });
+  });
 });

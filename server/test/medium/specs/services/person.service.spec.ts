@@ -536,10 +536,11 @@ describe(PersonService.name, () => {
 
       await sut.handleDetectFaces({ id: asset.id });
 
-      expect(ctx.getMock(MachineLearningRepository).detectFaces).toHaveBeenCalledWith(
-        'edited_file.jpg',
-        config.machineLearning.facialRecognition,
-      );
+      // with the threshold of the model, not of the settings
+      expect(ctx.getMock(MachineLearningRepository).detectFaces).toHaveBeenCalledWith('edited_file.jpg', {
+        modelName: config.machineLearning.facialRecognition.modelName,
+        minScore: 0.7,
+      });
     });
   });
 

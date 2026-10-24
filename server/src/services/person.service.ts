@@ -56,6 +56,7 @@ import { isHttpException } from 'src/utils/logger.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, findOrFail, hasSomeDefined, isFacialRecognitionEnabled } from 'src/utils/misc.js';
 import { isRebuilding } from 'src/utils/ml-models.js';
+import { getFaceThresholds } from 'src/utils/ml-thresholds.js';
 import { Point, transformPoints } from 'src/utils/transform.js';
 
 const personKey = ({ ownerId, personGroupId }: PersonId) => `${ownerId}/${personGroupId}`;
@@ -401,10 +402,10 @@ export class PersonService extends BaseService {
     }
 
     await using preview = await this.storageBackendRepository.lease(previewFile);
-    const { imageHeight, imageWidth, faces, model } = await this.machineLearningRepository.detectFaces(
-      preview.path,
-      machineLearning.facialRecognition,
-    );
+    const { imageHeight, imageWidth, faces, model } = await this.machineLearningRepository.detectFaces(preview.path, {
+      modelName: machineLearning.facialRecognition.modelName,
+      minScore: getFaceThresholds(machineLearning).minScore,
+    });
     this.logger.debug(`${faces.length} faces detected in ${previewFile.path}`);
 
     const observed = await this.machineLearningModels.observe(ModelTask.FACIAL_RECOGNITION, model, machineLearning);
@@ -604,26 +605,25 @@ export class PersonService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    const { maxDistance, minFaces } = getFaceThresholds(machineLearning);
     const { ownerId, clusterGroupId } = face.asset;
     const matches = await this.searchRepository.searchFaces({
       clusterGroupId,
       embedding: face.faceSearch.embedding,
-      maxDistance: machineLearning.facialRecognition.maxDistance,
-      numResults: machineLearning.facialRecognition.minFaces,
+      maxDistance,
+      numResults: minFaces,
       minBirthDate: new Date(face.asset.fileCreatedAt),
     });
 
     // `matches` also includes the face itself
-    if (machineLearning.facialRecognition.minFaces > 1 && matches.length <= 1) {
+    if (minFaces > 1 && matches.length <= 1) {
       this.logger.debug(`Face ${id} only matched the face itself, skipping`);
       return JobStatus.Skipped;
     }
 
     this.logger.debug(`Face ${id} has ${matches.length} matches`);
 
-    const isCore =
-      matches.length >= machineLearning.facialRecognition.minFaces &&
-      face.asset.visibility === AssetVisibility.Timeline;
+    const isCore = matches.length >= minFaces && face.asset.visibility === AssetVisibility.Timeline;
     if (!isCore && !deferred) {
       this.logger.debug(`Deferring non-core face ${id} for later processing`);
       await this.jobRepository.queue({ name: JobName.FacialRecognition, data: { id, deferred: true } });
@@ -635,7 +635,7 @@ export class PersonService extends BaseService {
       const [matchWithPerson] = await this.searchRepository.searchFaces({
         clusterGroupId,
         embedding: face.faceSearch.embedding,
-        maxDistance: machineLearning.facialRecognition.maxDistance,
+        maxDistance,
         numResults: 1,
         hasPerson: true,
         minBirthDate: new Date(face.asset.fileCreatedAt),

@@ -144,7 +144,7 @@ export interface OpenGraphTags {
   imageUrl?: string;
 }
 
-function cleanModelName(modelName: string): string {
+export function cleanModelName(modelName: string): string {
   const token = modelName.split('/').at(-1);
   if (!token) {
     throw new Error(`Invalid model name: ${modelName}`);

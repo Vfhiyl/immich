@@ -39,11 +39,25 @@ import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
 const PERSON_READ_ROLES = [PersonUserRole.Read, PersonUserRole.Write, PersonUserRole.Admin];
 const PERSON_WRITE_ROLES = [PersonUserRole.Write, PersonUserRole.Admin];
 
+// the thresholds are fixed per model; tests of the matching logic ask for fewer faces per person
+const thresholds = vi.hoisted(() => ({ minFaces: undefined as number | undefined }));
+vi.mock('src/utils/ml-thresholds.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('src/utils/ml-thresholds.js')>();
+  return {
+    ...original,
+    getFaceThresholds: (config: Parameters<typeof original.getFaceThresholds>[0]) => ({
+      ...original.getFaceThresholds(config),
+      ...(thresholds.minFaces !== undefined && { minFaces: thresholds.minFaces }),
+    }),
+  };
+});
+
 describe(PersonService.name, () => {
   let sut: PersonService;
   let mocks: ServiceMocks;
 
   beforeEach(() => {
+    thresholds.minFaces = undefined;
     ({ sut, mocks } = newTestService(PersonService));
   });
 
@@ -1347,7 +1361,7 @@ describe(PersonService.name, () => {
         getForFaceSearch(face, 0.4),
       ];
 
-      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { minFaces: 1 } } });
+      thresholds.minFaces = 1;
       mocks.search.searchFaces.mockResolvedValue(faces);
       mocks.person.getFaceForFacialRecognitionJob.mockResolvedValue(getForFacialRecognitionJob(noPerson1, asset));
       mocks.person.getByGroupId.mockResolvedValue(primaryFace.person!);
@@ -1381,7 +1395,7 @@ describe(PersonService.name, () => {
         getForFaceSearch(faceWithBirthDate, 0.3),
       ];
 
-      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { minFaces: 1 } } });
+      thresholds.minFaces = 1;
       mocks.search.searchFaces.mockResolvedValue(faces);
       mocks.person.getFaceForFacialRecognitionJob.mockResolvedValue(getForFacialRecognitionJob(noPerson, asset));
       mocks.person.getByGroupId.mockResolvedValue(face.person!);
@@ -1415,7 +1429,7 @@ describe(PersonService.name, () => {
         getForFaceSearch(face, 0.3),
       ];
 
-      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { minFaces: 1 } } });
+      thresholds.minFaces = 1;
       mocks.search.searchFaces.mockResolvedValue(faces);
       mocks.person.getFaceForFacialRecognitionJob.mockResolvedValue(getForFacialRecognitionJob(noPerson, asset));
       mocks.person.getByGroupId.mockResolvedValue(faceWithBirthDate.person!);
@@ -1442,7 +1456,7 @@ describe(PersonService.name, () => {
 
       const faces = [getForFaceSearch(noPerson1, 0), getForFaceSearch(noPerson2, 0.3)];
 
-      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { minFaces: 1 } } });
+      thresholds.minFaces = 1;
       mocks.search.searchFaces.mockResolvedValue(faces);
       mocks.person.getFaceForFacialRecognitionJob.mockResolvedValue(getForFacialRecognitionJob(noPerson1, asset));
       mocks.person.createGroup.mockResolvedValue(PersonGroupFactory.create({ id: person.personGroupId }));
@@ -1475,7 +1489,7 @@ describe(PersonService.name, () => {
 
       const faces = [getForFaceSearch(noPerson, 0), getForFaceSearch(otherOwnerFace, 0.2)];
 
-      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { minFaces: 1 } } });
+      thresholds.minFaces = 1;
       mocks.search.searchFaces.mockResolvedValue(faces);
       mocks.person.getFaceForFacialRecognitionJob.mockResolvedValue(getForFacialRecognitionJob(noPerson, asset));
       mocks.person.create.mockResolvedValue(person);
@@ -1517,7 +1531,7 @@ describe(PersonService.name, () => {
 
       const faces = [getForFaceSearch(noPerson1, 0), getForFaceSearch(noPerson2, 0.4)];
 
-      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { minFaces: 3 } } });
+      thresholds.minFaces = 3;
       mocks.search.searchFaces.mockResolvedValue(faces);
       mocks.person.getFaceForFacialRecognitionJob.mockResolvedValue(getForFacialRecognitionJob(noPerson1, asset));
       mocks.person.create.mockResolvedValue(PersonFactory.create());
@@ -1539,7 +1553,7 @@ describe(PersonService.name, () => {
 
       const faces = [getForFaceSearch(noPerson1, 0), getForFaceSearch(noPerson2, 0.4)];
 
-      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { minFaces: 3 } } });
+      thresholds.minFaces = 3;
       mocks.search.searchFaces.mockResolvedValueOnce(faces).mockResolvedValueOnce([]);
       mocks.person.getFaceForFacialRecognitionJob.mockResolvedValue(getForFacialRecognitionJob(noPerson1, asset));
       mocks.person.create.mockResolvedValue(PersonFactory.create());

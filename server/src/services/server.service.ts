@@ -25,6 +25,7 @@ import {
   isOcrEnabled,
   isSmartSearchEnabled,
 } from 'src/utils/misc.js';
+import { FACE_MIN_FACES } from 'src/utils/ml-thresholds.js';
 
 @Injectable()
 export class ServerService extends BaseService {
@@ -130,7 +131,7 @@ export class ServerService extends BaseService {
       mapDarkStyleUrl: config.map.darkStyle,
       mapLightStyleUrl: config.map.lightStyle,
       maintenanceMode: false,
-      minFaces: config.machineLearning.facialRecognition.minFaces,
+      minFaces: FACE_MIN_FACES,
     };
   }
 
