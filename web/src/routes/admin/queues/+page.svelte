@@ -22,10 +22,10 @@
 
   // the progress of making the results of a model again, which takes hours for a large library
   let models = $state(data.models);
+  const refresh = async () => {
+    models = await getMachineLearningModels().catch(() => models);
+  };
   onMount(() => {
-    const refresh = async () => {
-      models = await getMachineLearningModels().catch(() => models);
-    };
     const interval = setInterval(() => void refresh(), 15_000);
     return () => clearInterval(interval);
   });
@@ -53,7 +53,7 @@
   <Container size="medium" center>
     {#if models.tasks.some(({ enabled }) => enabled)}
       <div class="mb-8">
-        <MachineLearningModels tasks={models.tasks} backoff={models.backoff} />
+        <MachineLearningModels tasks={models.tasks} backoff={models.backoff} onChange={() => void refresh()} />
       </div>
     {/if}
     {#if data.resources}

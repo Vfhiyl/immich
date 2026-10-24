@@ -1038,6 +1038,8 @@ export enum JobName {
   SmartSearchRebuild = 'SmartSearchRebuild',
   /** Detects the faces of every photo again for the model facial recognition changed to */
   FaceDetectionRebuild = 'FaceDetectionRebuild',
+  /** Regroups the people after the faces of every photo were detected again for another model */
+  FaceRegroup = 'FaceRegroup',
   /** Recognizes the text of every photo again for the model OCR changed to */
   OcrRebuild = 'OcrRebuild',
 

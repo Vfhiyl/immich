@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { MachineLearningModelsResponseDto } from 'src/dtos/ml-model.dto.js';
@@ -22,5 +22,18 @@ export class MachineLearningModelAdminController {
   @Authenticated({ permission: Permission.JobRead, admin: true })
   getMachineLearningModels(): Promise<MachineLearningModelsResponseDto> {
     return this.service.getModels();
+  }
+
+  @Post('faces/regroup/undo')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Undo the regroup of people',
+    description:
+      'Puts the faces back with the people they had before the people were regrouped for a new face model, but for what users changed since',
+    history: new HistoryBuilder().added('v3.3.5').alpha('v3.3.5'),
+  })
+  @Authenticated({ permission: Permission.JobCreate, admin: true })
+  undoFaceRegroup(): Promise<void> {
+    return this.service.undoFaceRegroup();
   }
 }

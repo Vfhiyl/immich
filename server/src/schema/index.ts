@@ -54,6 +54,7 @@ import { AssetOriginalFileTable } from 'src/schema/tables/asset-original-file.ta
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
+import { FaceRegroupTable } from 'src/schema/tables/face-regroup.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { FaceUserAssignmentTable } from 'src/schema/tables/face-user-assignment.table.js';
 import { FaceUserRejectionTable } from 'src/schema/tables/face-user-rejection.table.js';
@@ -192,6 +193,7 @@ export class ImmichDatabase {
     SmartSearchRebuildTable,
     FaceUserAssignmentTable,
     FaceUserRejectionTable,
+    FaceRegroupTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
@@ -346,6 +348,7 @@ export interface DB {
   smart_search_rebuild: SmartSearchRebuildTable;
   face_user_assignment: FaceUserAssignmentTable;
   face_user_rejection: FaceUserRejectionTable;
+  face_regroup: FaceRegroupTable;
 
   system_metadata: SystemMetadataTable;
 

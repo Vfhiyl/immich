@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -7,6 +7,7 @@ import { MachineLearningModelDto, MachineLearningModelsResponseDto } from 'src/d
 import { DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName, SystemMetadataKey } from 'src/enum.js';
 import { ModelTask } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { facesLeavingPerson } from 'src/utils/face-regroup.js';
 import {
   batched,
   getCLIPModelInfo,
@@ -36,6 +37,15 @@ const TASKS = {
   },
   [ModelTask.OCR]: { queue: QueueName.Ocr, job: JobName.Ocr, isEnabled: isOcrEnabled },
 } as const;
+
+/** People regrouped per step (the progress is kept after each) */
+const REGROUP_BATCH = 100;
+/** The named people whose changes are shown */
+const REGROUP_PEOPLE_SHOWN = 20;
+/** Up to this many faces, every pair of faces of a person is compared; above, each face with its nearest ones */
+const REGROUP_EXACT_LIMIT = 3000;
+const REGROUP_CHUNK = 500;
+const REGROUP_NEIGHBOURS = 20;
 
 /** How long the last step of a rebuild waits before it looks again whether the jobs it follows are done */
 const FINISH_RETRY_MS = 60_000;
@@ -175,10 +185,14 @@ export class MachineLearningModelService extends BaseService {
         break;
       }
       case ModelTask.FACIAL_RECOGNITION: {
-        await this.machineLearningModels.finishRebuild(task, machineLearning, state.generation);
-        // the faces found meanwhile are recognized, now among the embeddings of one model
-        await this.jobRepository.queue({ name: JobName.FacialRecognitionQueueAll, data: { force: false } });
-        break;
+        // the people, grouped by embeddings of the earlier model, are regrouped by those of this one; once (taken up
+        // where it was after a restart)
+        if (state.regroup?.generation !== state.generation) {
+          await this.machineLearningModelRepository.snapshotFaceAssignments();
+          await this.machineLearningModels.startRegroup(task, machineLearning, state.generation);
+        }
+        await this.jobRepository.queue({ name: JobName.FaceRegroup, data: { generation: state.generation } });
+        return JobStatus.Success;
       }
       case ModelTask.OCR: {
         await this.machineLearningModels.finishRebuild(task, machineLearning, state.generation);
@@ -187,6 +201,104 @@ export class MachineLearningModelService extends BaseService {
     }
     this.logger.log(`The ${task} results were made again for model ${state.target.name}`);
     return JobStatus.Success;
+  }
+
+  /**
+   * Regroups the people after their faces got embeddings of another model: faces that are no longer close to the rest
+   * of their person leave it (see `facesLeavingPerson`), then recognition looks for the person of every face without one
+   */
+  @OnJob({ name: JobName.FaceRegroup, queue: QueueName.FacialRecognition })
+  async handleFaceRegroup({ generation }: JobOf<JobName.FaceRegroup>): Promise<JobStatus> {
+    const { machineLearning } = await this.getConfig({ withCache: false });
+    const task = ModelTask.FACIAL_RECOGNITION;
+    if (!isFacialRecognitionEnabled(machineLearning)) {
+      return JobStatus.Skipped;
+    }
+    const state = await this.machineLearningModels.getState(task, machineLearning);
+    if (state.generation !== generation || state.regroup?.generation !== generation || state.regroup.finishedAt) {
+      return JobStatus.Skipped;
+    }
+
+    const { maxDistance } = getFaceThresholds(machineLearning);
+    let cursor = state.regroup.cursor ?? null;
+    let left = 0;
+    for (;;) {
+      const people = await this.machineLearningModelRepository.getPeopleToRegroup(cursor, REGROUP_BATCH);
+      if (people.length === 0) {
+        break;
+      }
+      for (const { id } of people) {
+        left += await this.regroupPerson(id, maxDistance);
+      }
+      cursor = people.at(-1)!.id;
+      await this.machineLearningModels.saveRegroupCursor(task, machineLearning, generation, cursor);
+      const current = await this.machineLearningModels.getState(task, machineLearning);
+      if (current.generation !== generation) {
+        // the model changed again: its rebuild regroups
+        return JobStatus.Skipped;
+      }
+    }
+
+    const { done } = await this.machineLearningModels.finishRegroup(task, machineLearning, generation);
+    if (done) {
+      this.logger.log(`Regrouped the people for face model ${state.target.name}: ${left} faces left their person`);
+      // the faces without a person (those found by this model, and those that left) are recognized now
+      await this.jobRepository.queue({ name: JobName.FacialRecognitionQueueAll, data: { force: false } });
+    }
+    return JobStatus.Success;
+  }
+
+  /** Returns how many faces left the person */
+  private async regroupPerson(personGroupId: string, maxDistance: number) {
+    const repository = this.machineLearningModelRepository;
+    const rows = await repository.getFacesToRegroup(personGroupId);
+    const faces = rows.map(({ id, isFixed, isCover }) => ({ id, isFixed: !!isFixed, isCover: !!isCover }));
+    if (faces.length < 2) {
+      return 0;
+    }
+    let pairs: Array<{ a: string; b: string }>;
+    if (faces.length <= REGROUP_EXACT_LIMIT) {
+      pairs = await repository.getCloseFacePairs(personGroupId, maxDistance);
+    } else {
+      pairs = [];
+      const ids = faces.map(({ id }) => id);
+      for (let start = 0; start < ids.length; start += REGROUP_CHUNK) {
+        const chunk = ids.slice(start, start + REGROUP_CHUNK);
+        pairs.push(...(await repository.getNearFacePairs(personGroupId, chunk, maxDistance, REGROUP_NEIGHBOURS)));
+      }
+    }
+
+    const leaving = facesLeavingPerson(faces, pairs);
+    if (leaving.length === 0) {
+      return 0;
+    }
+    await repository.takeFromPerson(personGroupId, leaving);
+
+    // a person whose picture left gets another one
+    const jobs: JobItem[] = [];
+    for (const person of await repository.getPeopleWithPicture(leaving)) {
+      const face = await this.personRepository.getRandomFace(person.personGroupId);
+      await this.personRepository.update({ ...person, faceAssetId: face?.id ?? null });
+      if (face) {
+        jobs.push({ name: JobName.PersonGenerateThumbnail, data: person });
+      }
+    }
+    await this.jobRepository.queueAll(jobs);
+    return leaving.length;
+  }
+
+  /** Puts the faces back where they were before the last regroup */
+  async undoFaceRegroup(): Promise<void> {
+    const { machineLearning } = await this.getConfig({ withCache: false });
+    const { undone } = await this.machineLearningModels.markRegroupUndone(
+      ModelTask.FACIAL_RECOGNITION,
+      machineLearning,
+    );
+    if (!undone) {
+      throw new BadRequestException('There is no regroup of people to undo');
+    }
+    const restored = await this.machineLearningModelRepository.undoRegroup();
+    this.logger.log(`Undid the regroup of people: ${restored} faces are back with the person they had`);
   }
 
   private async switchSmartSearch(state: TaskModelState, machineLearning: MachineLearningConfig) {
@@ -234,6 +346,7 @@ export class MachineLearningModelService extends BaseService {
         };
         return {
           task,
+          regroup: state.regroup ? await this.describeRegroup(state.regroup) : null,
           enabled: TASKS[task].isEnabled(machineLearning),
           configuredModel: configuredModelName(task, machineLearning),
           target: await this.describe(state.target),
@@ -255,6 +368,22 @@ export class MachineLearningModelService extends BaseService {
       ? await this.systemMetadataRepository.get(SystemMetadataKey.MachineLearningBackoff)
       : null;
     return { tasks, backoff: backoff ?? null };
+  }
+
+  private async describeRegroup(regroup: NonNullable<TaskModelState['regroup']>) {
+    // what changed is told until it is undone
+    const changes =
+      regroup.finishedAt && !regroup.undoneAt ? await this.machineLearningModelRepository.getRegroupChanges() : [];
+    const named = changes.filter(({ names }) => names);
+    return {
+      startedAt: regroup.startedAt,
+      finishedAt: regroup.finishedAt ?? null,
+      undoneAt: regroup.undoneAt ?? null,
+      facesLeft: changes.reduce((sum, { left }) => sum + left, 0),
+      facesJoined: changes.reduce((sum, { joined }) => sum + joined, 0),
+      people: named.slice(0, REGROUP_PEOPLE_SHOWN),
+      otherPeople: changes.length - named.length,
+    };
   }
 
   private async describe({ name, modelId }: ModelRef): Promise<MachineLearningModelDto> {

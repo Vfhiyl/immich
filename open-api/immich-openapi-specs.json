@@ -1005,6 +1005,46 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/machine-learning/faces/regroup/undo": {
+      "post": {
+        "description": "Puts the faces back with the people they had before the people were regrouped for a new face model, but for what users changed since",
+        "operationId": "undoFaceRegroup",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Undo the regroup of people",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/machine-learning/models": {
       "get": {
         "description": "Which model each task makes its results with, the progress of making them again after the model changed, and what was noticed about the files of the models",
@@ -24767,6 +24807,7 @@
           "SmartSearch",
           "SmartSearchRebuild",
           "FaceDetectionRebuild",
+          "FaceRegroup",
           "OcrRebuild",
           "StorageTemplateMigration",
           "StorageTemplateMigrationSingle",
@@ -25247,6 +25288,90 @@
             ],
             "type": "object"
           },
+          "regroup": {
+            "description": "Facial recognition only: the people regrouped after a change of the face model, and what changed",
+            "nullable": true,
+            "properties": {
+              "facesJoined": {
+                "description": "Faces that are with another person than before, or new",
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "facesLeft": {
+                "description": "Faces that are no longer with the person they had",
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "finishedAt": {
+                "nullable": true,
+                "type": "string"
+              },
+              "otherPeople": {
+                "description": "The people without a name that changed",
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "people": {
+                "description": "The named people that changed most",
+                "items": {
+                  "properties": {
+                    "before": {
+                      "maximum": 9007199254740991,
+                      "minimum": -9007199254740991,
+                      "type": "integer"
+                    },
+                    "joined": {
+                      "maximum": 9007199254740991,
+                      "minimum": -9007199254740991,
+                      "type": "integer"
+                    },
+                    "left": {
+                      "maximum": 9007199254740991,
+                      "minimum": -9007199254740991,
+                      "type": "integer"
+                    },
+                    "names": {
+                      "description": "The names the owners gave the person",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "personGroupId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "personGroupId",
+                    "names",
+                    "before",
+                    "left",
+                    "joined"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "startedAt": {
+                "type": "string"
+              },
+              "undoneAt": {
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "startedAt",
+              "finishedAt",
+              "undoneAt",
+              "facesLeft",
+              "facesJoined",
+              "people",
+              "otherPeople"
+            ],
+            "type": "object"
+          },
           "replaced": {
             "description": "The last time the files of the model changed under the same name",
             "nullable": true,
@@ -25283,6 +25408,7 @@
           "conflict",
           "enabled",
           "rebuild",
+          "regroup",
           "replaced",
           "target",
           "task"

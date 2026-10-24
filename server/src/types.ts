@@ -435,6 +435,7 @@ export type JobItem =
   | { name: JobName.AssetDetectFacesQueueAll; data: IBaseJob }
   | { name: JobName.AssetDetectFaces; data: IMachineLearningJob }
   | { name: JobName.FaceDetectionRebuild; data: IModelRebuildJob }
+  | { name: JobName.FaceRegroup; data: IModelRebuildJob }
   | { name: JobName.FacialRecognitionQueueAll; data: IFacialRecognitionQueueAll }
   | { name: JobName.FacialRecognition; data: IDeferrableJob }
   | { name: JobName.PersonGenerateThumbnail; data: IPersonJob }

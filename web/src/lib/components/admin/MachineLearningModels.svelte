@@ -1,21 +1,40 @@
 <script lang="ts">
   import { formatAge, toPercent } from '$lib/services/storage.service';
   import { getByteUnitString } from '$lib/utils/byte-units';
+  import { handleError } from '$lib/utils/handle-error';
   import {
     MachineLearningBackoffLevel,
+    undoFaceRegroup,
     type MachineLearningBackoffDto,
     type MachineLearningModelDto,
     type MachineLearningTaskModelsDto,
   } from '@immich/sdk';
-  import { Alert, Stack, Text } from '@immich/ui';
+  import { Alert, Button, modalManager, Stack, Text } from '@immich/ui';
   import { t, type Translations } from 'svelte-i18n';
 
   type Props = {
     tasks: MachineLearningTaskModelsDto[];
     backoff?: MachineLearningBackoffDto | null;
+    /** After the regroup was undone, to show it */
+    onChange?: () => void;
   };
 
-  const { tasks, backoff = null }: Props = $props();
+  const { tasks, backoff = null, onChange }: Props = $props();
+
+  const onUndoRegroup = async () => {
+    const confirmed = await modalManager.showDialog({
+      prompt: $t('admin.machine_learning_models_regroup_undo_confirm'),
+    });
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await undoFaceRegroup();
+      onChange?.();
+    } catch (error) {
+      handleError(error, $t('errors.cant_apply_changes'));
+    }
+  };
 
   const memory = $derived(
     backoff?.memory
@@ -92,6 +111,41 @@
             <Text size="small" color="muted">
               {$t('admin.machine_learning_models_rebuilt', { values: { age: formatAge(task.rebuild.finishedAt) } })}
             </Text>
+          {/if}
+          {#if task.regroup && !task.regroup.finishedAt}
+            <Text size="small">{$t('admin.machine_learning_models_regroup_running')}</Text>
+          {:else if task.regroup?.undoneAt}
+            <Text size="small" color="muted">
+              {$t('admin.machine_learning_models_regroup_undone', {
+                values: { age: formatAge(task.regroup.finishedAt) },
+              })}
+            </Text>
+          {:else if task.regroup}
+            {@const regroup = task.regroup}
+            <div class="flex flex-col gap-1" data-testid="ml-regroup">
+              <Text size="small">
+                {$t('admin.machine_learning_models_regroup_done', {
+                  values: {
+                    age: formatAge(regroup.finishedAt),
+                    left: regroup.facesLeft,
+                    joined: regroup.facesJoined,
+                    others: regroup.otherPeople,
+                  },
+                })}
+              </Text>
+              {#each regroup.people as person (person.personGroupId)}
+                <Text size="small" color="muted">
+                  {$t('admin.machine_learning_models_regroup_changes', {
+                    values: { name: person.names, before: person.before, left: person.left, joined: person.joined },
+                  })}
+                </Text>
+              {/each}
+              <div>
+                <Button size="small" variant="ghost" onclick={onUndoRegroup}>
+                  {$t('admin.machine_learning_models_regroup_undo')}
+                </Button>
+              </div>
+            </div>
           {/if}
           {#if task.conflict}
             <Alert

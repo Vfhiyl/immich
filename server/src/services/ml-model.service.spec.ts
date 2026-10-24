@@ -15,6 +15,13 @@ const counts = (pending: Partial<Record<'waiting' | 'active' | 'delayed' | 'paus
   ...pending,
 });
 
+const face = (id: string, extra: Partial<{ isFixed: boolean; isCover: boolean }> = {}) => ({
+  id,
+  isFixed: false,
+  isCover: false,
+  ...extra,
+});
+
 describe(MachineLearningModelService.name, () => {
   let sut: MachineLearningModelService;
   let mocks: ServiceMocks;
@@ -57,6 +64,15 @@ describe(MachineLearningModelService.name, () => {
     );
     mocks.job.queue.mockClear();
     return state![ModelTask.FACIAL_RECOGNITION]!.generation;
+  };
+
+  /** As a rebuild of faces leaves it: every face detected again, the regroup about to start */
+  const startRegroup = async () => {
+    const generation = await startFaceRebuild();
+    mocks.job.getJobCounts.mockResolvedValue(counts({ active: 1 }));
+    await sut.handleFaceDetectionRebuild({ generation, finish: true });
+    mocks.job.queue.mockClear();
+    return generation;
   };
 
   describe('following the configuration', () => {
@@ -158,14 +174,24 @@ describe(MachineLearningModelService.name, () => {
       expect(state?.[ModelTask.FACIAL_RECOGNITION]?.rebuild?.finishedAt).toBeUndefined();
     });
 
-    it('should recognize the faces once those of every photo are of the new model', async () => {
+    it('should regroup the people once the faces of every photo are of the new model, once', async () => {
       const generation = await startFaceRebuild();
       mocks.job.getJobCounts.mockResolvedValue(counts({ active: 1 })); // itself
 
       await sut.handleFaceDetectionRebuild({ generation, finish: true });
 
-      expect(state?.[ModelTask.FACIAL_RECOGNITION]?.rebuild?.finishedAt).toBeDefined();
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FacialRecognitionQueueAll, data: { force: false } });
+      expect(mocks.machineLearningModel.snapshotFaceAssignments).toHaveBeenCalledOnce();
+      expect(state?.[ModelTask.FACIAL_RECOGNITION]).toMatchObject({
+        regroup: { generation, startedAt: expect.any(String) },
+        rebuild: { startedAt: expect.any(String) },
+      });
+      // recognition waits for the regroup
+      expect(state?.[ModelTask.FACIAL_RECOGNITION]?.rebuild?.finishedAt).toBeUndefined();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FaceRegroup, data: { generation } });
+
+      // as the server starts again before the regroup is done
+      await sut.handleFaceDetectionRebuild({ generation, finish: true });
+      expect(mocks.machineLearningModel.snapshotFaceAssignments).toHaveBeenCalledOnce();
     });
 
     it('should switch smart search at once to the new embeddings, then detect duplicates again', async () => {
@@ -248,6 +274,96 @@ describe(MachineLearningModelService.name, () => {
         'The setting machineLearning.facialRecognition.maxDistance (0.6) is ignored: thresholds are fixed per model',
       );
       expect(mocks.logger.warn).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('regrouping the people', () => {
+    it('should take the faces that are no longer close to the rest of their person, then recognize them', async () => {
+      const generation = await startRegroup();
+      mocks.machineLearningModel.getPeopleToRegroup
+        .mockResolvedValueOnce([{ id: 'person-1' }])
+        .mockResolvedValueOnce([]);
+      mocks.machineLearningModel.getFacesToRegroup.mockResolvedValue([face('a'), face('b'), face('c'), face('far')]);
+      mocks.machineLearningModel.getCloseFacePairs.mockResolvedValue([
+        { a: 'a', b: 'b' },
+        { a: 'b', b: 'c' },
+      ]);
+
+      await expect(sut.handleFaceRegroup({ generation })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.machineLearningModel.getCloseFacePairs).toHaveBeenCalledWith('person-1', 0.5);
+      expect(mocks.machineLearningModel.takeFromPerson).toHaveBeenCalledWith('person-1', ['far']);
+      expect(state?.[ModelTask.FACIAL_RECOGNITION]).toMatchObject({
+        regroup: { finishedAt: expect.any(String) },
+        rebuild: { finishedAt: expect.any(String) },
+      });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FacialRecognitionQueueAll, data: { force: false } });
+    });
+
+    it('should go on after the last person regrouped before a restart', async () => {
+      const generation = await startRegroup();
+      mocks.machineLearningModel.getPeopleToRegroup
+        .mockResolvedValueOnce([{ id: 'person-1' }])
+        .mockRejectedValueOnce(new Error('stopped'));
+      mocks.machineLearningModel.getFacesToRegroup.mockResolvedValue([]);
+      await expect(sut.handleFaceRegroup({ generation })).rejects.toThrow('stopped');
+
+      mocks.machineLearningModel.getPeopleToRegroup.mockResolvedValue([]);
+      await sut.handleFaceRegroup({ generation });
+
+      expect(mocks.machineLearningModel.getPeopleToRegroup).toHaveBeenLastCalledWith('person-1', 100);
+    });
+
+    it('should give a person whose picture left another one', async () => {
+      const generation = await startRegroup();
+      mocks.machineLearningModel.getPeopleToRegroup.mockResolvedValueOnce([{ id: 'person-1' }]).mockResolvedValue([]);
+      mocks.machineLearningModel.getFacesToRegroup.mockResolvedValue([
+        face('a'),
+        face('b'),
+        face('c', { isCover: true }),
+      ]);
+      mocks.machineLearningModel.getCloseFacePairs.mockResolvedValue([{ a: 'a', b: 'b' }]);
+      const owner = { ownerId: 'user-1', personGroupId: 'person-1' };
+      mocks.machineLearningModel.getPeopleWithPicture.mockResolvedValue([owner]);
+      mocks.person.getRandomFace.mockResolvedValue({ id: 'a' } as never);
+
+      await sut.handleFaceRegroup({ generation });
+
+      expect(mocks.machineLearningModel.takeFromPerson).toHaveBeenCalledWith('person-1', ['c']);
+      expect(mocks.person.update).toHaveBeenCalledWith({ ...owner, faceAssetId: 'a' });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.PersonGenerateThumbnail, data: owner }]);
+    });
+
+    it('should tell what changed, and undo it once', async () => {
+      const generation = await startRegroup();
+      mocks.machineLearningModel.getPeopleToRegroup.mockResolvedValue([]);
+      await sut.handleFaceRegroup({ generation });
+      mocks.machineLearningModel.getRegroupChanges.mockResolvedValue([
+        { personGroupId: 'mom', names: 'Mom', before: 100, left: 5, joined: 2 },
+        { personGroupId: 'new', names: null, before: 0, left: 0, joined: 5 },
+      ]);
+
+      const { tasks } = await sut.getModels();
+      expect(tasks.find(({ task }) => task === ModelTask.FACIAL_RECOGNITION)?.regroup).toEqual({
+        startedAt: expect.any(String),
+        finishedAt: expect.any(String),
+        undoneAt: null,
+        facesLeft: 5,
+        facesJoined: 7,
+        people: [{ personGroupId: 'mom', names: 'Mom', before: 100, left: 5, joined: 2 }],
+        otherPeople: 1,
+      });
+
+      await sut.undoFaceRegroup();
+      expect(mocks.machineLearningModel.undoRegroup).toHaveBeenCalledOnce();
+      await expect(sut.undoFaceRegroup()).rejects.toThrow('There is no regroup of people to undo');
+    });
+
+    it('should not undo a regroup that is not done', async () => {
+      await startRegroup();
+
+      await expect(sut.undoFaceRegroup()).rejects.toThrow('There is no regroup of people to undo');
+      expect(mocks.machineLearningModel.undoRegroup).not.toHaveBeenCalled();
     });
   });
 });

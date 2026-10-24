@@ -27,6 +27,7 @@ const task = (overrides: Partial<MachineLearningTaskModelsDto>): MachineLearning
   rebuild: null,
   replaced: null,
   conflict: null,
+  regroup: null,
   ...overrides,
 });
 
@@ -100,5 +101,50 @@ describe('MachineLearningModels component', () => {
       backoff: { level: MachineLearningBackoffLevel.Paused, checkedAt: '', memory, pressure: null },
     });
     expect(screen.getByText('admin.machine_learning_backoff_paused')).toBeInTheDocument();
+  });
+
+  test('tells what the regroup of people changed, with the named people, and offers to undo it', () => {
+    const at = new Date().toISOString();
+    render(MachineLearningModels, {
+      tasks: [
+        task({
+          task: 'facial-recognition',
+          active: null,
+          regroup: {
+            startedAt: at,
+            finishedAt: at,
+            undoneAt: null,
+            facesLeft: 12,
+            facesJoined: 30,
+            people: [{ personGroupId: 'mom', names: 'Mom', before: 500, left: 12, joined: 3 }],
+            otherPeople: 4,
+          },
+        }),
+      ],
+    });
+
+    const regroup = screen.getByTestId('ml-regroup');
+    expect(within(regroup).getByText('admin.machine_learning_models_regroup_done')).toBeInTheDocument();
+    expect(within(regroup).getByText('admin.machine_learning_models_regroup_changes')).toBeInTheDocument();
+    expect(
+      within(regroup).getByRole('button', { name: 'admin.machine_learning_models_regroup_undo' }),
+    ).toBeInTheDocument();
+  });
+
+  test('tells a regroup that runs, or was undone, without offering to undo it', async () => {
+    const at = new Date().toISOString();
+    const regroup = { startedAt: at, facesLeft: 0, facesJoined: 0, people: [], otherPeople: 0 };
+    const { rerender } = render(MachineLearningModels, {
+      tasks: [task({ task: 'facial-recognition', regroup: { ...regroup, finishedAt: null, undoneAt: null } })],
+    });
+    expect(screen.getByText('admin.machine_learning_models_regroup_running')).toBeInTheDocument();
+
+    await rerender({
+      tasks: [task({ task: 'facial-recognition', regroup: { ...regroup, finishedAt: at, undoneAt: at } })],
+    });
+    expect(screen.getByText('admin.machine_learning_models_regroup_undone')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'admin.machine_learning_models_regroup_undo' }),
+    ).not.toBeInTheDocument();
   });
 });

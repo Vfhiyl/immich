@@ -39,6 +39,15 @@ export interface TaskModelState {
   /** Counts up with every change of the target; jobs of an earlier rebuild find out they are stale with it */
   generation: number;
   rebuild?: { startedAt: string; finishedAt?: string };
+  /** Facial recognition only: the people regrouped after the faces were detected again (part of the rebuild) */
+  regroup?: {
+    generation: number;
+    startedAt: string;
+    finishedAt?: string;
+    /** The last person regrouped, to go on from after a restart */
+    cursor?: string;
+    undoneAt?: string;
+  };
   /** The last time the files of the model were replaced */
   replaced?: { fromModelId: string; toModelId: string; at: string };
   /** Files that were replaced came back while the current ones are still seen: results with them are not kept */
@@ -300,6 +309,50 @@ export class MachineLearningModels {
         state.active = active;
       }
       return Promise.resolve({ done: true });
+    });
+  }
+
+  /** Facial recognition: the people are regrouped now, as the last part of the rebuild */
+  async startRegroup(task: ModelTask, config: MachineLearningConfig, generation: number) {
+    return this.update(task, config, (state) => {
+      if (state.generation !== generation || !isRebuilding(state)) {
+        return Promise.resolve({ started: false });
+      }
+      state.regroup = { generation, startedAt: new Date().toISOString() };
+      return Promise.resolve({ started: true });
+    });
+  }
+
+  async saveRegroupCursor(task: ModelTask, config: MachineLearningConfig, generation: number, cursor: string) {
+    await this.update(task, config, (state) => {
+      if (state.regroup?.generation === generation) {
+        state.regroup.cursor = cursor;
+      }
+      return Promise.resolve({});
+    });
+  }
+
+  /** Ends the regroup, and with it the rebuild */
+  async finishRegroup(task: ModelTask, config: MachineLearningConfig, generation: number) {
+    return this.update(task, config, (state) => {
+      if (state.generation !== generation || state.regroup?.generation !== generation || !state.rebuild) {
+        return Promise.resolve({ done: false });
+      }
+      const now = new Date().toISOString();
+      state.regroup.finishedAt = now;
+      state.regroup.cursor = undefined;
+      state.rebuild.finishedAt = now;
+      return Promise.resolve({ done: true });
+    });
+  }
+
+  async markRegroupUndone(task: ModelTask, config: MachineLearningConfig) {
+    return this.update(task, config, (state) => {
+      if (!state.regroup?.finishedAt || state.regroup.undoneAt || isRebuilding(state)) {
+        return Promise.resolve({ undone: false });
+      }
+      state.regroup.undoneAt = new Date().toISOString();
+      return Promise.resolve({ undone: true });
     });
   }
 

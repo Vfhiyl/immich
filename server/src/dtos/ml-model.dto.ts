@@ -37,6 +37,28 @@ const MachineLearningTaskModelsSchema = z
       .object({ from: MachineLearningModelSchema, to: MachineLearningModelSchema, at: z.string() })
       .nullable()
       .describe('The last time the files of the model changed under the same name'),
+    regroup: z
+      .object({
+        startedAt: z.string(),
+        finishedAt: z.string().nullable(),
+        undoneAt: z.string().nullable(),
+        facesLeft: z.int().describe('Faces that are no longer with the person they had'),
+        facesJoined: z.int().describe('Faces that are with another person than before, or new'),
+        people: z
+          .array(
+            z.object({
+              personGroupId: z.string(),
+              names: z.string().nullable().describe('The names the owners gave the person'),
+              before: z.int(),
+              left: z.int(),
+              joined: z.int(),
+            }),
+          )
+          .describe('The named people that changed most'),
+        otherPeople: z.int().describe('The people without a name that changed'),
+      })
+      .nullable()
+      .describe('Facial recognition only: the people regrouped after a change of the face model, and what changed'),
     conflict: z
       .object({ model: MachineLearningModelSchema, at: z.string() })
       .nullable()

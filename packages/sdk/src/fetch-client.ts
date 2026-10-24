@@ -533,6 +533,27 @@ export type MachineLearningTaskModelsDto = {
         /** The photos the task makes results for, while the rebuild runs */
         total: number | null;
     } | null;
+    /** Facial recognition only: the people regrouped after a change of the face model, and what changed */
+    regroup: {
+        /** Faces that are with another person than before, or new */
+        facesJoined: number;
+        /** Faces that are no longer with the person they had */
+        facesLeft: number;
+        finishedAt: string | null;
+        /** The people without a name that changed */
+        otherPeople: number;
+        /** The named people that changed most */
+        people: {
+            before: number;
+            joined: number;
+            left: number;
+            /** The names the owners gave the person */
+            names: string | null;
+            personGroupId: string;
+        }[];
+        startedAt: string;
+        undoneAt: string | null;
+    } | null;
     /** The last time the files of the model changed under the same name */
     replaced: {
         at: string;
@@ -4576,6 +4597,15 @@ export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
         data: IntegrityReportSummaryResponseDto;
     }>("/admin/integrity/summary", {
         ...opts
+    }));
+}
+/**
+ * Undo the regroup of people
+ */
+export function undoFaceRegroup(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/machine-learning/faces/regroup/undo", {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -9480,6 +9510,7 @@ export enum JobName {
     SmartSearch = "SmartSearch",
     SmartSearchRebuild = "SmartSearchRebuild",
     FaceDetectionRebuild = "FaceDetectionRebuild",
+    FaceRegroup = "FaceRegroup",
     OcrRebuild = "OcrRebuild",
     StorageTemplateMigration = "StorageTemplateMigration",
     StorageTemplateMigrationSingle = "StorageTemplateMigrationSingle",

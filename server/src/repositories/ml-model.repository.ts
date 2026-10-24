@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ExpressionBuilder, Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, AssetVisibility, VectorIndex } from 'src/enum.js';
+import { AssetFileType, AssetVisibility, SourceType, VectorIndex } from 'src/enum.js';
 import { ModelTask } from 'src/repositories/machine-learning.repository.js';
 import { DB } from 'src/schema/index.js';
 import { vectorIndexQuery } from 'src/utils/database.js';
@@ -178,6 +178,184 @@ export class MachineLearningModelRepository {
           .execute(trx);
       }
       await sql`delete from smart_search_rebuild`.execute(trx);
+    });
+  }
+
+  /** Keeps who every face belonged to as the regroup starts: to show what changed, and to undo it */
+  @GenerateSql()
+  async snapshotFaceAssignments(): Promise<void> {
+    await this.db.transaction().execute(async (trx) => {
+      await sql`delete from face_regroup`.execute(trx);
+      await sql`
+        insert into face_regroup ("faceId", "before")
+        select id, "personGroupId" from asset_face where "personGroupId" is not null and "deletedAt" is null`.execute(
+        trx,
+      );
+    });
+  }
+
+  /** The people with faces facial recognition gave them, after `after` (by id), in order */
+  @GenerateSql({ params: [DummyValue.UUID, 100] })
+  getPeopleToRegroup(after: string | null, limit: number) {
+    return this.db
+      .selectFrom('person_group')
+      .select('person_group.id')
+      .$if(!!after, (qb) => qb.where('person_group.id', '>', after!))
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset_face')
+            .whereRef('asset_face.personGroupId', '=', 'person_group.id')
+            .where('asset_face.sourceType', '=', SourceType.MachineLearning)
+            .where('asset_face.deletedAt', 'is', null),
+        ),
+      )
+      .orderBy('person_group.id')
+      .limit(limit)
+      .execute();
+  }
+
+  /**
+   * The faces of a person with an embedding: which are fixed (a user gave them, or they were drawn or read from a
+   * file), and which is the face of its picture
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getFacesToRegroup(personGroupId: string) {
+    return this.db
+      .selectFrom('asset_face')
+      .innerJoin('face_search', 'face_search.faceId', 'asset_face.id')
+      .select(['asset_face.id'])
+      .select((eb) => [
+        eb
+          .or([
+            eb('asset_face.sourceType', '!=', SourceType.MachineLearning),
+            eb.exists(
+              eb
+                .selectFrom('face_user_assignment')
+                .whereRef('face_user_assignment.faceId', '=', 'asset_face.id')
+                .whereRef('face_user_assignment.personGroupId', '=', 'asset_face.personGroupId'),
+            ),
+          ])
+          .as('isFixed'),
+        eb.exists(eb.selectFrom('person').whereRef('person.faceAssetId', '=', 'asset_face.id')).as('isCover'),
+      ])
+      .where('asset_face.personGroupId', '=', personGroupId)
+      .where('asset_face.deletedAt', 'is', null)
+      .execute();
+  }
+
+  /** Pairs of faces of a person closer than `maxDistance`: all of them for a person with few faces */
+  @GenerateSql({ params: [DummyValue.UUID, 0.5] })
+  async getCloseFacePairs(personGroupId: string, maxDistance: number) {
+    const { rows } = await sql<{ a: string; b: string }>`
+      with faces as (
+        select fs."faceId", fs.embedding from face_search fs
+        join asset_face af on af.id = fs."faceId"
+        where af."personGroupId" = ${personGroupId} and af."deletedAt" is null
+      )
+      select a."faceId" as a, b."faceId" as b from faces a join faces b on a."faceId" < b."faceId"
+      where (a.embedding <=> b.embedding) <= ${maxDistance}`.execute(this.db);
+    return rows;
+  }
+
+  /** For a person with many faces: each of `faceIds` with the nearest faces of the same person (by the vector index) */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID], 0.5, 20] })
+  async getNearFacePairs(personGroupId: string, faceIds: string[], maxDistance: number, neighbours: number) {
+    const { rows } = await sql<{ a: string; b: string }>`
+      select f."faceId" as a, n."faceId" as b from face_search f
+      cross join lateral (
+        select s."faceId", s.embedding <=> f.embedding as distance from face_search s
+        order by s.embedding <=> f.embedding limit ${neighbours}
+      ) n
+      join asset_face other on other.id = n."faceId"
+      where f."faceId" = any(${faceIds}::uuid[]) and n."faceId" <> f."faceId" and n.distance <= ${maxDistance}
+        and other."personGroupId" = ${personGroupId} and other."deletedAt" is null`.execute(this.db);
+    return rows;
+  }
+
+  /** The people (of every owner) whose picture is one of `faceIds` */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  getPeopleWithPicture(faceIds: string[]) {
+    return this.db
+      .selectFrom('person')
+      .select(['person.ownerId', 'person.personGroupId'])
+      .where('person.faceAssetId', 'in', faceIds)
+      .execute();
+  }
+
+  /** Takes faces from a person, unless a user gave them to it meanwhile */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
+  async takeFromPerson(personGroupId: string, faceIds: string[]): Promise<void> {
+    if (faceIds.length === 0) {
+      return;
+    }
+    await this.db
+      .updateTable('asset_face')
+      .set({ personGroupId: null })
+      .where('id', 'in', faceIds)
+      .where('personGroupId', '=', personGroupId)
+      .where(({ not, exists, selectFrom }) =>
+        not(exists(selectFrom('face_user_assignment').whereRef('face_user_assignment.faceId', '=', 'asset_face.id'))),
+      )
+      .execute();
+  }
+
+  /** What the last regroup changed, per person: the faces it had, those that left it, and those that joined it */
+  @GenerateSql()
+  async getRegroupChanges() {
+    const { rows } = await sql<{
+      personGroupId: string;
+      names: string | null;
+      before: number;
+      left: number;
+      joined: number;
+    }>`
+      with before as (
+        select r."before" as g, count(*)::int as before,
+          count(*) filter (where af.id is null or af."personGroupId" is distinct from r."before")::int as "left"
+        from face_regroup r
+        left join asset_face af on af.id = r."faceId" and af."deletedAt" is null
+        where r."before" is not null
+        group by r."before"
+      ),
+      joined as (
+        select af."personGroupId" as g, count(*)::int as joined
+        from asset_face af
+        left join face_regroup r on r."faceId" = af.id
+        where af."personGroupId" is not null and af."deletedAt" is null and r."before" is distinct from af."personGroupId"
+        group by af."personGroupId"
+      )
+      select coalesce(b.g, j.g) as "personGroupId",
+        (select string_agg(distinct p.name, ', ') from person p where p."personGroupId" = coalesce(b.g, j.g) and p.name <> '') as names,
+        coalesce(b.before, 0) as before, coalesce(b."left", 0) as "left", coalesce(j.joined, 0) as joined
+      from before b
+      full join joined j on j.g = b.g
+      where coalesce(b."left", 0) > 0 or coalesce(j.joined, 0) > 0
+      order by coalesce(b."left", 0) + coalesce(j.joined, 0) desc`.execute(this.db);
+    return rows;
+  }
+
+  /**
+   * Puts the faces back where they were before the last regroup, but for what users did since (gave a face a person,
+   * or said it is not the person it had) and people that are gone
+   */
+  @GenerateSql()
+  async undoRegroup(): Promise<number> {
+    return this.db.transaction().execute(async (trx) => {
+      const result = await sql`
+        update asset_face af set "personGroupId" = r."before"
+        from face_regroup r
+        where af.id = r."faceId" and r."before" is not null and af."deletedAt" is null
+          and af."personGroupId" is distinct from r."before"
+          and exists (select from person_group g where g.id = r."before")
+          and not exists (
+            select from face_user_assignment a where a."faceId" = af.id and a."createdAt" > r."createdAt"
+          )
+          and not exists (
+            select from face_user_rejection x where x."faceId" = af.id and x."personGroupId" = r."before"
+          )`.execute(trx);
+      await sql`delete from face_regroup`.execute(trx);
+      return Number(result.numAffectedRows ?? 0);
     });
   }
 

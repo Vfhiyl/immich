@@ -171,3 +171,233 @@ set
 delete from "smart_search_rebuild"
 where
   "modelId" not in ($1)
+
+-- MachineLearningModelRepository.snapshotFaceAssignments
+begin
+delete from face_regroup
+insert into
+  face_regroup ("faceId", "before")
+select
+  id,
+  "personGroupId"
+from
+  asset_face
+where
+  "personGroupId" is not null
+  and "deletedAt" is null
+commit
+
+-- MachineLearningModelRepository.getPeopleToRegroup
+select
+  "person_group"."id"
+from
+  "person_group"
+where
+  "person_group"."id" > $1
+  and exists (
+    select
+    from
+      "asset_face"
+    where
+      "asset_face"."personGroupId" = "person_group"."id"
+      and "asset_face"."sourceType" = $2
+      and "asset_face"."deletedAt" is null
+  )
+order by
+  "person_group"."id"
+limit
+  $3
+
+-- MachineLearningModelRepository.getFacesToRegroup
+select
+  "asset_face"."id",
+  (
+    "asset_face"."sourceType" != $1
+    or exists (
+      select
+      from
+        "face_user_assignment"
+      where
+        "face_user_assignment"."faceId" = "asset_face"."id"
+        and "face_user_assignment"."personGroupId" = "asset_face"."personGroupId"
+    )
+  ) as "isFixed",
+  exists (
+    select
+    from
+      "person"
+    where
+      "person"."faceAssetId" = "asset_face"."id"
+  ) as "isCover"
+from
+  "asset_face"
+  inner join "face_search" on "face_search"."faceId" = "asset_face"."id"
+where
+  "asset_face"."personGroupId" = $2
+  and "asset_face"."deletedAt" is null
+
+-- MachineLearningModelRepository.getCloseFacePairs
+with
+  faces as (
+    select
+      fs."faceId",
+      fs.embedding
+    from
+      face_search fs
+      join asset_face af on af.id = fs."faceId"
+    where
+      af."personGroupId" = $1
+      and af."deletedAt" is null
+  )
+select
+  a."faceId" as a,
+  b."faceId" as b
+from
+  faces a
+  join faces b on a."faceId" < b."faceId"
+where
+  (a.embedding <=> b.embedding) <= $2
+
+-- MachineLearningModelRepository.getNearFacePairs
+select
+  f."faceId" as a,
+  n."faceId" as b
+from
+  face_search f
+  cross join lateral (
+    select
+      s."faceId",
+      s.embedding <=> f.embedding as distance
+    from
+      face_search s
+    order by
+      s.embedding <=> f.embedding
+    limit
+      $1
+  ) n
+  join asset_face other on other.id = n."faceId"
+where
+  f."faceId" = any ($2::uuid[])
+  and n."faceId" <> f."faceId"
+  and n.distance <= $3
+  and other."personGroupId" = $4
+  and other."deletedAt" is null
+
+-- MachineLearningModelRepository.getPeopleWithPicture
+select
+  "person"."ownerId",
+  "person"."personGroupId"
+from
+  "person"
+where
+  "person"."faceAssetId" in ($1)
+
+-- MachineLearningModelRepository.takeFromPerson
+update "asset_face"
+set
+  "personGroupId" = $1
+where
+  "id" in ($2)
+  and "personGroupId" = $3
+  and not exists (
+    select
+    from
+      "face_user_assignment"
+    where
+      "face_user_assignment"."faceId" = "asset_face"."id"
+  )
+
+-- MachineLearningModelRepository.getRegroupChanges
+with
+  before as (
+    select
+      r."before" as g,
+      count(*)::int as before,
+      count(*) filter (
+        where
+          af.id is null
+          or af."personGroupId" is distinct from r."before"
+      )::int as "left"
+    from
+      face_regroup r
+      left join asset_face af on af.id = r."faceId"
+      and af."deletedAt" is null
+    where
+      r."before" is not null
+    group by
+      r."before"
+  ),
+  joined as (
+    select
+      af."personGroupId" as g,
+      count(*)::int as joined
+    from
+      asset_face af
+      left join face_regroup r on r."faceId" = af.id
+    where
+      af."personGroupId" is not null
+      and af."deletedAt" is null
+      and r."before" is distinct from af."personGroupId"
+    group by
+      af."personGroupId"
+  )
+select
+  coalesce(b.g, j.g) as "personGroupId",
+  (
+    select
+      string_agg(distinct p.name, ', ')
+    from
+      person p
+    where
+      p."personGroupId" = coalesce(b.g, j.g)
+      and p.name <> ''
+  ) as names,
+  coalesce(b.before, 0) as before,
+  coalesce(b."left", 0) as "left",
+  coalesce(j.joined, 0) as joined
+from
+  before b
+  full join joined j on j.g = b.g
+where
+  coalesce(b."left", 0) > 0
+  or coalesce(j.joined, 0) > 0
+order by
+  coalesce(b."left", 0) + coalesce(j.joined, 0) desc
+
+-- MachineLearningModelRepository.undoRegroup
+begin
+update asset_face af
+set
+  "personGroupId" = r."before"
+from
+  face_regroup r
+where
+  af.id = r."faceId"
+  and r."before" is not null
+  and af."deletedAt" is null
+  and af."personGroupId" is distinct from r."before"
+  and exists (
+    select
+    from
+      person_group g
+    where
+      g.id = r."before"
+  )
+  and not exists (
+    select
+    from
+      face_user_assignment a
+    where
+      a."faceId" = af.id
+      and a."createdAt" > r."createdAt"
+  )
+  and not exists (
+    select
+    from
+      face_user_rejection x
+    where
+      x."faceId" = af.id
+      and x."personGroupId" = r."before"
+  )
+delete from face_regroup
+commit

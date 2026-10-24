@@ -49,5 +49,14 @@ export const newMachineLearningModelRepositoryMock = (): Mocked<
     upsertRebuildEmbedding: vitest.fn().mockResolvedValue(undefined),
     deleteRebuildEmbeddings: vitest.fn().mockResolvedValue(undefined),
     switchSmartSearch: vitest.fn().mockResolvedValue(undefined),
+    snapshotFaceAssignments: vitest.fn().mockResolvedValue(undefined),
+    getPeopleToRegroup: vitest.fn().mockResolvedValue([]),
+    getFacesToRegroup: vitest.fn().mockResolvedValue([]),
+    getCloseFacePairs: vitest.fn().mockResolvedValue([]),
+    getNearFacePairs: vitest.fn().mockResolvedValue([]),
+    getPeopleWithPicture: vitest.fn().mockResolvedValue([]),
+    takeFromPerson: vitest.fn().mockResolvedValue(undefined),
+    getRegroupChanges: vitest.fn().mockResolvedValue([]),
+    undoRegroup: vitest.fn().mockResolvedValue(0),
   } as unknown as Mocked<RepositoryInterface<MachineLearningModelRepository>>;
 };
