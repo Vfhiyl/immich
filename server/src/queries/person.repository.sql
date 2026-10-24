@@ -33,6 +33,14 @@ from
 where
   "asset_face"."assetId" = "asset"."id"
   and "asset_face"."sourceType" = $2
+  and not exists (
+    select
+    from
+      "face_user_assignment"
+    where
+      "face_user_assignment"."faceId" = "asset_face"."id"
+      and "face_user_assignment"."personGroupId" = "asset_face"."personGroupId"
+  )
   and "user"."clusterGroupId" = $3
 
 -- PersonRepository.delete
@@ -1319,6 +1327,11 @@ values
 on conflict ("faceId") do update
 set
   "embedding" = "excluded"."embedding"
+
+-- PersonRepository.deleteFaceEmbeddings
+delete from "face_search"
+where
+  "faceId" in ($1)
 
 -- PersonRepository.updateForWritableOwners
 update "person"

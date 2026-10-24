@@ -15,11 +15,20 @@
     deleteFace,
     getFaces,
     reassignFacesById,
+    rejectFace,
     type AssetFaceResponseDto,
     type PersonResponseDto,
   } from '@immich/sdk';
   import { Icon, IconButton, LoadingSpinner, modalManager, toastManager } from '@immich/ui';
-  import { mdiAccountOff, mdiArrowLeftThin, mdiArrowRightThin, mdiPencil, mdiRestart, mdiTrashCan } from '@mdi/js';
+  import {
+    mdiAccountOff,
+    mdiAccountRemove,
+    mdiArrowLeftThin,
+    mdiArrowRightThin,
+    mdiPencil,
+    mdiRestart,
+    mdiTrashCan,
+  } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { linear } from 'svelte/easing';
@@ -158,6 +167,22 @@
   const handleFacePicker = (face: AssetFaceResponseDto) => {
     editedFace = face;
     showSelectedFaces = true;
+  };
+
+  // the face is not this person: facial recognition never gives it to them again, also after a new face model
+  const rejectAssetFace = async (face: AssetFaceResponseDto) => {
+    if (!face.person) {
+      return;
+    }
+
+    try {
+      await rejectFace({ id: face.id });
+      toastManager.primary($t('not_this_person_done', { values: { name: face.person.name || $t('face_unassigned') } }));
+      eventManager.emit('PersonAssetDelete', { id: face.person.id, assetId });
+      peopleWithFaces = peopleWithFaces.map((item) => (item.id === face.id ? { ...item, person: null } : item));
+    } catch (error) {
+      handleError(error, $t('error_not_this_person'));
+    }
   };
 
   const deleteAssetFace = async (face: AssetFaceResponseDto) => {
@@ -344,6 +369,17 @@
                     aria-label={$t('select_new_face')}
                     size="small"
                     onclick={() => handleFacePicker(face)}
+                  />
+                {/if}
+                {#if face.person !== null && !Object.hasOwn(selectedPersonToCreate, face.id) && !Object.hasOwn(selectedPersonToReassign, face.id)}
+                  <IconButton
+                    shape="round"
+                    color="secondary"
+                    icon={mdiAccountRemove}
+                    aria-label={$t('not_this_person')}
+                    title={$t('not_this_person')}
+                    size="small"
+                    onclick={() => rejectAssetFace(face)}
                   />
                 {/if}
                 {#if face.person !== null}

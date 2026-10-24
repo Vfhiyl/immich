@@ -55,6 +55,8 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
+import { FaceUserAssignmentTable } from 'src/schema/tables/face-user-assignment.table.js';
+import { FaceUserRejectionTable } from 'src/schema/tables/face-user-rejection.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
@@ -188,6 +190,8 @@ export class ImmichDatabase {
     MachineLearningModelTable,
     AssetMachineLearningResultTable,
     SmartSearchRebuildTable,
+    FaceUserAssignmentTable,
+    FaceUserRejectionTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
@@ -340,6 +344,8 @@ export interface DB {
   ml_model: MachineLearningModelTable;
   asset_ml_result: AssetMachineLearningResultTable;
   smart_search_rebuild: SmartSearchRebuildTable;
+  face_user_assignment: FaceUserAssignmentTable;
+  face_user_rejection: FaceUserRejectionTable;
 
   system_metadata: SystemMetadataTable;
 

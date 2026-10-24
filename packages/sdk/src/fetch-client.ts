@@ -6458,6 +6458,17 @@ export function reassignFacesById({ id, faceDto }: {
     })));
 }
 /**
+ * Say a face is not its person
+ */
+export function rejectFace({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/faces/${encodeURIComponent(id)}/reject`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Retrieve queue counts and status
  */
 export function getQueuesLegacy(opts?: Oazapfts.RequestOpts) {

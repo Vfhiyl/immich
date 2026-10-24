@@ -57,6 +57,19 @@ export class FaceController {
     return this.service.reassignFacesById(auth, id, dto);
   }
 
+  @Post(':id/reject')
+  @Authenticated({ permission: Permission.FaceUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Say a face is not its person',
+    description:
+      'The face leaves its person and is never given to that person again by facial recognition, also after a change of the face model.',
+    history: new HistoryBuilder().added('v3.3.5').alpha('v3.3.5'),
+  })
+  rejectFace(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.rejectFace(auth, id);
+  }
+
   @Delete(':id')
   @Authenticated({ permission: Permission.FaceDelete })
   @HttpCode(HttpStatus.NO_CONTENT)

@@ -123,6 +123,12 @@ export class PersonService extends BaseService {
         }
 
         await this.personRepository.reassignFace(face.id, person.personGroupId);
+        // kept by automatic grouping from now on
+        await this.faceDecisionRepository.assign(
+          [{ faceId: face.id, previous: face.personGroupId }],
+          person.personGroupId,
+          auth.user.id,
+        );
       }
 
       result.push(mapPerson(person));
@@ -144,6 +150,11 @@ export class PersonService extends BaseService {
     const person = await this.findOrFail(auth, personGroupId);
 
     await this.personRepository.reassignFace(face.id, person.personGroupId);
+    await this.faceDecisionRepository.assign(
+      [{ faceId: face.id, previous: face.personGroupId }],
+      person.personGroupId,
+      auth.user.id,
+    );
     if (person.faceAssetId === null) {
       await this.createNewFeaturePhoto([person]);
     }
@@ -152,6 +163,22 @@ export class PersonService extends BaseService {
     }
 
     return mapPerson(await this.findOrFail(auth, personGroupId));
+  }
+
+  /** The user says a face is not its person: it leaves the person, and is never given to it again automatically */
+  async rejectFace(auth: AuthDto, id: string): Promise<void> {
+    await this.requireAccess({ auth, permission: Permission.PersonCreate, ids: [id] });
+    const face = await this.personRepository.getFaceById(id, { viewingUserId: auth.user.id });
+    if (!face.personGroupId) {
+      throw new BadRequestException('The face has no person');
+    }
+
+    await this.faceDecisionRepository.unassign(face.id, face.personGroupId, auth.user.id);
+    if (face.person && face.person.faceAssetId === face.id) {
+      await this.createNewFeaturePhoto([face.person]);
+    }
+    // perhaps someone else
+    await this.jobRepository.queue({ name: JobName.FacialRecognition, data: { id: face.id, deferred: false } });
   }
 
   async getFacesById(auth: AuthDto, dto: FaceDto): Promise<AssetFaceResponseDto[]> {
@@ -458,7 +485,14 @@ export class PersonService extends BaseService {
         embeddings.push({ faceId, embedding });
       }
     }
-    const faceIdsToRemove = [...mlFaceIds];
+    // a face the user gave a person stays when it is not found again (e.g. by another model); its embedding of an
+    // earlier model is not compared with those of this one
+    const unmatched = [...mlFaceIds];
+    const keptByUser = await this.faceDecisionRepository.getAssigned(unmatched);
+    const faceIdsToRemove = unmatched.filter((faceId) => !keptByUser.has(faceId));
+    if (isStale && keptByUser.size > 0) {
+      await this.personRepository.deleteFaceEmbeddings([...keptByUser]);
+    }
 
     if (facesToAdd.length > 0 || faceIdsToRemove.length > 0 || embeddings.length > 0) {
       await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);
@@ -590,14 +624,14 @@ export class PersonService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    if (!face.faceSearch?.embedding) {
-      this.logger.warn(`Face ${id} does not have an embedding`);
-      return JobStatus.Failed;
-    }
-
     if (face.personGroupId) {
       this.logger.debug(`Face ${id} already has a person assigned`);
       return JobStatus.Skipped;
+    }
+
+    if (!face.faceSearch?.embedding) {
+      this.logger.warn(`Face ${id} does not have an embedding`);
+      return JobStatus.Failed;
     }
 
     if (await this.isFaceRebuilding(machineLearning)) {
@@ -630,18 +664,22 @@ export class PersonService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    let personGroupId = matches.find((match) => match.personGroupId)?.personGroupId;
+    // never a person the user said this face is not, nor the person of another face of the same photo
+    const excluded = await this.faceDecisionRepository.getExcludedPeople(id);
+    const isAllowed = (match: { personGroupId: string | null }) =>
+      !!match.personGroupId && !excluded.has(match.personGroupId);
+    let personGroupId = matches.find((match) => isAllowed(match))?.personGroupId ?? undefined;
     if (!personGroupId) {
-      const [matchWithPerson] = await this.searchRepository.searchFaces({
+      const matchesWithPerson = await this.searchRepository.searchFaces({
         clusterGroupId,
         embedding: face.faceSearch.embedding,
         maxDistance,
-        numResults: 1,
+        numResults: Math.min(excluded.size + 1, 1000),
         hasPerson: true,
         minBirthDate: new Date(face.asset.fileCreatedAt),
       });
 
-      personGroupId = matchWithPerson?.personGroupId ?? undefined;
+      personGroupId = matchesWithPerson.find((match) => isAllowed(match))?.personGroupId ?? undefined;
     }
 
     if (!personGroupId && isCore) {
@@ -747,6 +785,7 @@ export class PersonService extends BaseService {
               ownerId,
               await this.personRepository.updateGroupId({ ownerId, oldPersonGroupId: id, newPersonGroupId: targetId }),
             );
+            await this.faceDecisionRepository.move({ ownerId, oldPersonGroupId: id, newPersonGroupId: targetId });
             continue;
           }
 
@@ -763,6 +802,7 @@ export class PersonService extends BaseService {
           }
 
           await this.personRepository.reassignFaces({ oldPersonGroupId: id, newPersonGroupId: targetId, ownerId });
+          await this.faceDecisionRepository.move({ ownerId, oldPersonGroupId: id, newPersonGroupId: targetId });
           await this.removeAllPersonGroups([id], ownerId);
           this.logger.log(`Merged ${source.name || id} into ${target.name || targetId}`);
 

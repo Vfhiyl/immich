@@ -177,6 +177,19 @@ describe('jobs of models during a rebuild', () => {
       expect(mocks.search.searchFaces).not.toHaveBeenCalled();
     });
 
+    it('should keep a face the user gave a person that the new model does not find, without its old embedding', async () => {
+      const given = AssetFaceFactory.create();
+      const asset = AssetFactory.from().face(given).file({ type: AssetFileType.Preview }).exif().build();
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+      mocks.machineLearning.detectFaces.mockResolvedValue({ ...getAsDetectedFace(given), faces: [] });
+      mocks.faceDecision.getAssigned.mockResolvedValue(new Set([given.id]));
+
+      await sut.handleDetectFaces({ id: asset.id });
+
+      expect(mocks.person.refreshFaces).not.toHaveBeenCalled();
+      expect(mocks.person.deleteFaceEmbeddings).toHaveBeenCalledWith([given.id]);
+    });
+
     it('should not keep faces found with files that were replaced', async () => {
       const replaced = await mocks.machineLearningModel.create({
         task: ModelTask.FACIAL_RECOGNITION,

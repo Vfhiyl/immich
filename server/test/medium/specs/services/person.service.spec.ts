@@ -12,6 +12,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { FaceDecisionRepository } from 'src/repositories/face-decision.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -50,6 +51,7 @@ const setup = (db?: Kysely<DB>) => {
       PartnerRepository,
       StorageBackendRepository,
       MachineLearningModelRepository,
+      FaceDecisionRepository,
     ],
     mock: [JobRepository, LoggingRepository, StorageRepository, MachineLearningRepository],
   });

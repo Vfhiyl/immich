@@ -262,6 +262,16 @@ export class PersonRepository {
       .from('asset')
       .whereRef('asset_face.assetId', '=', 'asset.id')
       .where('asset_face.sourceType', '=', sourceType)
+      // the faces a user gave a person stay with it
+      .where(({ not, exists, selectFrom }) =>
+        not(
+          exists(
+            selectFrom('face_user_assignment')
+              .whereRef('face_user_assignment.faceId', '=', 'asset_face.id')
+              .whereRef('face_user_assignment.personGroupId', '=', 'asset_face.personGroupId'),
+          ),
+        ),
+      )
       .$if(!!clusterGroupId, (qb) =>
         qb.innerJoin('user', 'user.id', 'asset.ownerId').where('user.clusterGroupId', '=', clusterGroupId!),
       )
@@ -882,6 +892,11 @@ export class PersonRepository {
       .values(embeddings)
       .onConflict((oc) => oc.column('faceId').doUpdateSet((eb) => ({ embedding: eb.ref('excluded.embedding') })))
       .execute();
+  }
+
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  async deleteFaceEmbeddings(faceIds: string[]): Promise<void> {
+    await this.db.deleteFrom('face_search').where('faceId', 'in', faceIds).execute();
   }
 
   async update(person: Updateable<PersonTable> & PersonId) {

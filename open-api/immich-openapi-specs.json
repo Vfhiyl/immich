@@ -9024,6 +9024,56 @@
         "x-immich-state": "Stable"
       }
     },
+    "/faces/{id}/reject": {
+      "post": {
+        "description": "The face leaves its person and is never given to that person again by facial recognition, also after a change of the face model.",
+        "operationId": "rejectFace",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Say a face is not its person",
+        "tags": [
+          "Faces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "face.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/jobs": {
       "get": {
         "deprecated": true,
