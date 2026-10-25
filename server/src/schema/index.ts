@@ -44,6 +44,7 @@ import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceAuditTable } from 'src/schema/tables/asset-face-audit.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
+import { AssetJobFailureTable } from 'src/schema/tables/asset-job-failure.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
@@ -194,6 +195,7 @@ export class ImmichDatabase {
     FaceUserAssignmentTable,
     FaceUserRejectionTable,
     FaceRegroupTable,
+    AssetJobFailureTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
@@ -349,6 +351,7 @@ export interface DB {
   face_user_assignment: FaceUserAssignmentTable;
   face_user_rejection: FaceUserRejectionTable;
   face_regroup: FaceRegroupTable;
+  asset_job_failure: AssetJobFailureTable;
 
   system_metadata: SystemMetadataTable;
 

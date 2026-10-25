@@ -15,6 +15,7 @@ import { DownloadService } from 'src/services/download.service.js';
 import { DuplicateService } from 'src/services/duplicate.service.js';
 import { HlsService } from 'src/services/hls.service.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
+import { JobFailureService } from 'src/services/job-failure.service.js';
 import { JobService } from 'src/services/job.service.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
@@ -109,6 +110,7 @@ export const services = [
   StorageUsageService,
   StorageService,
   MachineLearningModelService,
+  JobFailureService,
   MachineLearningBackoffService,
   ResourceCheckService,
   StorageTemplateService,

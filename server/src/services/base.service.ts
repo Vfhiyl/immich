@@ -29,6 +29,7 @@ import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { FaceDecisionRepository } from 'src/repositories/face-decision.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import { JobFailureRepository } from 'src/repositories/job-failure.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -135,6 +136,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   StorageUsageRepository,
   MachineLearningModelRepository,
   FaceDecisionRepository,
+  JobFailureRepository,
   StorageRepository,
   SyncRepository,
   SyncCheckpointRepository,
@@ -206,6 +208,7 @@ export class BaseService {
     protected storageUsageRepository: StorageUsageRepository,
     protected machineLearningModelRepository: MachineLearningModelRepository,
     protected faceDecisionRepository: FaceDecisionRepository,
+    protected jobFailureRepository: JobFailureRepository,
     protected storageRepository: StorageRepository,
     protected syncRepository: SyncRepository,
     protected syncCheckpointRepository: SyncCheckpointRepository,
@@ -286,6 +289,7 @@ export class BaseService {
       ctx.storageUsageRepository,
       ctx.machineLearningModelRepository,
       ctx.faceDecisionRepository,
+      ctx.jobFailureRepository,
       ctx.storageRepository,
       ctx.syncRepository,
       ctx.syncCheckpointRepository,

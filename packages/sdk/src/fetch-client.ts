@@ -488,6 +488,33 @@ export type IntegrityReportSummaryResponseDto = {
     missing_file: number;
     untracked_file: number;
 };
+export type JobFailureAssetDto = {
+    assetId: string;
+    attempts: number;
+    /** Why the last attempt failed; null when the server stopped while it ran */
+    error: string | null;
+    failedAt: string;
+    originalFileName: string;
+};
+export type JobFailuresDto = {
+    /** Those that failed last, at most 50 */
+    assets: JobFailureAssetDto[];
+    /** The files the job is no longer queued for */
+    count: number;
+    jobName: TrackedJobName;
+};
+export type JobFailuresResponseDto = {
+    /** Attempts in a row after which a job is no longer queued for a file */
+    attempts: number;
+    jobs: JobFailuresDto[];
+};
+export type JobFailureRetryDto = {
+    jobName: TrackedJobName;
+};
+export type JobFailureRetryResponseDto = {
+    /** The files the job was queued for again */
+    count: number;
+};
 export type MachineLearningBackoffDto = {
     checkedAt: string;
     level: MachineLearningBackoffLevel;
@@ -4598,6 +4625,32 @@ export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
     }>("/admin/integrity/summary", {
         ...opts
     }));
+}
+/**
+ * Get the files jobs failed on
+ */
+export function getJobFailures(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: JobFailuresResponseDto;
+    }>("/admin/job-failures", {
+        ...opts
+    }));
+}
+/**
+ * Retry the files a job failed on
+ */
+export function retryJobFailures({ jobFailureRetryDto }: {
+    jobFailureRetryDto: JobFailureRetryDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: JobFailureRetryResponseDto;
+    }>("/admin/job-failures/retry", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: jobFailureRetryDto
+    })));
 }
 /**
  * Undo the regroup of people
@@ -9021,6 +9074,14 @@ export enum IntegrityReport {
     UntrackedFile = "untracked_file",
     MissingFile = "missing_file",
     ChecksumMismatch = "checksum_mismatch"
+}
+export enum TrackedJobName {
+    AssetExtractMetadata = "AssetExtractMetadata",
+    AssetGenerateThumbnails = "AssetGenerateThumbnails",
+    AssetEncodeVideo = "AssetEncodeVideo",
+    SmartSearch = "SmartSearch",
+    AssetDetectFaces = "AssetDetectFaces",
+    Ocr = "Ocr"
 }
 export enum MachineLearningBackoffLevel {
     Normal = "normal",

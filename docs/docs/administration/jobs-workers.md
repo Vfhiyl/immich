@@ -58,6 +58,12 @@ Additionally, some jobs (such as memories generation) run on a schedule, which i
 Some jobs ([External Libraries](/features/libraries) scanning, Database Dump) are configured in their own sections in System Settings.
 :::
 
+## Failed jobs
+
+A job that fails is counted as failed on the Jobs page, and each queue keeps its last 1,000 failed jobs.
+
+Jobs for a single file (metadata extraction, thumbnail generation, video transcoding, smart search, face detection and text recognition) are also tracked per file in the database, from before they start, so that a file that makes the server crash or run out of memory is noticed too. When such a job fails on a file 3 times in a row, or the server stops 3 times while working on it, the job is no longer queued for that file, not even by the nightly tasks or the buttons of the Jobs page. The Jobs page then lists these files with why their job failed last, and _Retry_ queues the job again for them, for example after the server got more memory. A new version of the server tries them again by itself.
+
 ## Job processing order
 
 The below diagram shows the job run order for newly uploaded files

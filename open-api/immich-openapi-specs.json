@@ -1005,6 +1005,110 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/job-failures": {
+      "get": {
+        "description": "The files that a job (metadata, thumbnails, video, smart search, faces or text recognition) failed on in a row so often that it is no longer queued for them, with why it failed last",
+        "operationId": "getJobFailures",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobFailuresResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the files jobs failed on",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queueJob.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/job-failures/retry": {
+      "post": {
+        "description": "Queues the job again for the files it is no longer queued for, as after their cause was fixed",
+        "operationId": "retryJobFailures",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobFailureRetryDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobFailureRetryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retry the files a job failed on",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queueJob.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/machine-learning/faces/regroup/undo": {
       "post": {
         "description": "Puts the faces back with the people they had before the people were regrouped for a new face model, but for what users changed since",
@@ -24800,6 +24904,109 @@
         ],
         "type": "object"
       },
+      "JobFailureAssetDto": {
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "attempts": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "error": {
+            "description": "Why the last attempt failed; null when the server stopped while it ran",
+            "nullable": true,
+            "type": "string"
+          },
+          "failedAt": {
+            "type": "string"
+          },
+          "originalFileName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "attempts",
+          "error",
+          "failedAt",
+          "originalFileName"
+        ],
+        "type": "object"
+      },
+      "JobFailureRetryDto": {
+        "properties": {
+          "jobName": {
+            "$ref": "#/components/schemas/TrackedJobName"
+          }
+        },
+        "required": [
+          "jobName"
+        ],
+        "type": "object"
+      },
+      "JobFailureRetryResponseDto": {
+        "properties": {
+          "count": {
+            "description": "The files the job was queued for again",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "type": "object"
+      },
+      "JobFailuresDto": {
+        "properties": {
+          "assets": {
+            "description": "Those that failed last, at most 50",
+            "items": {
+              "$ref": "#/components/schemas/JobFailureAssetDto"
+            },
+            "type": "array"
+          },
+          "count": {
+            "description": "The files the job is no longer queued for",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "jobName": {
+            "$ref": "#/components/schemas/TrackedJobName"
+          }
+        },
+        "required": [
+          "assets",
+          "count",
+          "jobName"
+        ],
+        "type": "object"
+      },
+      "JobFailuresResponseDto": {
+        "properties": {
+          "attempts": {
+            "description": "Attempts in a row after which a job is no longer queued for a file",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobFailuresDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "attempts",
+          "jobs"
+        ],
+        "type": "object"
+      },
       "JobName": {
         "description": "Job name",
         "enum": [
@@ -36461,6 +36668,18 @@
           "mobius",
           "reinhard",
           "disabled"
+        ],
+        "type": "string"
+      },
+      "TrackedJobName": {
+        "description": "A job for a file: metadata, thumbnails, video, smart search, faces or text recognition",
+        "enum": [
+          "AssetExtractMetadata",
+          "AssetGenerateThumbnails",
+          "AssetEncodeVideo",
+          "SmartSearch",
+          "AssetDetectFaces",
+          "Ocr"
         ],
         "type": "string"
       },

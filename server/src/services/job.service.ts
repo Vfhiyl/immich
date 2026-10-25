@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { JobItem } from 'src/types.js';
+import { serverVersion } from 'src/constants.js';
 import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
@@ -7,6 +8,7 @@ import { AssetType, AssetVisibility, IntegrityReport, JobName, JobStatus, Manual
 import { ArgsOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
+import { getTrackedAssetId } from 'src/utils/job-failure.js';
 
 const asJobItem = (dto: JobCreateDto): JobItem => {
   switch (dto.name) {
@@ -83,19 +85,43 @@ export class JobService extends BaseService {
   }
 
   @OnEvent({ name: 'JobRun' })
+  /**
+   * Runs a job. A job that throws or returns `failed` fails in its queue too, where the jobs page counts it; a job for a
+   * file is tracked per asset, from before it starts (should the process stop meanwhile) until it finishes
+   */
   async onJobRun(...[queueName, job]: ArgsOf<'JobRun'>) {
+    const assetId = getTrackedAssetId(job);
+    let failure: Error | undefined;
     try {
       await this.eventRepository.emit('JobStart', queueName, job);
+      if (assetId) {
+        await this.jobFailureRepository.start(job.name, assetId, serverVersion.toString());
+      }
       const response = await this.jobRepository.run(job);
       await this.eventRepository.emit('JobSuccess', { job, response });
+      if (response === JobStatus.Failed) {
+        failure = new Error(`${job.name} failed, the server log tells why`);
+      } else if (assetId) {
+        await this.jobFailureRepository.finish(job.name, assetId);
+      }
       if (response && typeof response === 'string' && [JobStatus.Success, JobStatus.Skipped].includes(response)) {
         await this.onDone(job);
       }
     } catch (error: Error | any) {
+      failure = error instanceof Error ? error : new Error(String(error));
       await this.eventRepository.emit('JobError', { job, error });
     } finally {
       await this.eventRepository.emit('JobComplete', queueName, job);
     }
+
+    if (!failure) {
+      return;
+    }
+
+    if (assetId) {
+      await this.jobFailureRepository.fail(job.name, assetId, failure.message);
+    }
+    throw failure;
   }
 
   /**

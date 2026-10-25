@@ -4,12 +4,15 @@ import { ModuleRef, Reflector } from '@nestjs/core';
 import { JobsOptions, Queue, Worker } from 'bullmq';
 import { setTimeout } from 'node:timers/promises';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
+import { serverVersion } from 'src/constants.js';
 import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { ImmichWorker, JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { JobFailureRepository } from 'src/repositories/job-failure.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { getTrackedAssetId } from 'src/utils/job-failure.js';
 import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
 import { withStoragePurpose } from 'src/utils/storage-metering.js';
 
@@ -34,6 +37,7 @@ export class JobRepository {
     private configRepository: ConfigRepository,
     private eventRepository: EventRepository,
     private logger: LoggingRepository,
+    private jobFailureRepository: JobFailureRepository,
   ) {
     this.logger.setContext(JobRepository.name);
   }
@@ -217,6 +221,7 @@ export class JobRepository {
   }
 
   async queueAll(items: JobItem[]): Promise<void> {
+    items = await this.withoutHeldBack(items);
     if (items.length === 0) {
       return;
     }
@@ -252,6 +257,29 @@ export class JobRepository {
     return this.queueAll([item]);
   }
 
+  /** Leaves out the jobs for files they failed on again and again, until an admin retries them */
+  private async withoutHeldBack(items: JobItem[]) {
+    const byJob = new Map<JobName, string[]>();
+    for (const item of items) {
+      const assetId = getTrackedAssetId(item);
+      if (!assetId) {
+        continue;
+      }
+      const assetIds = byJob.get(item.name) ?? [];
+      assetIds.push(assetId);
+      byJob.set(item.name, assetIds);
+    }
+    const heldBack = new Set<string>();
+    for (const [jobName, assetIds] of byJob) {
+      for (const assetId of await this.jobFailureRepository.getHeldBack(jobName, assetIds, serverVersion.toString())) {
+        heldBack.add(`${jobName}/${assetId}`);
+      }
+    }
+    return heldBack.size === 0
+      ? items
+      : items.filter((item) => !heldBack.has(`${item.name}/${getTrackedAssetId(item)}`));
+  }
+
   async waitForQueueCompletion(...queues: QueueName[]): Promise<void> {
     const getPending = async () => {
       const results = await Promise.all(queues.map(async (name) => ({ pending: await this.isActive(name), name })));
@@ -277,14 +305,16 @@ export class JobRepository {
 
   private getJobOptions(item: JobItem): JobsOptions | null {
     switch (item.name) {
+      // a failed job would keep its id, and a job with the same id would not be queued until it is cleared
       case JobName.NotifyAlbumUpdate: {
         return {
           jobId: `${item.data.id}/${item.data.recipientId}`,
           delay: item.data?.delay,
+          removeOnFail: true,
         };
       }
       case JobName.StorageTemplateMigrationSingle: {
-        return { jobId: item.data.id };
+        return { jobId: item.data.id, removeOnFail: true };
       }
       case JobName.PersonGenerateThumbnail: {
         return { priority: 1 };

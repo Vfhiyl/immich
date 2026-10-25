@@ -1,4 +1,4 @@
-import { getMachineLearningModels, getQueues, getResourceCheck } from '@immich/sdk';
+import { getJobFailures, getMachineLearningModels, getQueues, getResourceCheck } from '@immich/sdk';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
 import type { PageLoad } from './$types';
@@ -6,11 +6,12 @@ import type { PageLoad } from './$types';
 export const load = (async ({ url }) => {
   await authenticate(url, { admin: true });
 
-  const [queues, models, resources] = await Promise.all([
+  const [queues, models, resources, failures] = await Promise.all([
     getQueues(),
     getMachineLearningModels(),
     // only shown when it can be read
     getResourceCheck().catch(() => null),
+    getJobFailures(),
   ]);
   const $t = await getFormatter();
 
@@ -18,6 +19,7 @@ export const load = (async ({ url }) => {
     queues,
     models,
     resources,
+    failures,
     meta: {
       title: $t('admin.queues'),
     },

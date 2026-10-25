@@ -25,6 +25,9 @@ import {
 } from 'src/enum.js';
 import { setDifference } from 'src/utils/set.js';
 
+/** How many failed jobs each queue keeps; the files that jobs fail on are kept in the database (`asset_job_failure`) */
+export const FAILED_JOBS_KEPT = 1000;
+
 export interface EnvData {
   host?: string;
   port: number;
@@ -301,7 +304,8 @@ const getEnv = (): EnvData => {
         defaultJobOptions: {
           attempts: 1,
           removeOnComplete: true,
-          removeOnFail: false,
+          // failed jobs are kept to be looked at, but not without end (each keeps its data and error in redis)
+          removeOnFail: { count: FAILED_JOBS_KEPT },
         },
       },
       queues: Object.values(QueueName).map((name) => ({ name })),

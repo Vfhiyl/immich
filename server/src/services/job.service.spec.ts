@@ -44,6 +44,56 @@ describe(JobService.name, () => {
       expect(mocks.logger.error).not.toHaveBeenCalled();
     });
 
+    it('should fail in its queue when a job throws', async () => {
+      const error = new Error('cannot decode');
+      mocks.job.run.mockRejectedValue(error);
+
+      const job: JobItem = { name: JobName.FileDelete, data: { files: ['path/to/file'] } };
+      await expect(sut.onJobRun(QueueName.BackgroundTask, job)).rejects.toBe(error);
+
+      expect(mocks.event.emit).toHaveBeenCalledWith('JobError', { job, error });
+      expect(mocks.event.emit).toHaveBeenCalledWith('JobComplete', QueueName.BackgroundTask, job);
+      expect(mocks.jobFailure.start).not.toHaveBeenCalled();
+    });
+
+    it('should track a job for a file from before it starts until it finishes', async () => {
+      mocks.job.run.mockResolvedValue(JobStatus.Success);
+      const job: JobItem = { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } };
+
+      await sut.onJobRun(QueueName.ThumbnailGeneration, job);
+
+      expect(mocks.jobFailure.start).toHaveBeenCalledWith(
+        JobName.AssetGenerateThumbnails,
+        'asset-1',
+        expect.any(String),
+      );
+      expect(mocks.jobFailure.finish).toHaveBeenCalledWith(JobName.AssetGenerateThumbnails, 'asset-1');
+      expect(mocks.jobFailure.fail).not.toHaveBeenCalled();
+      expect(mocks.jobFailure.start.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.job.run.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('should record why a job for a file failed', async () => {
+      mocks.job.run.mockRejectedValue(new Error('cannot decode'));
+      const job: JobItem = { name: JobName.AssetEncodeVideo, data: { id: 'asset-1' } };
+
+      await expect(sut.onJobRun(QueueName.VideoConversion, job)).rejects.toThrow('cannot decode');
+
+      expect(mocks.jobFailure.fail).toHaveBeenCalledWith(JobName.AssetEncodeVideo, 'asset-1', 'cannot decode');
+      expect(mocks.jobFailure.finish).not.toHaveBeenCalled();
+    });
+
+    it('should record a job for a file that returned failed', async () => {
+      mocks.job.run.mockResolvedValue(JobStatus.Failed);
+      const job: JobItem = { name: JobName.SmartSearch, data: { id: 'asset-1' } };
+
+      await expect(sut.onJobRun(QueueName.SmartSearch, job)).rejects.toThrow();
+
+      expect(mocks.jobFailure.fail).toHaveBeenCalledWith(JobName.SmartSearch, 'asset-1', expect.any(String));
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('JobError', expect.anything());
+    });
+
     it('should store a new database backup on the storage backend for backups', async () => {
       mocks.job.run.mockResolvedValue(JobStatus.Success);
 
@@ -133,7 +183,7 @@ describe(JobService.name, () => {
       it(`should not queue any jobs when ${item.name} fails`, async () => {
         mocks.job.run.mockResolvedValue(JobStatus.Failed);
 
-        await sut.onJobRun(QueueName.BackgroundTask, item);
+        await expect(sut.onJobRun(QueueName.BackgroundTask, item)).rejects.toThrow(`${item.name} failed`);
 
         expect(mocks.job.queueAll).not.toHaveBeenCalled();
       });

@@ -40,6 +40,7 @@ import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { FaceDecisionRepository } from 'src/repositories/face-decision.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import { JobFailureRepository } from 'src/repositories/job-failure.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -93,6 +94,7 @@ import { newAssetRepositoryMock } from 'test/repositories/asset.repository.mock.
 import { newConfigRepositoryMock } from 'test/repositories/config.repository.mock.js';
 import { newCryptoRepositoryMock } from 'test/repositories/crypto.repository.mock.js';
 import { newFaceDecisionRepositoryMock } from 'test/repositories/face-decision.repository.mock.js';
+import { newJobFailureRepositoryMock } from 'test/repositories/job-failure.repository.mock.js';
 import { newJobRepositoryMock } from 'test/repositories/job.repository.mock.js';
 import { newMediaRepositoryMock } from 'test/repositories/media.repository.mock.js';
 import { newMetadataRepositoryMock } from 'test/repositories/metadata.repository.mock.js';
@@ -300,6 +302,7 @@ export type ServiceOverrides = {
   storageUsage: StorageUsageRepository;
   machineLearningModel: MachineLearningModelRepository;
   faceDecision: FaceDecisionRepository;
+  jobFailure: JobFailureRepository;
   storage: StorageRepository;
   sync: SyncRepository;
   syncCheckpoint: SyncCheckpointRepository;
@@ -396,6 +399,7 @@ export const getMocks = () => {
     storageUsage: newStorageUsageRepositoryMock(),
     machineLearningModel: newMachineLearningModelRepositoryMock(),
     faceDecision: newFaceDecisionRepositoryMock(),
+    jobFailure: newJobFailureRepositoryMock(),
     storage: newStorageRepositoryMock(),
     sync: automock(SyncRepository),
     syncCheckpoint: automock(SyncCheckpointRepository),
@@ -478,6 +482,7 @@ export const newTestService = <T extends BaseService>(
     overrides.storageUsage || (mocks.storageUsage as As<StorageUsageRepository>),
     overrides.machineLearningModel || (mocks.machineLearningModel as As<MachineLearningModelRepository>),
     overrides.faceDecision || (mocks.faceDecision as As<FaceDecisionRepository>),
+    overrides.jobFailure || (mocks.jobFailure as As<JobFailureRepository>),
     overrides.storage || (mocks.storage as As<StorageRepository>),
     overrides.sync || (mocks.sync as As<SyncRepository>),
     overrides.syncCheckpoint || (mocks.syncCheckpoint as As<SyncCheckpointRepository>),
