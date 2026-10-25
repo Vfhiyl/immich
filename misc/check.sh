@@ -92,7 +92,7 @@ e2e_types() { cd "$e2e" && "$(bin "$e2e" tsc)" --noEmit; }
 docs_format() {
   cd "$repo/docs"
   "$(bin "$repo/docs" prettier)" --check docs/administration/storage-backends.md \
-    docs/administration/machine-learning-models.md
+    docs/administration/machine-learning-models.md docs/administration/jobs-workers.md
 }
 
 # the web app, against the SDK built from the generated client (see open_api)

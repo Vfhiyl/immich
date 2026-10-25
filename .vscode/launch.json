@@ -14,7 +14,7 @@
       "type": "node",
       "request": "attach",
       "restart": true,
-      "port": 9230,
+      "port": 9232,
       "name": "Immich Workers",
       "remoteRoot": "/usr/src/app/server",
       "localRoot": "${workspaceFolder}/server"

@@ -53,7 +53,7 @@ The Dev Container environment consists of the following services:
 
 | Service          | Container Name            | Description                                               | Ports                                                                   |
 | ---------------- | ------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Server & Web     | `immich-server`           | Runs both API server and web frontend in development mode | 2283 (API)<br/>3000 (Web)<br/>9230 (Workers Debug)<br/>9231 (API Debug) |
+| Server & Web     | `immich-server`           | Runs both API server and web frontend in development mode | 2283 (API)<br/>3000 (Web)<br/>9232 (Workers Debug)<br/>9231 (API Debug) |
 | Database         | `database`                | PostgreSQL database                                       | 5432                                                                    |
 | Cache            | `redis`                   | Valkey cache server                                       | 6379                                                                    |
 | Machine Learning | `immich-machine-learning` | Immich ML model inference server                          | 3003                                                                    |
@@ -215,7 +215,7 @@ When the Dev Container starts, it automatically:
 3. **Configures port forwarding**:
    - Web UI: http://localhost:3000 (opens automatically)
    - API: http://localhost:2283
-   - Debug ports: 9230 (workers), 9231 (API)
+   - Debug ports: 9232 (workers), 9231 (API)
 
 :::info
 The Dev Container setup replaces the `mise dev` command from the traditional setup. All services start automatically when you open the container.
@@ -293,7 +293,7 @@ The Dev Container is pre-configured for debugging:
 
 2. **Worker Debugging**:
    - Use "Attach to Workers" configuration
-   - Debug port: 9230
+   - Debug port: 9232
 
 3. **Web Debugging**:
    - Use browser DevTools

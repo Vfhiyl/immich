@@ -9,6 +9,8 @@ The `immich-server` container contains multiple workers:
 - `api`: responds to API requests for data and files for the web and mobile app.
 - `microservices`: handles most other work, such as thumbnail generation and video encoding, in the form of _jobs_. Simply put, a job is a request to process data in the background.
 
+Each worker runs in a process of its own. When the `microservices` worker crashes, for example because the server ran out of memory, the `api` worker goes on serving the web and mobile app, and the `microservices` worker starts again after a second, waiting twice as long after each crash in a row, up to a minute. On Linux the `microservices` worker raises its [OOM score](https://man7.org/linux/man-pages/man5/proc_pid_oom_score_adj.5.html) (`oom_score_adj` 500), which the programs it runs (ffmpeg, exiftool) inherit, so that when memory runs out the kernel stops background work rather than the `api` worker.
+
 ## Split workers
 
 If you prefer to throttle or distribute the workers, you can do this using the [environment variables](/install/environment-variables) to specify which container should pick up which tasks.

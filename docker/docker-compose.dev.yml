@@ -94,6 +94,7 @@ services:
     ports:
       - 9230:9230
       - 9231:9231
+      - 9232:9232
       - 2283:2283
     depends_on:
       immich-init:

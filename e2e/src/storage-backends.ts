@@ -522,6 +522,21 @@ export class ImmichServer {
     return this.output.join('');
   }
 
+  /** The process of a worker of the server (`api`, `microservices`, which name their processes so), if it runs */
+  async workerPid(name: string) {
+    const pids = this.process.pid ? await descendantsOf(this.process.pid) : [];
+    for (const pid of pids) {
+      try {
+        const commandLine = await readFile(`/proc/${pid}/cmdline`, 'utf8');
+        if (commandLine.startsWith(`immich-${name}`)) {
+          return pid;
+        }
+      } catch {
+        // the process ended meanwhile
+      }
+    }
+  }
+
   async stop() {
     // processes of the server in groups of their own (exiftool) are not stopped with its group, and would stay
     const descendants = this.process.pid ? await descendantsOf(this.process.pid) : [];

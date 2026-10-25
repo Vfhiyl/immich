@@ -1,5 +1,4 @@
 import { NestFactory } from '@nestjs/core';
-import { isMainThread } from 'node:worker_threads';
 import { MicroservicesModule } from 'src/app.module.js';
 import { serverVersion } from 'src/constants.js';
 import { WebSocketAdapter } from 'src/middleware/websocket.adapter.js';
@@ -8,8 +7,12 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { bootstrapTelemetry } from 'src/repositories/telemetry.repository.js';
 import { isStartUpError } from 'src/utils/misc.js';
+import { preferAsOomVictim } from 'src/utils/worker-restart.js';
 
-export async function bootstrap() {
+async function bootstrap() {
+  process.title = 'immich-microservices';
+  preferAsOomVictim();
+
   const { telemetry } = new ConfigRepository().getEnv();
   if (telemetry.metrics.size > 0) {
     bootstrapTelemetry(telemetry.microservicesPort);
@@ -31,11 +34,10 @@ export async function bootstrap() {
   logger.log(`Immich Microservices is running [v${serverVersion}] [${environment}] `);
 }
 
-if (!isMainThread) {
-  bootstrap().catch((error) => {
-    if (!isStartUpError(error)) {
-      console.error(error);
-    }
-    throw error;
-  });
-}
+bootstrap().catch((error) => {
+  if (!isStartUpError(error)) {
+    console.error(error);
+  }
+  // eslint-disable-next-line unicorn/no-process-exit
+  process.exit(1);
+});

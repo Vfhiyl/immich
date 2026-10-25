@@ -9,6 +9,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { type DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+import { WORKER_HEALTHY_AFTER_MS, getWorkerRestartDelay } from 'src/utils/worker-restart.js';
 
 /**
  * Manages worker lifecycle
@@ -25,9 +26,17 @@ class Workers {
   restarting = false;
 
   /**
+   * Crashes in a row of the background worker, and when it last started
+   */
+  private crashes = 0;
+  private startedAt = 0;
+  private restartTimer?: NodeJS.Timeout;
+
+  /**
    * Boot all enabled workers
    */
   async bootstrap() {
+    clearTimeout(this.restartTimer);
     const isMaintenanceMode = await this.isMaintenanceMode();
     const { workers } = new ConfigRepository().getEnv();
 
@@ -104,9 +113,11 @@ class Workers {
     let anyWorker: Worker | ChildProcess;
     let kill: (signal?: NodeJS.Signals) => Promise<void> | void;
 
-    if (name === ImmichWorker.Api) {
+    // the background work runs in a process of its own too: when it crashes or runs out of memory, the api goes on
+    if (name === ImmichWorker.Api || name === ImmichWorker.Microservices) {
+      const port = name === ImmichWorker.Api ? 9231 : 9232;
       const worker = fork(workerFile, [], {
-        execArgv: process.execArgv.map((arg) => (arg.startsWith('--inspect') ? '--inspect=0.0.0.0:9231' : arg)),
+        execArgv: process.execArgv.map((arg) => (arg.startsWith('--inspect') ? `--inspect=0.0.0.0:${port}` : arg)),
       });
 
       kill = (signal) => void worker.kill(signal);
@@ -123,6 +134,9 @@ class Workers {
     anyWorker.on('exit', (exitCode) => this.onExit(name, exitCode));
 
     this.workers[name] = { kill };
+    if (name === ImmichWorker.Microservices) {
+      this.startedAt = Date.now();
+    }
   }
 
   onError(name: ImmichWorker, error: Error) {
@@ -149,6 +163,15 @@ class Workers {
     // shutdown the entire process
     delete this.workers[name];
 
+    // start the background work again, waiting longer the more it crashes in a row
+    if (exitCode !== 0 && name === ImmichWorker.Microservices && Object.hasOwn(this.workers, ImmichWorker.Api)) {
+      this.crashes = Date.now() - this.startedAt >= WORKER_HEALTHY_AFTER_MS ? 1 : this.crashes + 1;
+      const delay = getWorkerRestartDelay(this.crashes);
+      console.error(`${name} worker exited with code ${exitCode}, starting it again in ${delay / 1000}s`);
+      this.restartTimer = setTimeout(() => this.startWorker(name), delay);
+      return;
+    }
+
     if (exitCode !== 0) {
       console.error(`${name} worker exited with code ${exitCode}`);
 
@@ -158,7 +181,7 @@ class Workers {
       }
     }
 
-    process.exit(exitCode);
+    process.exit(exitCode ?? 1);
   }
 }
 

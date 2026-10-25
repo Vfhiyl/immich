@@ -88,7 +88,7 @@
       "moby": false
     }
   },
-  "forwardPorts": [3000, 9231, 9230, 2283],
+  "forwardPorts": [3000, 9231, 9232, 2283],
   "portsAttributes": {
     "3000": {
       "label": "Immich - Frontend HTTP",
@@ -103,7 +103,7 @@
       "label": "Immich - API Server - DEBUG",
       "description": "The API server of the Immich project"
     },
-    "9230": {
+    "9232": {
       "label": "Immich - Workers - DEBUG",
       "description": "The workers of the Immich project"
     }
