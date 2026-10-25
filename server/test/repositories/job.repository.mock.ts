@@ -10,6 +10,7 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     teardown: vitest.fn(),
     run: vitest.fn(),
     setConcurrency: vitest.fn(),
+    refill: vitest.fn(),
     empty: vitest.fn(),
     pause: vitest.fn(),
     resume: vitest.fn(),

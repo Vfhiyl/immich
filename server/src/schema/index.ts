@@ -61,6 +61,7 @@ import { FaceUserAssignmentTable } from 'src/schema/tables/face-user-assignment.
 import { FaceUserRejectionTable } from 'src/schema/tables/face-user-rejection.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
+import { JobBacklogTable } from 'src/schema/tables/job-backlog.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { LoginCodeTable } from 'src/schema/tables/login-code.table.js';
 import { MemoryAssetAuditTable } from 'src/schema/tables/memory-asset-audit.table.js';
@@ -196,6 +197,7 @@ export class ImmichDatabase {
     FaceUserRejectionTable,
     FaceRegroupTable,
     AssetJobFailureTable,
+    JobBacklogTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
@@ -352,6 +354,7 @@ export interface DB {
   face_user_rejection: FaceUserRejectionTable;
   face_regroup: FaceRegroupTable;
   asset_job_failure: AssetJobFailureTable;
+  job_backlog: JobBacklogTable;
 
   system_metadata: SystemMetadataTable;
 

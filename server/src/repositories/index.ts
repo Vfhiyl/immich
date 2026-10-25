@@ -19,6 +19,7 @@ import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { FaceDecisionRepository } from 'src/repositories/face-decision.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import { JobBacklogRepository } from 'src/repositories/job-backlog.repository.js';
 import { JobFailureRepository } from 'src/repositories/job-failure.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
@@ -116,6 +117,7 @@ export const repositories = [
   MachineLearningModelRepository,
   FaceDecisionRepository,
   JobFailureRepository,
+  JobBacklogRepository,
   StorageRepository,
   SyncRepository,
   SyncCheckpointRepository,

@@ -58,6 +58,10 @@ Additionally, some jobs (such as memories generation) run on a schedule, which i
 Some jobs ([External Libraries](/features/libraries) scanning, Database Dump) are configured in their own sections in System Settings.
 :::
 
+## Queues
+
+Jobs wait in queues in Redis, but each queue keeps only 200 jobs waiting there. The rest of a large batch, such as a job for every file of the library after _All_ was pressed or the model of smart search changed, waits in the database, and comes into the queue as it runs low: Redis holds a window of each queue rather than the whole library in memory. The Jobs page counts the jobs waiting in the database as waiting too, and emptying a queue empties them as well.
+
 ## Failed jobs
 
 A job that fails is counted as failed on the Jobs page, and each queue keeps its last 1,000 failed jobs.

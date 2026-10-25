@@ -10,6 +10,7 @@ import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { ImmichWorker, JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { JobBacklogRepository } from 'src/repositories/job-backlog.repository.js';
 import { JobFailureRepository } from 'src/repositories/job-failure.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { getTrackedAssetId } from 'src/utils/job-failure.js';
@@ -25,12 +26,30 @@ type JobMapItem = {
 
 const WORKER_WATCH_INTERVAL_MS = 30_000;
 
+/**
+ * How many jobs a queue keeps waiting in redis. The rest of a large batch (a job for every asset of the library, say)
+ * waits in the database (`job_backlog`), and comes into the queue as it runs low: redis holds a window of each queue
+ * instead of the whole library, in memory
+ */
+export const JOB_WINDOW = 200;
+
+/** How often the queues are filled up from the backlog, besides as their jobs end */
+const REFILL_INTERVAL_MS = 5000;
+
+/** How often a queue is filled up at most as its jobs end */
+const REFILL_THROTTLE_MS = 1000;
+
+type QueuedJob = { name: JobName; data: unknown; opts: JobsOptions | undefined };
+
 @Injectable()
 export class JobRepository {
   private workers: Partial<Record<QueueName, Worker>> = {};
   private handlers: Partial<Record<JobName, JobMapItem>> = {};
   private workerWatcher?: ReturnType<typeof setInterval>;
   private microservicesPresent = true;
+  private refillTimer?: ReturnType<typeof setInterval>;
+  private refilledAt: Partial<Record<QueueName, number>> = {};
+  private refilling = new Set<QueueName>();
 
   constructor(
     private moduleRef: ModuleRef,
@@ -38,6 +57,7 @@ export class JobRepository {
     private eventRepository: EventRepository,
     private logger: LoggingRepository,
     private jobFailureRepository: JobFailureRepository,
+    private jobBacklogRepository: JobBacklogRepository,
   ) {
     this.logger.setContext(JobRepository.name);
   }
@@ -96,12 +116,17 @@ export class JobRepository {
     const { bull } = this.configRepository.getEnv();
     for (const queueName of Object.values(QueueName)) {
       this.logger.debug(`Starting worker for queue: ${queueName}`);
-      this.workers[queueName] = new Worker(
-        queueName,
-        (job) => this.eventRepository.emit('JobRun', queueName, job as JobItem),
-        { ...bull.config, concurrency: 1, name: ImmichWorker.Microservices },
-      );
+      const worker = new Worker(queueName, (job) => this.eventRepository.emit('JobRun', queueName, job as JobItem), {
+        ...bull.config,
+        concurrency: 1,
+        name: ImmichWorker.Microservices,
+      });
+      // the queue may run low
+      worker.on('completed', () => this.refillSoon(queueName));
+      worker.on('failed', () => this.refillSoon(queueName));
+      this.workers[queueName] = worker;
     }
+    this.refillTimer ??= setInterval(() => void this.refillAll(), REFILL_INTERVAL_MS);
   }
 
   watchWorkers() {
@@ -109,6 +134,8 @@ export class JobRepository {
   }
 
   teardown() {
+    clearInterval(this.refillTimer);
+    this.refillTimer = undefined;
     if (!this.workerWatcher) {
       return;
     }
@@ -194,8 +221,9 @@ export class JobRepository {
     return this.getQueue(name).resume();
   }
 
-  empty(name: QueueName) {
-    return this.getQueue(name).drain();
+  async empty(name: QueueName) {
+    await this.jobBacklogRepository.clear(name);
+    await this.getQueue(name).drain();
   }
 
   clear(name: QueueName, type: QueueCleanType) {
@@ -212,8 +240,10 @@ export class JobRepository {
       'paused',
       'prioritized',
     );
-    // jobs with a priority (those of a rebuild of a model) wait in a list of their own
-    return { ...counts, waiting: (counts.waiting ?? 0) + prioritized } as unknown as JobCounts;
+    // jobs with a priority (those of a rebuild of a model) wait in a list of their own, and the rest of a large batch
+    // in the database
+    const backlog = await this.jobBacklogRepository.count(name);
+    return { ...counts, waiting: (counts.waiting ?? 0) + prioritized + backlog } as unknown as JobCounts;
   }
 
   private getQueueName(name: JobName) {
@@ -227,18 +257,15 @@ export class JobRepository {
     }
 
     const promises = [];
-    const itemsByQueue = {} as Record<string, (JobItem & { data: any; options: JobsOptions | undefined })[]>;
+    const itemsByQueue = {} as Record<string, QueuedJob[]>;
     for (const item of items) {
       const queueName = this.getQueueName(item.name);
-      const job = {
-        name: item.name,
-        data: item.data || {},
-        options: this.getJobOptions(item) || undefined,
-      } as JobItem & { data: any; options: JobsOptions | undefined };
+      // addBulk() takes the options of a job as `opts`
+      const job: QueuedJob = { name: item.name, data: item.data || {}, opts: this.getJobOptions(item) || undefined };
 
-      if (job.options?.jobId || job.options?.deduplication) {
+      if (job.opts?.jobId || job.opts?.deduplication) {
         // need to use add() instead of addBulk() for jobId/deduplication to take effect
-        promises.push(this.getQueue(queueName).add(item.name, item.data, job.options));
+        promises.push(this.getQueue(queueName).add(item.name, item.data, job.opts));
       } else {
         itemsByQueue[queueName] ||= [];
         itemsByQueue[queueName].push(job);
@@ -246,11 +273,80 @@ export class JobRepository {
     }
 
     for (const [queueName, jobs] of Object.entries(itemsByQueue)) {
-      const queue = this.getQueue(queueName as QueueName);
-      promises.push(queue.addBulk(jobs));
+      promises.push(this.addWithinWindow(queueName as QueueName, jobs));
     }
 
     await Promise.all(promises);
+  }
+
+  /** Adds jobs to a queue as far as its window has room; the rest waits in the backlog */
+  private async addWithinWindow(queueName: QueueName, jobs: QueuedJob[]) {
+    const room = Math.max(JOB_WINDOW - (await this.getWaiting(queueName)), 0);
+    const now: QueuedJob[] = [];
+    const later: QueuedJob[] = [];
+    for (const job of jobs) {
+      // a delayed job waits in redis anyway
+      (now.length < room || job.opts?.delay ? now : later).push(job);
+    }
+    if (now.length > 0) {
+      await this.getQueue(queueName).addBulk(now);
+    }
+    await this.jobBacklogRepository.add(
+      queueName,
+      later.map(({ name, data, opts }) => ({ name, data, priority: opts?.priority ?? 0 })),
+    );
+  }
+
+  /** The jobs of a queue waiting in redis */
+  private async getWaiting(queueName: QueueName) {
+    const {
+      waiting = 0,
+      prioritized = 0,
+      paused = 0,
+    } = await this.getQueue(queueName).getJobCounts('waiting', 'prioritized', 'paused');
+    return waiting + prioritized + paused;
+  }
+
+  /** Fills a queue up from the backlog once it has less than half a window waiting; returns how many came */
+  async refill(queueName: QueueName): Promise<number> {
+    if (this.refilling.has(queueName)) {
+      return 0;
+    }
+    this.refilling.add(queueName);
+    this.refilledAt[queueName] = Date.now();
+    try {
+      if (!(await this.jobBacklogRepository.has(queueName))) {
+        return 0;
+      }
+      const waiting = await this.getWaiting(queueName);
+      if (waiting >= JOB_WINDOW / 2) {
+        return 0;
+      }
+      return await this.jobBacklogRepository.take(queueName, JOB_WINDOW - waiting, async (jobs) => {
+        await this.getQueue(queueName).addBulk(
+          jobs.map(({ name, data, priority }) => ({ name, data, opts: priority ? { priority } : undefined })),
+        );
+      });
+    } finally {
+      this.refilling.delete(queueName);
+    }
+  }
+
+  private refillSoon(queueName: QueueName) {
+    if (Date.now() - (this.refilledAt[queueName] ?? 0) < REFILL_THROTTLE_MS) {
+      return;
+    }
+    this.refill(queueName).catch((error) => this.logger.warn(`Unable to fill up queue ${queueName}: ${error}`));
+  }
+
+  private async refillAll() {
+    for (const queueName of Object.values(QueueName)) {
+      try {
+        await this.refill(queueName);
+      } catch (error) {
+        this.logger.warn(`Unable to fill up queue ${queueName}: ${error}`);
+      }
+    }
   }
 
   async queue(item: JobItem): Promise<void> {
