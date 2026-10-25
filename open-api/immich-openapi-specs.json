@@ -12525,6 +12525,66 @@
         "x-immich-state": "Stable"
       }
     },
+    "/people/{id}/reject": {
+      "post": {
+        "description": "The faces of the person in the given photos leave it, and are never given to it again by facial recognition, also after a change of the face model.",
+        "operationId": "rejectFacesOfPerson",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetIdsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Say the faces of a person in photos are not this person",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.reassign",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/people/{id}/statistics": {
       "get": {
         "description": "Retrieve statistics about a specific person.",

@@ -90,10 +90,9 @@ describe('decisions of users about faces', () => {
       .executeTakeFirst();
     expect(face?.personGroupId).toBeNull();
     await expect(decisions.getExcludedPeople(assetFace.id)).resolves.toEqual(new Set([person]));
-    expect(ctx.getMock(JobRepository).queue).toHaveBeenCalledWith({
-      name: JobName.FacialRecognition,
-      data: { id: assetFace.id, deferred: false },
-    });
+    expect(ctx.getMock(JobRepository).queueAll).toHaveBeenCalledWith([
+      { name: JobName.FacialRecognition, data: { id: assetFace.id, deferred: false } },
+    ]);
     await expect(sut.rejectFace(auth, assetFace.id)).rejects.toThrow('The face has no person');
   });
 
@@ -107,5 +106,38 @@ describe('decisions of users about faces', () => {
 
     await expect(decisions.getAssigned([assetFace.id])).resolves.toEqual(new Set([assetFace.id]));
     await expect(decisions.getExcludedPeople(assetFace.id)).resolves.toEqual(new Set([other]));
+  });
+
+  it('should take the faces of a person in many photos at once, and only those of this person', async () => {
+    const { sut, ctx, db, auth, user, newPerson, decisions } = await setup();
+    const [person, other] = [await newPerson('Someone'), await newPerson('Other')];
+    const { asset: first } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: second } = await ctx.newAsset({ ownerId: user.id });
+    const assets = [first, second];
+    const faces = [];
+    for (const asset of assets) {
+      const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person });
+      faces.push(assetFace.id);
+    }
+    const { assetFace: otherFace } = await ctx.newAssetFace({ assetId: assets[0].id, personGroupId: other });
+
+    await sut.rejectFacesOfPerson(auth, person, { assetIds: assets.map(({ id }) => id) });
+
+    const rows = await db
+      .selectFrom('asset_face')
+      .select(['id', 'personGroupId'])
+      .where('id', 'in', [...faces, otherFace.id])
+      .execute();
+    expect(Object.fromEntries(rows.map(({ id, personGroupId }) => [id, personGroupId]))).toEqual({
+      [faces[0]]: null,
+      [faces[1]]: null,
+      [otherFace.id]: other,
+    });
+    for (const face of faces) {
+      await expect(decisions.getExcludedPeople(face)).resolves.toContain(person);
+    }
+    expect(ctx.getMock(JobRepository).queueAll).toHaveBeenCalledWith(
+      faces.map((id) => ({ name: JobName.FacialRecognition, data: { id, deferred: false } })),
+    );
   });
 });

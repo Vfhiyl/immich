@@ -18,6 +18,7 @@ import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto.js';
+import { AssetIdsDto } from 'src/dtos/asset.dto.js';
 import {
   AssetFaceUpdateDto,
   MergePersonDto,
@@ -191,6 +192,19 @@ export class PersonController {
     @Body() dto: AssetFaceUpdateDto,
   ): Promise<PersonResponseDto[]> {
     return this.service.reassignFaces(auth, id, dto);
+  }
+
+  @Post(':id/reject')
+  @Authenticated({ permission: Permission.PersonReassign })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Say the faces of a person in photos are not this person',
+    description:
+      'The faces of the person in the given photos leave it, and are never given to it again by facial recognition, also after a change of the face model.',
+    history: new HistoryBuilder().added('v3.3.5').alpha('v3.3.5'),
+  })
+  rejectFacesOfPerson(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Body() dto: AssetIdsDto): Promise<void> {
+    return this.service.rejectFacesOfPerson(auth, id, dto);
   }
 
   @Post('merge')

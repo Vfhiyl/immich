@@ -35,7 +35,13 @@
   import { getPeopleThumbnailUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { normalizeSearchString } from '$lib/utils/string-utils';
-  import { AssetVisibility, searchPerson, updatePerson, type PersonResponseDto } from '@immich/sdk';
+  import {
+    AssetVisibility,
+    rejectFacesOfPerson,
+    searchPerson,
+    updatePerson,
+    type PersonResponseDto,
+  } from '@immich/sdk';
   import {
     ActionButton,
     CommandPaletteDefaultProvider,
@@ -49,6 +55,7 @@
   import {
     mdiAccountBoxOutline,
     mdiAccountMultipleCheckOutline,
+    mdiAccountRemove,
     mdiArrowLeft,
     mdiDotsVertical,
     mdiPencilOutline,
@@ -144,6 +151,27 @@
 
   const handleReassignAssets = () => {
     viewMode = PersonPageViewMode.UNASSIGN_ASSETS;
+  };
+
+  // the selected photos are not this person: facial recognition never adds them to it again
+  const handleRejectAssets = async () => {
+    const assetIds = assetMultiSelectManager.assets.map((asset) => asset.id);
+    const name = person.name || $t('this_person');
+    const confirmed = await modalManager.showDialog({
+      prompt: $t('not_this_person_confirm', { values: { count: assetIds.length, name } }),
+    });
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await rejectFacesOfPerson({ id: person.id, assetIdsDto: { assetIds } });
+      timelineManager.removeAssets(assetIds);
+      assetMultiSelectManager.clear();
+      await updateAssetCount();
+      toastManager.primary($t('not_this_person_count', { values: { count: assetIds.length, name } }));
+    } catch (error) {
+      handleError(error, $t('error_not_this_person'));
+    }
   };
 
   const handleMerge = async (person: PersonResponseDto) => {
@@ -492,6 +520,7 @@
           text={$t('fix_incorrect_match')}
           onClick={handleReassignAssets}
         />
+        <MenuOption icon={mdiAccountRemove} text={$t('not_this_person')} onClick={handleRejectAssets} />
         <ChangeDate menuItem />
         <ChangeDescription menuItem />
         <ChangeLocation menuItem />

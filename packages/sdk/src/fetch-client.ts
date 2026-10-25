@@ -2610,6 +2610,10 @@ export type AssetFaceUpdateDto = {
     /** Face update items */
     data: AssetFaceUpdateItem[];
 };
+export type AssetIdsDto = {
+    /** Asset IDs */
+    assetIds: string[];
+};
 export type PersonStatisticsResponseDto = {
     /** Number of assets */
     assets: number;
@@ -3533,10 +3537,6 @@ export type SharedLinkEditDto = {
     showMetadata?: boolean;
     /** Custom URL slug */
     slug?: string | null;
-};
-export type AssetIdsDto = {
-    /** Asset IDs */
-    assetIds: string[];
 };
 export type AssetIdsResponseDto = {
     /** Asset ID */
@@ -7276,6 +7276,19 @@ export function reassignFaces({ id, assetFaceUpdateDto }: {
         ...opts,
         method: "PUT",
         body: assetFaceUpdateDto
+    })));
+}
+/**
+ * Say the faces of a person in photos are not this person
+ */
+export function rejectFacesOfPerson({ id, assetIdsDto }: {
+    id: string;
+    assetIdsDto: AssetIdsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/people/${encodeURIComponent(id)}/reject`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetIdsDto
     })));
 }
 /**

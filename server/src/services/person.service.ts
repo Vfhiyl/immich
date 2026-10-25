@@ -4,6 +4,7 @@ import { isUndefined, omitBy } from 'lodash-es';
 import type { JobItem, JobOf } from 'src/types.js';
 import { Chunked, OnJob } from 'src/decorators.js';
 import { BulkIdErrorReason, BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto.js';
+import { AssetIdsDto } from 'src/dtos/asset.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import {
@@ -173,12 +174,56 @@ export class PersonService extends BaseService {
       throw new BadRequestException('The face has no person');
     }
 
-    await this.faceDecisionRepository.unassign(face.id, face.personGroupId, auth.user.id);
-    if (face.person && face.person.faceAssetId === face.id) {
-      await this.createNewFeaturePhoto([face.person]);
+    await this.rejectFaces(auth, [face]);
+  }
+
+  /** The user says the faces of a person in some photos are not this person (as `rejectFace`, for many at once) */
+  async rejectFacesOfPerson(auth: AuthDto, personGroupId: string, { assetIds }: AssetIdsDto): Promise<void> {
+    await this.requirePersonAccess({
+      auth,
+      permission: Permission.PersonUpdate,
+      ids: [{ personGroupId, ownerId: auth.user.id }],
+    });
+    const faces = await this.personRepository.getFacesByIds(
+      assetIds.map((assetId) => ({ personGroupId, assetId })),
+      { viewingUserId: auth.user.id },
+    );
+    const allowed = await this.checkAccess({
+      auth,
+      permission: Permission.PersonCreate,
+      ids: faces.map(({ id }) => id),
+    });
+    await this.rejectFaces(
+      auth,
+      faces.filter(({ id }) => allowed.has(id)),
+    );
+  }
+
+  private async rejectFaces(
+    auth: AuthDto,
+    faces: Array<{
+      id: string;
+      personGroupId: string | null;
+      person?: (PersonId & { faceAssetId: string | null }) | null;
+    }>,
+  ) {
+    const changeFeaturePhoto = new Map<string, PersonId>();
+    for (const face of faces) {
+      if (!face.personGroupId) {
+        continue;
+      }
+      await this.faceDecisionRepository.unassign(face.id, face.personGroupId, auth.user.id);
+      if (face.person && face.person.faceAssetId === face.id) {
+        changeFeaturePhoto.set(personKey(face.person), face.person);
+      }
+    }
+    if (changeFeaturePhoto.size > 0) {
+      await this.createNewFeaturePhoto(changeFeaturePhoto.values().toArray());
     }
     // perhaps someone else
-    await this.jobRepository.queue({ name: JobName.FacialRecognition, data: { id: face.id, deferred: false } });
+    await this.jobRepository.queueAll(
+      faces.map(({ id }) => ({ name: JobName.FacialRecognition, data: { id, deferred: false } })),
+    );
   }
 
   async getFacesById(auth: AuthDto, dto: FaceDto): Promise<AssetFaceResponseDto[]> {

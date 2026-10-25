@@ -77,4 +77,29 @@ describe('decisions of users about faces', () => {
     expect(rejected.map(({ personGroupId }) => personGroupId)).toContain(personId);
     await expect(api.json(`/faces/${face.id}/reject`, { method: 'POST' })).resolves.toMatchObject({ status: 400 });
   });
+
+  it('should take the faces of a person in many photos at once', async () => {
+    const personId = await newPerson('Many');
+    const { id: other } = await api.upload(photoPath, Buffer.concat([await readFile(photoPath), Buffer.from('other')]));
+    for (const id of [assetId, other]) {
+      await api.json('/faces', {
+        method: 'POST',
+        body: { assetId: id, personId, imageWidth: 100, imageHeight: 100, x: 50, y: 50, width: 20, height: 20 },
+      });
+    }
+
+    const { status } = await api.json(`/people/${personId}/reject`, {
+      method: 'POST',
+      body: { assetIds: [assetId, other] },
+    });
+
+    expect(status).toBe(204);
+    const { body } = await api.json<{ assets: number }>(`/people/${personId}/statistics`);
+    expect(body.assets).toBe(0);
+    const rejected = await environment.query<{ count: number }>(
+      'select count(*)::int as count from face_user_rejection where "personGroupId" = $1',
+      [personId],
+    );
+    expect(rejected).toEqual([{ count: 2 }]);
+  });
 });
