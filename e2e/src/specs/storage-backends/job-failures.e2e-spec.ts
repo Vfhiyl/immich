@@ -27,8 +27,20 @@ describe('files that jobs fail on', () => {
     );
     return rows[0]?.attempts;
   };
-  const queueMissingThumbnails = () =>
-    api.json('/jobs/thumbnailGeneration', { method: 'PUT', body: { command: 'start', force: false } });
+  // a queue that runs takes no command to start
+  const queueMissingThumbnails = async () => {
+    await eventually(async () => {
+      const { body } = await api.json<{ statistics: { active: number; waiting: number } }>(
+        '/queues/thumbnailGeneration',
+      );
+      expect(body.statistics).toMatchObject({ active: 0, waiting: 0 });
+    });
+    const { status } = await api.json('/jobs/thumbnailGeneration', {
+      method: 'PUT',
+      body: { command: 'start', force: false },
+    });
+    expect(status).toBe(200);
+  };
 
   beforeAll(async () => {
     environment = await TestEnvironment.create();
