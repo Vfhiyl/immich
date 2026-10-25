@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/person.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
+import 'package:immich_mobile/presentation/actions/action.widget.dart';
+import 'package:immich_mobile/presentation/actions/person_faces.action.dart';
+import 'package:immich_mobile/presentation/widgets/bottom_sheet/general_bottom_sheet.widget.dart';
 import 'package:immich_mobile/presentation/widgets/people/person_option_sheet.widget.dart';
 import 'package:immich_mobile/presentation/widgets/timeline/timeline.widget.dart';
 import 'package:immich_mobile/providers/infrastructure/timeline.provider.dart';
@@ -89,6 +92,17 @@ class _PersonPageState extends ConsumerState<PersonPage> {
         }),
       ],
       child: Timeline(
+        bottomSheet: GeneralBottomSheet(
+          minChildSize: 0.23,
+          extraActions: [
+            ActionColumnButton(
+              action: MoveToPersonAction(source: .timeline, person: _person),
+            ),
+            ActionColumnButton(
+              action: NotThisPersonAction(source: .timeline, person: _person),
+            ),
+          ],
+        ),
         appBar: PersonSliverAppBar(
           person: _person,
           onNameTap: () => handleEditName(context),

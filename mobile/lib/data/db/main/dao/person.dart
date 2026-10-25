@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:immich_mobile/data/db/main/dao/person.drift.dart';
 import 'package:immich_mobile/data/db/main/database.dart';
+import 'package:immich_mobile/data/db/main/table/people/asset_face.drift.dart';
 import 'package:immich_mobile/data/db/main/table/people/person.drift.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/person.model.dart';
@@ -73,6 +74,32 @@ class PeopleDatabaseRepository extends DatabaseAccessor<Drift> with $PeopleDatab
     final query = _db.update(_db.personEntity)..where((row) => row.id.equals(personId));
 
     return query.write(PersonEntityCompanion(name: Value(name), updatedAt: Value(DateTime.now())));
+  }
+
+  /// The faces of [fromPersonId] in [assetIds] belong to [toPersonId] now, or to nobody
+  Future<int> moveFaces(String fromPersonId, String? toPersonId, List<String> assetIds) {
+    final query = _db.update(_db.assetFaceEntity)
+      ..where((row) => row.personId.equals(fromPersonId) & row.assetId.isIn(assetIds));
+
+    return query.write(AssetFaceEntityCompanion(personId: Value(toPersonId)));
+  }
+
+  /// A person created here, until the sync brings it with everything the server knows
+  Future<void> insertPerson(Person person, {required String ownerId}) {
+    return _db
+        .into(_db.personEntity)
+        .insertOnConflictUpdate(
+          PersonEntityCompanion.insert(
+            id: person.id,
+            ownerId: ownerId,
+            name: person.name,
+            isFavorite: false,
+            isHidden: false,
+            color: const Value(null),
+            birthDate: Value(person.birthDate),
+            faceAssetId: const Value(null),
+          ),
+        );
   }
 
   Future<int> updateBirthday(String personId, DateTime birthday) {

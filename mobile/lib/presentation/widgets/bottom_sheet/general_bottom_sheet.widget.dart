@@ -25,7 +25,11 @@ import 'package:immich_mobile/widgets/common/immich_toast.dart';
 
 class GeneralBottomSheet extends ConsumerStatefulWidget {
   final double? minChildSize;
-  const GeneralBottomSheet({super.key, this.minChildSize});
+
+  /// Actions of the page, after the general ones (e.g. those of a person on its page)
+  final List<ActionColumnButton> extraActions;
+
+  const GeneralBottomSheet({super.key, this.minChildSize, this.extraActions = const []});
 
   @override
   ConsumerState<GeneralBottomSheet> createState() => _GeneralBottomSheetState();
@@ -91,6 +95,7 @@ class _GeneralBottomSheetState extends ConsumerState<GeneralBottomSheet> {
         const .new(action: StackAction(source: .timeline)),
         const .new(action: CleanupLocalAction(source: .timeline)),
         const .new(action: UploadAction(source: .timeline)),
+        ...widget.extraActions,
       ],
       slivers: [
         const AddToAlbumHeader(),

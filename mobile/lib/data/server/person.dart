@@ -21,6 +21,24 @@ class PersonApiRepository extends ApiRepository {
     return _toPerson(response);
   }
 
+  /// The faces of the person in the photos are not this person: they leave it, and facial recognition never gives
+  /// them to it again
+  Future<void> rejectFaces(String personId, List<String> assetIds) =>
+      _api.rejectFacesOfPerson(personId, AssetIdsDto(assetIds: assetIds));
+
+  /// The faces of the person in the photos are another person
+  Future<void> moveFaces(String fromPersonId, String toPersonId, List<String> assetIds) => _api.reassignFaces(
+    toPersonId,
+    AssetFaceUpdateDto(
+      data: [for (final assetId in assetIds) AssetFaceUpdateItem(assetId: assetId, personId: fromPersonId)],
+    ),
+  );
+
+  Future<Person> create(String name) async {
+    final response = await checkNull(_api.createPerson(PersonCreateDto(name: Optional.present(name))));
+    return _toPerson(response);
+  }
+
   static Person _toPerson(PersonResponseDto dto) =>
       .new(birthDate: dto.birthDate, id: dto.id, name: dto.name, updatedAt: dto.updatedAt.orElse(null));
 }

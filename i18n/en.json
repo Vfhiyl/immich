@@ -1333,6 +1333,7 @@
   "external_network_sheet_info": "When not on the preferred Wi-Fi network, the app will connect to the server through the first of the below URLs it can reach, starting from top to bottom",
   "f_number": "F-Number",
   "face_unassigned": "Unassigned",
+  "faces_moved_to_person": "{count, plural, one {# photo} other {# photos}} moved to {name}",
   "failed": "Failed",
   "failed_count": "Failed: {count}",
   "failed_to_authenticate": "Failed to authenticate",

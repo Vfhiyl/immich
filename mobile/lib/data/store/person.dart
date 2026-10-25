@@ -5,6 +5,7 @@ import 'package:immich_mobile/data/store/user_metadata.dart';
 import 'package:immich_mobile/data/store/util/cache.dart';
 import 'package:immich_mobile/domain/models/person.model.dart';
 import 'package:immich_mobile/providers/infrastructure/db.provider.dart';
+import 'package:immich_mobile/providers/user.provider.dart';
 
 /// People representing collections of faces and assets
 ///
@@ -55,6 +56,30 @@ class PersonMutations extends StoreMutations {
   Future<int> updateName(String personId, String name) async {
     await read(personApiRepositoryProvider).update(personId, name: name);
     return read(_peopleDb).updateName(personId, name);
+  }
+
+  /// The faces of [personId] in [assetIds] are not this person: they leave it for good (facial recognition never gives
+  /// them to it again)
+  Future<int> rejectFaces(String personId, List<String> assetIds) async {
+    await read(personApiRepositoryProvider).rejectFaces(personId, assetIds);
+    return read(_peopleDb).moveFaces(personId, null, assetIds);
+  }
+
+  /// The faces of [fromPersonId] in [assetIds] are [toPersonId], which keeps them
+  Future<int> moveFaces(String fromPersonId, String toPersonId, List<String> assetIds) async {
+    await read(personApiRepositoryProvider).moveFaces(fromPersonId, toPersonId, assetIds);
+    return read(_peopleDb).moveFaces(fromPersonId, toPersonId, assetIds);
+  }
+
+  /// The faces of [fromPersonId] in [assetIds] are someone new, called [name]
+  Future<Person> moveFacesToNewPerson(String fromPersonId, String name, List<String> assetIds) async {
+    final person = await read(personApiRepositoryProvider).create(name);
+    final ownerId = read(currentUserProvider)?.id;
+    if (ownerId != null) {
+      await read(_peopleDb).insertPerson(person, ownerId: ownerId);
+    }
+    await moveFaces(fromPersonId, person.id, assetIds);
+    return person;
   }
 
   /// Update a person's birthday
