@@ -20,6 +20,7 @@ import { DatabaseLock, ImmichWorker, JobName, QueueName, TranscodeTarget } from 
 import { BaseService } from 'src/services/base.service.js';
 import { isVideoStreamSessionPkConstraint } from 'src/utils/database.js';
 import { BaseConfig } from 'src/utils/media.js';
+import { OutputTail } from 'src/utils/output-tail.js';
 
 type Session = {
   assetId: string;
@@ -266,7 +267,7 @@ export class TranscodingService extends BaseService {
   }
 
   private attachProcessHandlers(process: ChildProcess, session: Session, variantIndex: number) {
-    let stderr = '';
+    const stderr = new OutputTail();
     const variantDir = StorageCore.getHlsVariantFolder({
       ownerId: session.ownerId,
       sessionId: session.id,
@@ -307,7 +308,7 @@ export class TranscodingService extends BaseService {
       if (session.process !== process) {
         return;
       }
-      stderr += chunk.toString();
+      stderr.push(chunk);
     });
 
     process.on('exit', (code) => {
@@ -324,7 +325,7 @@ export class TranscodingService extends BaseService {
       }
 
       this.logger.error(
-        `FFmpeg exited with code ${code} for variant ${variantIndex} asset ${session.assetId}\n${stderr}`,
+        `FFmpeg exited with code ${code} for variant ${variantIndex} asset ${session.assetId}\n${stderr.toString()}`,
       );
       void this.failSession(session, `Transcoding process exited unexpectedly with code ${code}`).catch((error) =>
         this.logger.error(`Failed to end session ${session.id} after ffmpeg exit: ${error}`),

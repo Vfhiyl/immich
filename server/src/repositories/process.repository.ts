@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { SpawnOptionsWithoutStdio, fork, spawn } from 'node:child_process';
 import { Duplex } from 'node:stream';
+import { OutputTail } from 'src/utils/output-tail.js';
 
 @Injectable()
 export class ProcessRepository {
@@ -93,8 +94,8 @@ export class ProcessRepository {
       }
     });
 
-    let stderr = '';
-    process.stderr.on('data', (chunk) => (stderr += chunk));
+    const stderr = new OutputTail();
+    process.stderr.on('data', (chunk) => stderr.push(chunk));
 
     process.on('exit', (code) => {
       console.info(`${command} exited (${code})`);

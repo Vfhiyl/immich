@@ -38,6 +38,7 @@ import {
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+import { OutputTail } from 'src/utils/output-tail.js';
 import { createAffineMatrix } from 'src/utils/transform.js';
 
 const probe = (input: string, options: string[]): Promise<FfprobeData> =>
@@ -357,10 +358,10 @@ export class MediaRepository {
       keyframeOwnDuration.push(duration);
     };
 
-    let stderr = '';
+    const stderr = new OutputTail();
     let remainder = '';
     ffprobe.stderr.setEncoding('utf8');
-    ffprobe.stderr.on('data', (chunk: string) => (stderr += chunk));
+    ffprobe.stderr.on('data', (chunk: string) => stderr.push(chunk));
     ffprobe.stdout.setEncoding('utf8');
     ffprobe.stdout.on('data', (chunk: string) => {
       const lines = chunk.split('\n');
@@ -375,7 +376,7 @@ export class MediaRepository {
       ffprobe.on('error', reject);
       ffprobe.on('close', (code) => {
         if (code !== 0) {
-          return reject(new Error(`ffprobe exited with code ${code}: ${stderr.trim()}`));
+          return reject(new Error(`ffprobe exited with code ${code}: ${stderr.toString().trim()}`));
         }
         parseLine(remainder);
         if (postDiscard.length === 0) {
