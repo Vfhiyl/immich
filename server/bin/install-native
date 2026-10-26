@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Installs the native libraries Immich builds itself (native/build.sh in Immich's repository): sharp's module, with
+# Immich's libvips and every library it uses linked in, and immich-thumbnail. Nothing of the machine is used but glibc.
+#
+# Usage: install-native DIRECTORY|ARCHIVE [ROOT]
+#   DIRECTORY  the output of native/build.sh
+#   ARCHIVE    a release of Immich's native libraries (immich-native-*-linux-x64.tar.gz), whose SHA-256 you checked
+#   ROOT       where the packages are installed (default: the server): every sharp in its node_modules gets the module
+#              (in the repository, the web app uses sharp too, when it is built); the server gets immich-thumbnail
+set -euo pipefail
+
+SERVER="$(cd "$(dirname "$0")/.." && pwd)"
+SOURCE="${1:?Usage: install-native DIRECTORY|ARCHIVE [ROOT] (see native/README.md)}"
+ROOT="$(cd "${2:-$SERVER}" && pwd)"
+# in the repository, the packages are installed at its root
+if [[ ! -d "$ROOT/node_modules/.pnpm" && -e "$ROOT/node_modules/sharp" ]]; then
+  ROOT="$(realpath "$ROOT/node_modules/sharp")"
+  ROOT="${ROOT%%/node_modules/.pnpm/*}"
+fi
+
+if [[ -f "$SOURCE" ]]; then
+  unpacked="$(mktemp -d)"
+  trap 'rm -rf "${unpacked:?}"' EXIT
+  tar -xzf "$SOURCE" -C "$unpacked"
+  SOURCE="$unpacked"
+fi
+for file in lib/sharp-linux-x64.node bin/immich-thumbnail versions.json; do
+  [[ -f "$SOURCE/$file" ]] || { echo "$SOURCE has no $file" >&2; exit 1; }
+done
+
+if [[ "$(uname -sm)" != "Linux x86_64" ]]; then
+  echo "Immich's native libraries are built for Linux x64 only" >&2
+  exit 1
+fi
+
+built="$(node -p "require(process.argv[1]).sharp" "$SOURCE/versions.json")"
+install -D -m 755 "$SOURCE/bin/immich-thumbnail" "$SERVER/native/bin/immich-thumbnail"
+
+# Whether the sharp in $1 loads the module, and it is ours
+check_sharp() {
+  node --input-type=commonjs -e "
+    const sharp = require(process.argv[1]);
+    const expected = require(process.argv[2]);
+    if (sharp.versions.vips !== expected.vips || !sharp.format.heif.input.fileSuffix.includes('.heic')) {
+      throw new Error(process.argv[1] + ' does not use the libvips that was installed');
+    }
+  " "$1" "$SOURCE/versions.json"
+}
+
+# the module goes where sharp loads a module built from source (patched to load nothing else), into every copy of sharp
+# (pnpm keeps one per set of peer dependencies), which must be the version it was built for
+installed=0
+while IFS= read -r -d '' sharp; do
+  # (pnpm may leave copies of other installs behind, which nothing uses)
+  grep -q "Immich" "$sharp/dist/sharp.mjs" || continue
+  version="$(node -p "require(process.argv[1]).version" "$sharp/package.json")"
+  if [[ "$version" != "$built" ]]; then
+    echo "$sharp is sharp $version, but the native libraries were built for sharp $built" >&2
+    exit 1
+  fi
+  install -D -m 644 "$SOURCE/lib/sharp-linux-x64.node" "$sharp/src/build/Release/sharp-linux-x64-$version.node"
+  install -m 644 "$SOURCE/versions.json" "$sharp/src/build/Release/versions.json"
+  check_sharp "$sharp"
+  installed=$((installed + 1))
+done < <(find "$ROOT/node_modules/.pnpm" -mindepth 3 -maxdepth 3 -path '*/node_modules/sharp' -type d -print0 2>/dev/null)
+
+if [[ $installed == 0 ]]; then
+  echo "No sharp in $ROOT/node_modules (install the dependencies first)" >&2
+  exit 1
+fi
+echo "Installed Immich's native libraries (libvips $(node -p "require(process.argv[1]).vips" "$SOURCE/versions.json"), sharp $built) for $installed copies of sharp"

@@ -12,6 +12,16 @@ RUN npm install --global corepack@latest && \
 WORKDIR /usr/src/app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
+# sharp is patched to load only the module built with our libvips (see native/README.md)
+COPY native/patches/sharp ./native/patches/sharp/
+
+# the release of native/ named in native/release.txt, checked by its SHA-256 (see native/README.md)
+FROM builder AS native
+
+COPY native/release.txt ./native/release.txt
+RUN set -- $(grep -v "^#" native/release.txt) && mkdir -p /output && \
+  wget --quiet --output-document=/output/immich-native.tar.gz "$1" && \
+  echo "$2  /output/immich-native.tar.gz" | sha256sum --check
 
 FROM builder AS sdk
 
@@ -38,13 +48,18 @@ COPY ./server ./server/
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   pnpm --filter immich build && \
   pnpm --filter immich --prod --no-optional deploy /output/server-pruned
-RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
-  SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm --config.verify-deps-before-run=false --dir /output/server-pruned/node_modules/sharp exec npm run build
+# sharp's module with our libvips, and immich-thumbnail (the libvips of the base image is not used)
+COPY --from=native /output/immich-native.tar.gz /tmp/immich-native.tar.gz
+RUN /output/server-pruned/bin/install-native /tmp/immich-native.tar.gz && rm /tmp/immich-native.tar.gz
 
 FROM sdk AS web
 
 COPY ./web/package.json ./web/package.json
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter immich-web install --frozen-lockfile
+# the web app is built with sharp too (its images), which loads only the module with our libvips
+COPY --from=native /output/immich-native.tar.gz /tmp/immich-native.tar.gz
+COPY ./server/bin/install-native /tmp/install-native/bin/install-native
+RUN /tmp/install-native/bin/install-native /tmp/immich-native.tar.gz /usr/src/app
 
 COPY ./i18n ./i18n/
 COPY ./web ./web/

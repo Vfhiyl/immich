@@ -37,3 +37,4 @@ server/src/queries
 server/www/
 
 web/.svelte-kit
+server/native/

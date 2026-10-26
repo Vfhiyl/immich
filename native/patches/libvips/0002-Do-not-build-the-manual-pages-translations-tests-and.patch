@@ -1,0 +1,24 @@
+From b666b2e1269989244d2bda0edf894a324e0d91ca Mon Sep 17 00:00:00 2001
+From: Vfhiyl <VfhiyL@proton.me>
+Date: Tue, 27 Oct 2026 01:35:50 +0800
+Subject: [PATCH 2/4] Do not build the manual pages, translations, tests and
+ fuzzers
+
+They are not shipped. The tools are kept: vips and vipsheader are handy to look into an image with the library we ship.
+---
+ meson.build | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index 1400f85..c559153 100644
+--- a/meson.build
++++ b/meson.build
+@@ -776,8 +776,4 @@ if get_option('cplusplus')
+ endif
+ 
+ # these lines removed by a regexp for oss-fuzz builds, don't touch!
+-subdir('man')
+-subdir('po')
+ subdir('tools')
+-subdir('test')
+-subdir('fuzz')

@@ -1,12 +1,15 @@
 import { mkdtempDisposableSync, statSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import sharp from 'sharp';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { Colorspace, ImageFormat } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { automock } from 'test/utils.js';
+
+const testAssets = join(dirname(import.meta.filename), '../../../e2e/test-assets/formats');
 
 const getPixelColor = async (buffer: Buffer, x: number, y: number) => {
   const metadata = await sharp(buffer).metadata();
@@ -336,6 +339,65 @@ describe(MediaRepository.name, () => {
       );
 
       expect(statSync(file).blksize).toBeGreaterThan(0);
+    });
+  });
+
+  // photos made smaller are read by immich-thumbnail (native/thumbnail), in one pass; the image must be the one sharp
+  // makes in two (decode, then resize in linear light), but for the rounding of a few pixels
+  describe('decodeImage, made smaller', () => {
+    const cases = [
+      { file: 'heic/IMG_2682.heic', colorspace: Colorspace.P3, size: 1440 },
+      { file: 'motionphoto/samsung-one-ui-6.heic', colorspace: Colorspace.P3, size: 1440 },
+      { file: 'motionphoto/pixel-8a.jpg', colorspace: Colorspace.P3, size: 1440 },
+      { file: 'avif/10bit-HDR-P3-nclx.avif', colorspace: Colorspace.P3, size: 1440 },
+      { file: 'webp/denali.webp', colorspace: Colorspace.Srgb, size: 250 },
+      { file: 'jpg/el_torcal_rocks.jpg', colorspace: Colorspace.Srgb, size: 1440 },
+    ];
+
+    for (const { file, colorspace, size } of cases) {
+      it(`should read ${file} as sharp does`, async () => {
+        const path = join(testAssets, file);
+        const options = { colorspace, processInvalidImages: false, size };
+
+        const smaller = await sut.decodeImage(path, options);
+        // from memory, sharp reads it
+        const expected = await sut.decodeImage(await readFile(path), options);
+
+        expect(smaller.info).toEqual({
+          width: expected.info.width,
+          height: expected.info.height,
+          channels: expected.info.channels,
+        });
+        let total = 0;
+        let max = 0;
+        for (let index = 0; index < smaller.data.length; index++) {
+          const difference = Math.abs(smaller.data[index] - expected.data[index]);
+          total += difference;
+          max = Math.max(max, difference);
+        }
+        expect(total / smaller.data.length).toBeLessThan(0.5);
+        expect(max).toBeLessThanOrEqual(5);
+      });
+    }
+
+    it('should not make a photo larger than it is', async () => {
+      const smaller = await sut.decodeImage(join(testAssets, 'jpg/el_torcal_rocks.jpg'), {
+        colorspace: Colorspace.Srgb,
+        processInvalidImages: false,
+        size: 1440,
+      });
+
+      expect(smaller.info).toEqual({ width: 512, height: 341, channels: 3 });
+    });
+
+    it('should fail on a file that is no image', async () => {
+      const dir = mkdtempDisposableSync(join(tmpdir(), 'media-repository-'));
+      const file = join(dir.path, 'broken.jpg');
+      await writeFile(file, Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]));
+
+      await expect(
+        sut.decodeImage(file, { colorspace: Colorspace.Srgb, processInvalidImages: false, size: 250 }),
+      ).rejects.toThrow(/immich-thumbnail exited with 1: immich-thumbnail: cannot/);
     });
   });
 });

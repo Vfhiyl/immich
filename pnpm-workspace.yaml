@@ -30,7 +30,35 @@ allowBuilds:
   unrs-resolver: false
 overrides:
   canvas: 3.2.3
-  sharp: ^0.35.3
+  sharp: 0.35.5
+  # sharp's module is built with Immich's own libvips (native/); the prebuilt modules, with libvips of their own, are not
+  # installed
+  '@img/sharp-darwin-arm64': '-'
+  '@img/sharp-darwin-x64': '-'
+  '@img/sharp-freebsd-wasm32': '-'
+  '@img/sharp-linux-arm': '-'
+  '@img/sharp-linux-arm64': '-'
+  '@img/sharp-linux-ppc64': '-'
+  '@img/sharp-linux-riscv64': '-'
+  '@img/sharp-linux-s390x': '-'
+  '@img/sharp-linux-x64': '-'
+  '@img/sharp-linuxmusl-arm64': '-'
+  '@img/sharp-linuxmusl-x64': '-'
+  '@img/sharp-webcontainers-wasm32': '-'
+  '@img/sharp-wasm32': '-'
+  '@img/sharp-win32-arm64': '-'
+  '@img/sharp-win32-ia32': '-'
+  '@img/sharp-win32-x64': '-'
+  '@img/sharp-libvips-darwin-arm64': '-'
+  '@img/sharp-libvips-darwin-x64': '-'
+  '@img/sharp-libvips-linux-arm': '-'
+  '@img/sharp-libvips-linux-arm64': '-'
+  '@img/sharp-libvips-linux-ppc64': '-'
+  '@img/sharp-libvips-linux-riscv64': '-'
+  '@img/sharp-libvips-linux-s390x': '-'
+  '@img/sharp-libvips-linux-x64': '-'
+  '@img/sharp-libvips-linuxmusl-arm64': '-'
+  '@img/sharp-libvips-linuxmusl-x64': '-'
   # 1.9.3-1.9.5 are confirmed broken
   tsc-alias: 1.9.2
 packageExtensions:
@@ -63,6 +91,9 @@ packageExtensions:
   '@nestjs/swagger':
     peerDependencies:
       typescript: '*'
+patchedDependencies:
+  # see native/README.md
+  sharp@0.35.5: native/patches/sharp/0001-load-only-the-module-built-with-immichs-libvips.patch
 dedupePeerDependents: false
 preferWorkspacePackages: true
 injectWorkspacePackages: true

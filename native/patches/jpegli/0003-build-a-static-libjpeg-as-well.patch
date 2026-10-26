@@ -1,0 +1,37 @@
+From c08e5603206c68f4482bd9dbd71d6add00bf8350 Mon Sep 17 00:00:00 2001
+From: Vfhiyl <VfhiyL@proton.me>
+Date: Tue, 27 Oct 2026 01:49:53 +0800
+Subject: [PATCH] Build a static libjpeg as well
+
+jpegli builds its libjpeg interface only as a shared library (libjpeg.so.62). We link every library into libvips-cpp.so, so we need it as a static library: libjpeg.a, with the libjpeg interface and jpegli inside. jerror.h, which libtiff and libraw include, is installed with the other headers of the libjpeg interface.
+---
+ lib/jpegli.cmake | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/lib/jpegli.cmake b/lib/jpegli.cmake
+index e2a4c26..c284576 100644
+--- a/lib/jpegli.cmake
++++ b/lib/jpegli.cmake
+@@ -30,6 +30,8 @@ configure_file(
+   ../third_party/libjpeg-turbo/jpeglib.h include/jpegli/jpeglib.h COPYONLY)
+ configure_file(
+   ../third_party/libjpeg-turbo/jmorecfg.h include/jpegli/jmorecfg.h COPYONLY)
++configure_file(
++  ../third_party/libjpeg-turbo/jerror.h include/jpegli/jerror.h COPYONLY)
+ 
+ add_library(jpegli-static STATIC EXCLUDE_FROM_ALL "${JPEGLI_INTERNAL_JPEGLI_SOURCES}")
+ target_compile_options(jpegli-static PRIVATE "${JPEGLI_INTERNAL_FLAGS}")
+@@ -137,8 +139,12 @@ set_target_properties(jpeg PROPERTIES
+ set_property(TARGET jpeg APPEND_STRING PROPERTY
+   LINK_FLAGS " -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jpegli/jpeg.version.${JPEGLI_LIBJPEG_LIBRARY_SOVERSION}")
+ 
++# libjpeg.a: the libjpeg interface and jpegli in one static library, for programs that link it in
++add_library(jpeg-static STATIC ${JPEGLI_LIBJPEG_INTERNAL_OBJECTS} $<TARGET_OBJECTS:jpegli-static>)
++set_target_properties(jpeg-static PROPERTIES OUTPUT_NAME jpeg)
++
+ if (JPEGLI_INSTALL_JPEGLI_LIBJPEG)
+-  install(TARGETS jpeg
++  install(TARGETS jpeg jpeg-static
+     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})

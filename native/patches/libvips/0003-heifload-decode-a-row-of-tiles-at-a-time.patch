@@ -1,0 +1,282 @@
+From 41a585bd432270140503dc8e8cae54435bbd8b43 Mon Sep 17 00:00:00 2001
+From: Vfhiyl <VfhiyL@proton.me>
+Date: Tue, 27 Oct 2026 01:42:21 +0800
+Subject: [PATCH 3/4] heifload: decode a row of tiles at a time
+
+libvips decoded a HEIF image whole (heif_decode_image) before handing it out line by line, so that reading a photo of a phone took the memory of all its pixels (3 bytes each, 6 for HDR): 150 MB for 48 MP, 600 MB for 200 MP, even when it is only made smaller.
+
+The photos of phones are grids of tiles (512x512 on iPhones) that decode on their own. libheif decodes them one at a time (heif_image_handle_decode_image_tile, in libheif 1.23), with the rotation and crop of the image applied. Such an image is now decoded a row of tiles at a time, as it is read from top to bottom (the loader is sequential): it takes the memory of one row of tiles, e.g. 12 MB for a 48 MP photo. Images of a single tile, or whose tiles cannot be decoded on their own, are decoded whole as before.
+---
+ libvips/foreign/heifload.c | 205 +++++++++++++++++++++++++++++++++----
+ 1 file changed, 184 insertions(+), 21 deletions(-)
+
+diff --git a/libvips/foreign/heifload.c b/libvips/foreign/heifload.c
+index 80cf22a..7db102e 100644
+--- a/libvips/foreign/heifload.c
++++ b/libvips/foreign/heifload.c
+@@ -102,6 +102,13 @@ const char *vips__heif_suffs[] = {
+ 
+ #include <libheif/heif.h>
+ 
++/* Decoding a tile at a time needs the tiling API of libheif (we build with
++ * 1.23).
++ */
++#if LIBHEIF_HAVE_VERSION(1, 23, 0)
++#define HAVE_HEIF_TILING
++#endif
++
+ #define VIPS_TYPE_FOREIGN_LOAD_HEIF (vips_foreign_load_heif_get_type())
+ #define VIPS_FOREIGN_LOAD_HEIF(obj) \
+ 	(G_TYPE_CHECK_INSTANCE_CAST((obj), \
+@@ -199,6 +206,19 @@ typedef struct _VipsForeignLoadHeif {
+ 	int stride;
+ 	const uint8_t *data;
+ 
++#ifdef HAVE_HEIF_TILING
++	/* An image made of tiles that decode on their own (as the photos of
++	 * phones are) is decoded a row of tiles at a time, into @strip, rather
++	 * than all at once into @img: it needs the memory of a row of tiles,
++	 * not of the whole image.
++	 */
++	gboolean tiling_checked;
++	gboolean tiled;
++	heif_image_tiling tiling;
++	VipsPel *strip;
++	int strip_row;
++#endif /*HAVE_HEIF_TILING*/
++
+ 	/* Set from subclasses.
+ 	 */
+ 	VipsSource *source;
+@@ -323,6 +343,9 @@ vips_foreign_load_heif_dispose(GObject *gobject)
+ 	VipsForeignLoadHeif *heif = (VipsForeignLoadHeif *) gobject;
+ 
+ 	heif->data = NULL;
++#ifdef HAVE_HEIF_TILING
++	VIPS_FREE(heif->strip);
++#endif /*HAVE_HEIF_TILING*/
+ 	VIPS_FREEF(heif_image_release, heif->img);
+ 	VIPS_FREEF(heif_image_handle_release, heif->handle);
+ 	VIPS_FREEF(heif_context_free, heif->ctx);
+@@ -527,6 +550,12 @@ vips_foreign_load_heif_set_page(VipsForeignLoadHeif *heif,
+ 		VIPS_FREEF(heif_image_release, heif->img);
+ 		heif->data = NULL;
+ 		heif->thumbnail_set = FALSE;
++#ifdef HAVE_HEIF_TILING
++		VIPS_FREE(heif->strip);
++		heif->tiling_checked = FALSE;
++		heif->tiled = FALSE;
++		heif->strip_row = -1;
++#endif /*HAVE_HEIF_TILING*/
+ 
+ 		error = heif_context_get_image_handle(heif->ctx,
+ 			heif->id[page_no], &heif->handle);
+@@ -556,6 +585,111 @@ vips_foreign_load_heif_set_page(VipsForeignLoadHeif *heif,
+ 	return 0;
+ }
+ 
++#ifdef HAVE_HEIF_TILING
++/* Whether to decode a row of tiles at a time: the image has more than one row
++ * of tiles that decode on their own, laid out as the image we read.
++ */
++static gboolean
++vips_foreign_load_heif_is_tiled(VipsForeignLoadHeif *heif)
++{
++	if (!heif->tiling_checked) {
++		heif->tiling_checked = TRUE;
++		heif->tiled =
++			!heif_image_handle_get_image_tiling(heif->handle, 1,
++				&heif->tiling)
++				 .code &&
++			heif->tiling.num_rows > 1 &&
++			heif->tiling.tile_height > 0 &&
++			heif->tiling.tile_width > 0 &&
++			heif->tiling.image_width == (uint32_t) heif->page_width &&
++			heif->tiling.image_height == (uint32_t) heif->page_height &&
++			heif->tiling.number_of_extra_dimensions == 0;
++	}
++
++	return heif->tiled;
++}
++
++/* Decode the row of tiles that has line @line of the page into @strip.
++ */
++static int
++vips_foreign_load_heif_decode_strip(VipsForeignLoadHeif *heif,
++	VipsImage *im, int line)
++{
++	const heif_image_tiling *tiling = &heif->tiling;
++	const int row = (line + tiling->top_offset) / tiling->tile_height;
++	const int top = row * tiling->tile_height - tiling->top_offset;
++	const size_t sizeof_pel = VIPS_IMAGE_SIZEOF_PEL(im);
++	const size_t sizeof_line = VIPS_IMAGE_SIZEOF_LINE(im);
++	enum heif_chroma chroma =
++		vips__heif_chroma(heif->bits_per_pixel, heif->has_alpha);
++
++	uint32_t column;
++
++	if (row == heif->strip_row)
++		return 0;
++
++	if (!heif->strip &&
++		!(heif->strip = VIPS_ARRAY(NULL,
++			  sizeof_line * tiling->tile_height, VipsPel)))
++		return -1;
++	memset(heif->strip, 0, sizeof_line * tiling->tile_height);
++
++	for (column = 0; column < tiling->num_columns; column++) {
++		const int x = (int) (column * tiling->tile_width) -
++			(int) tiling->left_offset;
++
++		struct heif_error error;
++		struct heif_decoding_options *options;
++		struct heif_image *tile;
++		int width;
++		int height;
++		int stride;
++		const uint8_t *data;
++		int left;
++		int right;
++		int y;
++
++		options = heif_decoding_options_alloc();
++		error = heif_image_handle_decode_image_tile(heif->handle, &tile,
++			heif_colorspace_RGB, chroma, options, column, row);
++		heif_decoding_options_free(options);
++		if (error.code) {
++			vips__heif_error(&error);
++			return -1;
++		}
++
++		width = heif_image_get_width(tile, heif_channel_interleaved);
++		height = heif_image_get_height(tile, heif_channel_interleaved);
++		if (!(data = heif_image_get_plane_readonly(tile,
++				  heif_channel_interleaved, &stride))) {
++			heif_image_release(tile);
++			vips_error("heifload", "%s", _("unable to get image data"));
++			return -1;
++		}
++
++		left = VIPS_MAX(x, 0);
++		right = VIPS_MIN(x + width, heif->page_width);
++		for (y = 0;
++			 y < VIPS_MIN(height, (int) tiling->tile_height) && right > left;
++			 y++) {
++			if (top + y < 0 ||
++				top + y >= heif->page_height)
++				continue;
++
++			memcpy(heif->strip + sizeof_line * y + sizeof_pel * left,
++				data + (size_t) stride * y + sizeof_pel * (left - x),
++				sizeof_pel * (right - left));
++		}
++
++		heif_image_release(tile);
++	}
++
++	heif->strip_row = row;
++
++	return 0;
++}
++#endif /*HAVE_HEIF_TILING*/
++
+ static int
+ vips_foreign_load_heif_set_header(VipsForeignLoadHeif *heif, VipsImage *out)
+ {
+@@ -934,12 +1068,14 @@ vips_foreign_load_heif_header(VipsForeignLoad *load)
+ 	return 0;
+ }
+ 
++static int vips_foreign_load_heif_decode(VipsForeignLoadHeif *heif,
++	VipsRegion *out_region, int line);
++
+ static int
+ vips_foreign_load_heif_generate(VipsRegion *out_region,
+ 	void *seq, void *a, void *b, gboolean *stop)
+ {
+ 	VipsForeignLoadHeif *heif = (VipsForeignLoadHeif *) a;
+-	VipsObjectClass *class = VIPS_OBJECT_GET_CLASS(heif);
+ 	VipsRect *r = &out_region->valid;
+ 
+ 	int page = r->top / heif->page_height + heif->page;
+@@ -954,6 +1090,53 @@ vips_foreign_load_heif_generate(VipsRegion *out_region,
+ 	if (vips_foreign_load_heif_set_page(heif, page, heif->thumbnail))
+ 		return -1;
+ 
++#ifdef HAVE_HEIF_TILING
++	if (vips_foreign_load_heif_is_tiled(heif)) {
++		if (vips_foreign_load_heif_decode_strip(heif, out_region->im, line))
++			return -1;
++
++		memcpy(VIPS_REGION_ADDR(out_region, 0, r->top),
++			heif->strip + VIPS_IMAGE_SIZEOF_LINE(out_region->im) *
++				((line + heif->tiling.top_offset) % heif->tiling.tile_height),
++			VIPS_IMAGE_SIZEOF_LINE(out_region->im));
++	}
++	else
++#endif /*HAVE_HEIF_TILING*/
++	if (vips_foreign_load_heif_decode(heif, out_region, line))
++		return -1;
++
++	/* We may need to swap bytes and shift to fill 16 bits.
++	 */
++	if (heif->bits_per_pixel > 8) {
++		int shift = 16 - heif->bits_per_pixel;
++		int ne = VIPS_REGION_N_ELEMENTS(out_region);
++
++		int i;
++		VipsPel *p;
++
++		p = VIPS_REGION_ADDR(out_region, 0, r->top);
++		for (i = 0; i < ne; i++) {
++			/* We've asked for big endian, we must write native.
++			 */
++			guint16 v = ((p[0] << 8) | p[1]) << shift;
++
++			*((guint16 *) p) = v;
++			p += 2;
++		}
++	}
++
++	return 0;
++}
++
++/* Decode the whole image, and copy line @line of it.
++ */
++static int
++vips_foreign_load_heif_decode(VipsForeignLoadHeif *heif,
++	VipsRegion *out_region, int line)
++{
++	VipsObjectClass *class = VIPS_OBJECT_GET_CLASS(heif);
++	VipsRect *r = &out_region->valid;
++
+ 	if (!heif->img) {
+ 		enum heif_chroma chroma =
+ 			vips__heif_chroma(heif->bits_per_pixel, heif->has_alpha);
+@@ -1006,26 +1189,6 @@ vips_foreign_load_heif_generate(VipsRegion *out_region,
+ 		heif->data + (size_t) heif->stride * line,
+ 		VIPS_IMAGE_SIZEOF_LINE(out_region->im));
+ 
+-	/* We may need to swap bytes and shift to fill 16 bits.
+-	 */
+-	if (heif->bits_per_pixel > 8) {
+-		int shift = 16 - heif->bits_per_pixel;
+-		int ne = VIPS_REGION_N_ELEMENTS(out_region);
+-
+-		int i;
+-		VipsPel *p;
+-
+-		p = VIPS_REGION_ADDR(out_region, 0, r->top);
+-		for (i = 0; i < ne; i++) {
+-			/* We've asked for big endian, we must write native.
+-			 */
+-			guint16 v = ((p[0] << 8) | p[1]) << shift;
+-
+-			*((guint16 *) p) = v;
+-			p += 2;
+-		}
+-	}
+-
+ 	return 0;
+ }
+ 

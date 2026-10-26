@@ -1,0 +1,47 @@
+From be756e24989e18687e686d60a867a282c0b338ae Mon Sep 17 00:00:00 2001
+From: Vfhiyl <VfhiyL@proton.me>
+Date: Tue, 27 Oct 2026 02:15:22 +0800
+Subject: [PATCH] Build in the security policy of Immich, and limits on memory
+
+We build ImageMagick with --enable-zero-configuration, so that it reads no configuration from the machine (a policy.xml in /etc or elsewhere): its policy is the one built in here, which was empty.
+
+It is the policy of Immich's base image (immich-app/base-images, server/policy.xml): no delegates (external programs), no filters, none of the coders that read other files, URLs or text, and no symbolic links. SVG is not read either: ImageMagick would need a delegate for it.
+
+On top of that, for memory: images beyond 256 MiB of pixels are kept in a memory map, and beyond 512 MiB on disk (ImageMagick's pixel cache), and one thread is used. ImageMagick holds whole images (TIFF, PSD, BMP, ...) in its pixel cache.
+---
+ MagickCore/policy-private.h | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/MagickCore/policy-private.h b/MagickCore/policy-private.h
+index 3acc98a..1c76d64 100644
+--- a/MagickCore/policy-private.h
++++ b/MagickCore/policy-private.h
+@@ -30,6 +30,28 @@ extern "C" {
+ static const char
+   *ZeroConfigurationPolicy = \
+ "<policymap> \
++  <policy domain=\"delegate\" rights=\"none\" pattern=\"*\"/> \
++  <policy domain=\"filter\" rights=\"none\" pattern=\"*\"/> \
++  <policy domain=\"coder\" rights=\"none\" pattern=\"MSL\"/> \
++  <policy domain=\"coder\" rights=\"none\" pattern=\"MVG\"/> \
++  <policy domain=\"coder\" rights=\"none\" pattern=\"URL\"/> \
++  <policy domain=\"coder\" rights=\"none\" pattern=\"HTTP\"/> \
++  <policy domain=\"coder\" rights=\"none\" pattern=\"HTTPS\"/> \
++  <policy domain=\"coder\" rights=\"none\" pattern=\"FTP\"/> \
++  <policy domain=\"coder\" rights=\"none\" pattern=\"EPHEMERAL\"/> \
++  <policy domain=\"coder\" rights=\"none\" pattern=\"TEXT\"/> \
++  <policy domain=\"coder\" rights=\"none\" pattern=\"LABEL\"/> \
++  <policy domain=\"coder\" rights=\"none\" pattern=\"SVG\"/> \
++  <policy domain=\"coder\" rights=\"none\" pattern=\"MSVG\"/> \
++  <policy domain=\"coder\" rights=\"none\" pattern=\"RSVG\"/> \
++  <policy domain=\"path\" rights=\"none\" pattern=\"-\"/> \
++  <policy domain=\"path\" rights=\"none\" pattern=\"fd:*\"/> \
++  <policy domain=\"path\" rights=\"none\" pattern=\"@*\"/> \
++  <policy domain=\"path\" rights=\"none\" pattern=\"*../*\"/> \
++  <policy domain=\"system\" name=\"symlink\" rights=\"none\" pattern=\"follow\"/> \
++  <policy domain=\"resource\" name=\"memory\" value=\"256MiB\"/> \
++  <policy domain=\"resource\" name=\"map\" value=\"512MiB\"/> \
++  <policy domain=\"resource\" name=\"thread\" value=\"1\"/> \
+ </policymap>";
+ #endif
+ 

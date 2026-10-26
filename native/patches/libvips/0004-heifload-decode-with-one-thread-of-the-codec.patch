@@ -1,0 +1,55 @@
+From 1f838084e4b12d931cdcb2d98464c0c2ba4c2e35 Mon Sep 17 00:00:00 2001
+From: Vfhiyl <VfhiyL@proton.me>
+Date: Tue, 27 Oct 2026 02:30:39 +0800
+Subject: [PATCH 4/4] heifload: decode with one thread of the codec
+
+libde265 and dav1d decode with as many threads as there are processors unless told otherwise, each thread with frames of its own: decoding a 20 MP AVIF took 540 MB on a machine of 32 processors. They decode with one thread now (num_codec_threads, libheif 1.21+): the memory of decoding no longer grows with the number of processors. The server makes thumbnails of several photos at once, which keeps the processors busy.
+---
+ libvips/foreign/heifload.c | 20 ++++++++++++++++++--
+ 1 file changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/libvips/foreign/heifload.c b/libvips/foreign/heifload.c
+index 7db102e..d818f8a 100644
+--- a/libvips/foreign/heifload.c
++++ b/libvips/foreign/heifload.c
+@@ -109,6 +109,22 @@ const char *vips__heif_suffs[] = {
+ #define HAVE_HEIF_TILING
+ #endif
+ 
++/* Decoding options: the codecs (libde265, dav1d) decode with one thread. By
++ * default they take a thread per processor, each with frames of its own: the
++ * memory of decoding grows with the number of processors.
++ */
++static struct heif_decoding_options *
++vips_foreign_load_heif_decoding_options(void)
++{
++	struct heif_decoding_options *options = heif_decoding_options_alloc();
++
++#if LIBHEIF_HAVE_VERSION(1, 21, 0)
++	options->num_codec_threads = 1;
++#endif /*LIBHEIF_HAVE_VERSION(1, 21, 0)*/
++
++	return options;
++}
++
+ #define VIPS_TYPE_FOREIGN_LOAD_HEIF (vips_foreign_load_heif_get_type())
+ #define VIPS_FOREIGN_LOAD_HEIF(obj) \
+ 	(G_TYPE_CHECK_INSTANCE_CAST((obj), \
+@@ -649,7 +665,7 @@ vips_foreign_load_heif_decode_strip(VipsForeignLoadHeif *heif,
+ 		int right;
+ 		int y;
+ 
+-		options = heif_decoding_options_alloc();
++		options = vips_foreign_load_heif_decoding_options();
+ 		error = heif_image_handle_decode_image_tile(heif->handle, &tile,
+ 			heif_colorspace_RGB, chroma, options, column, row);
+ 		heif_decoding_options_free(options);
+@@ -1144,7 +1160,7 @@ vips_foreign_load_heif_decode(VipsForeignLoadHeif *heif,
+ 		struct heif_error error;
+ 		struct heif_decoding_options *options;
+ 
+-		options = heif_decoding_options_alloc();
++		options = vips_foreign_load_heif_decoding_options();
+ 		error = heif_decode_image(heif->handle, &heif->img,
+ 			heif_colorspace_RGB,
+ 			chroma,

@@ -10,6 +10,7 @@
 # Needs: Node and pnpm with dependencies installed (`pnpm install`), ffmpeg, redis-server, oazapfts (the version
 # pinned in mise.toml), uv (the version pinned in machine-learning/mise.toml) with Python 3.12 and Flutter on PATH, OPENAPI_GENERATOR_JAR (the openapi-generator-cli jar), a JDK and the
 # Android SDK at ANDROID_HOME (Gradle downloads the rest from Maven Central, or a mirror set in an init script), and
+# a C/C++ toolchain, meson (>= 1.11), cmake, nasm, Rust with cargo-c (native/README.md) to build the native libraries,
 # PostgreSQL with the vector extension at CHECK_POSTGRES_URL (a server URL without database name,
 # default postgres://postgres:postgres@localhost:5432). Playwright downloads its Chromium (of the version
 # @playwright/test pins) the first time the pages are tested in a browser. Nothing here needs Docker.
@@ -92,7 +93,8 @@ e2e_types() { cd "$e2e" && "$(bin "$e2e" tsc)" --noEmit; }
 docs_format() {
   cd "$repo/docs"
   "$(bin "$repo/docs" prettier)" --check docs/administration/storage-backends.md \
-    docs/administration/machine-learning-models.md docs/administration/jobs-workers.md
+    docs/administration/machine-learning-models.md docs/administration/jobs-workers.md \
+    docs/administration/native-libraries.md
 }
 
 # the web app, against the SDK built from the generated client (see open_api)
@@ -192,6 +194,14 @@ mobile_android() {
 
 # --- build, schema and generated SQL ---
 
+# the native libraries (libvips in sharp's module, immich-thumbnail), built from the sources and patches in native/
+# (only what changed is built again) and installed for every sharp of the repository, which loads nothing else
+native() {
+  local output="${IMMICH_NATIVE_WORK:-$HOME/.cache/immich-native}/output"
+  "$repo/native/build.sh" "$output"
+  "$server/bin/install-native" "$output" "$repo"
+}
+
 server_build() { cd "$server" && "$(bin "$server" nest)" build; }
 
 schema() {
@@ -251,6 +261,7 @@ end_to_end_web() {
   E2E_STORAGE_POSTGRES_URL="$postgres" "$(bin "$e2e" playwright)" test --config playwright.storage-backends.config.ts
 }
 
+step 'native: libraries built and installed' native
 step 'server: formatting' server_format
 step 'server: lint' server_lint
 step 'server: types' server_types

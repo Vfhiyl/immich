@@ -5,6 +5,7 @@ import { camelCase, upperFirst } from 'lodash-es';
 import { Duration } from 'luxon';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { Writable } from 'node:stream';
 import sharp, { Sharp } from 'sharp';
 import type {
@@ -14,6 +15,7 @@ import type {
   GenerateThumbnailOptions,
   ImageDimensions,
   ProbeOptions,
+  RawImageInfo,
   TranscodeCommand,
   TransformOptions,
   VideoInfo,
@@ -48,6 +50,9 @@ const probe = (input: string, options: string[]): Promise<FfprobeData> =>
   );
 
 const pascalCase = (str: string) => upperFirst(camelCase(str.toLowerCase()));
+
+/** Immich's program that makes the image the preview and the thumbnail are made from (native/thumbnail in the repository) */
+const THUMBNAIL_PROGRAM = join(dirname(import.meta.filename), '../../native/bin/immich-thumbnail');
 
 type ProgressEvent = {
   frames: number;
@@ -152,8 +157,40 @@ export class MediaRepository {
   }
 
   async decodeImage(input: string | Buffer, options: DecodeToBufferOptions): Promise<Bitmap> {
+    // a photo made smaller, upright as its orientation tag says, is read in one pass, with the memory of a few hundred of
+    // its lines, by a program of its own: as sharp would, but without decoding it whole first
+    const { size, orientation } = options;
+    if (typeof input === 'string' && size !== undefined && size > 0 && orientation === undefined) {
+      return this.decodeSmaller(input, size, options);
+    }
     const decoded = await this.getImageDecodingPipeline(input, options).raw().toBuffer({ resolveWithObject: true });
     return await this.transform(decoded, options);
+  }
+
+  /** The photo with `size` as its shorter side (no larger than it is), made by immich-thumbnail in a process of its own */
+  private decodeSmaller(input: string, size: number, { colorspace, processInvalidImages }: DecodeToBufferOptions) {
+    const args = [input, String(size), colorspace === Colorspace.Srgb ? 'srgb' : 'p3'];
+    if (processInvalidImages) {
+      args.push('--process-invalid');
+    }
+    return new Promise<Bitmap>((resolve, reject) => {
+      const child = spawn(THUMBNAIL_PROGRAM, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      const chunks: Buffer[] = [];
+      const stderr = new OutputTail();
+      child.stdout.on('data', (chunk: Buffer) => void chunks.push(chunk));
+      child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+      child.on('error', reject);
+      child.on('close', (code, signal) => {
+        if (code !== 0) {
+          return reject(new Error(`immich-thumbnail exited with ${code ?? signal}: ${stderr.toString().trim()}`));
+        }
+        // a line of JSON, then the pixels
+        const output = Buffer.concat(chunks);
+        const end = output.indexOf(10);
+        const info = JSON.parse(output.subarray(0, end).toString()) as RawImageInfo;
+        resolve({ data: output.subarray(end + 1), info });
+      });
+    });
   }
 
   private edit(pipeline: Sharp, edits: AssetEditActionItem[]): Sharp {
