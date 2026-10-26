@@ -20,12 +20,13 @@ describe('files that jobs fail on', () => {
   let api: Api;
   let assetId: string;
 
+  // the attempts that failed: each is counted as it starts, and failed once its error is kept
   const attempts = async () => {
-    const rows = await environment.query<{ attempts: number }>(
-      `select attempts from asset_job_failure where "assetId" = $1 and "jobName" = 'AssetGenerateThumbnails'`,
+    const rows = await environment.query<{ attempts: number; error: string | null }>(
+      `select attempts, error from asset_job_failure where "assetId" = $1 and "jobName" = 'AssetGenerateThumbnails'`,
       [assetId],
     );
-    return rows[0]?.attempts;
+    return rows[0]?.error ? rows[0].attempts : undefined;
   };
   // a queue that runs takes no command to start
   const queueMissingThumbnails = async () => {
