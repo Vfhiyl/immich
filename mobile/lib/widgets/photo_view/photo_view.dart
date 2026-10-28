@@ -268,6 +268,7 @@ class PhotoView extends StatefulWidget {
     this.disableScaleGestures,
     this.errorBuilder,
     this.enablePanAlways,
+    this.overlayBuilder,
   }) : child = null,
        childSize = null;
 
@@ -313,6 +314,7 @@ class PhotoView extends StatefulWidget {
   }) : semanticLabel = null,
        errorBuilder = null,
        imageProvider = null,
+       overlayBuilder = null,
        gaplessPlayback = false,
        loadingBuilder = null,
        index = 0;
@@ -450,6 +452,9 @@ class PhotoView extends StatefulWidget {
   /// Enable pan the widget even if it's smaller than the hole parent widget.
   /// Useful when you want to drag a widget without restrictions.
   final bool? enablePanAlways;
+
+  /// Builds what is drawn over the image, at the size it is shown (only with [imageProvider])
+  final PhotoViewOverlayBuilder? overlayBuilder;
 
   final int index;
 
@@ -613,6 +618,7 @@ class _PhotoViewState extends State<PhotoView> with AutomaticKeepAliveClientMixi
                 disableScaleGestures: widget.disableScaleGestures,
                 errorBuilder: widget.errorBuilder,
                 enablePanAlways: widget.enablePanAlways,
+                overlayBuilder: widget.overlayBuilder,
                 index: widget.index,
               );
       },
@@ -671,3 +677,7 @@ typedef PhotoViewImageLongPressStartCallback =
 
 /// A type definition for a callback to show a widget while the image is loading, a [ImageChunkEvent] is passed to inform progress
 typedef LoadingBuilder = Widget Function(BuildContext context, ImageChunkEvent? event, int index);
+
+/// Builds what is drawn over the image: [display] is the size the image is shown at (logical pixels), [visible] the
+/// part of it on the screen (in those coordinates, the image centred and not rotated)
+typedef PhotoViewOverlayBuilder = Widget Function(BuildContext context, Size display, Rect visible);

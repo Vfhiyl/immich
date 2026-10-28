@@ -38,6 +38,7 @@ class ImageWrapper extends StatefulWidget {
     this.disableScaleGestures,
     required this.errorBuilder,
     required this.enablePanAlways,
+    this.overlayBuilder,
     required this.index,
   });
 
@@ -72,6 +73,7 @@ class ImageWrapper extends StatefulWidget {
   final bool? disableGestures;
   final bool? disableScaleGestures;
   final bool? enablePanAlways;
+  final PhotoViewOverlayBuilder? overlayBuilder;
   final int index;
 
   @override
@@ -241,6 +243,7 @@ class _ImageWrapperState extends State<ImageWrapper> {
       disableGestures: widget.disableGestures ?? false,
       disableScaleGestures: widget.disableScaleGestures ?? false,
       enablePanAlways: widget.enablePanAlways ?? false,
+      overlayBuilder: widget.overlayBuilder,
     );
   }
 

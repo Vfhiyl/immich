@@ -11,6 +11,7 @@ import 'package:immich_mobile/widgets/photo_view/photo_view.dart'
         PhotoViewImageScaleEndCallback,
         PhotoViewImageTapDownCallback,
         PhotoViewImageTapUpCallback,
+        PhotoViewOverlayBuilder,
         PhotoViewScaleState,
         ScaleStateCycle;
 import 'package:immich_mobile/widgets/photo_view/src/controller/photo_view_controller.dart';
@@ -52,6 +53,7 @@ class PhotoViewCore extends StatefulWidget {
     required this.disableGestures,
     required this.disableScaleGestures,
     required this.enablePanAlways,
+    this.overlayBuilder,
   }) : customChild = null;
 
   const PhotoViewCore.customChild({
@@ -81,7 +83,8 @@ class PhotoViewCore extends StatefulWidget {
     required this.enablePanAlways,
   }) : semanticLabel = null,
        imageProvider = null,
-       gaplessPlayback = false;
+       gaplessPlayback = false,
+       overlayBuilder = null;
 
   final Decoration? backgroundDecoration;
   final ImageProvider? imageProvider;
@@ -115,6 +118,8 @@ class PhotoViewCore extends StatefulWidget {
   final bool enablePanAlways;
 
   final FilterQuality filterQuality;
+
+  final PhotoViewOverlayBuilder? overlayBuilder;
 
   @override
   State<StatefulWidget> createState() {
@@ -376,7 +381,7 @@ class PhotoViewCoreState extends State<PhotoViewCore>
 
           final Widget customChildLayout = CustomSingleChildLayout(
             delegate: _CenterWithOriginalSizeDelegate(scaleBoundaries.childSize, basePosition, useImageScale),
-            child: _buildHero(_buildChild()),
+            child: _buildOverlay(context, value, _buildHero(_buildChild())),
           );
 
           final child = Container(
@@ -419,6 +424,28 @@ class PhotoViewCoreState extends State<PhotoViewCore>
           return Container();
         }
       },
+    );
+  }
+
+  // The overlay, outside the Hero, at the size the image is shown
+  Widget _buildOverlay(BuildContext context, PhotoViewControllerValue value, Widget image) {
+    final builder = widget.overlayBuilder;
+    if (builder == null) {
+      return image;
+    }
+    final display = scaleBoundaries.childSize * scale;
+    final outer = scaleBoundaries.outerSize;
+    final visible = Rect.fromLTWH(
+      (display.width - outer.width) / 2 - value.position.dx,
+      (display.height - outer.height) / 2 - value.position.dy,
+      outer.width,
+      outer.height,
+    ).intersect(Offset.zero & display);
+    return Stack(
+      children: [
+        image,
+        Positioned.fill(child: builder(context, display, visible)),
+      ],
     );
   }
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds the libraries the app decodes parts of large images with (region/, see README.md), from the sources of
-# sources.txt with our patches, as static libraries: zlib, libjpeg-turbo, lcms2, libde265 and libheif.
+# sources.txt with our patches, as static libraries: zlib, libjpeg-turbo, lcms2, libde265 and libheif. It needs only
+# curl, CMake and make (and the NDK for Android); the app's Android build runs it.
 #
 # Usage: native/build-region.sh TARGET [output directory]
 #   TARGET  host (for the tests), android-arm64-v8a, android-armeabi-v7a or android-x86_64
@@ -46,8 +47,6 @@ CMAKE_OPTIONS=(
   -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
   -DBUILD_TESTING=OFF
 )
-MESON_OPTIONS=(--prefix="$PREFIX" --libdir=lib --default-library=static --buildtype=release -Db_staticpic=true
-  --wrap-mode=nodownload)
 
 case "$TARGET" in
   host)
@@ -57,32 +56,17 @@ case "$TARGET" in
   android-*)
     ABI="${TARGET#android-}"
     NDK="${ANDROID_NDK_HOME:-$(find "${ANDROID_HOME:?ANDROID_HOME or ANDROID_NDK_HOME must be set}/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)}"
-    TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+    TOOLCHAIN="$(echo "$NDK"/toolchains/llvm/prebuilt/*)"
     case "$ABI" in
-      arm64-v8a) TRIPLE=aarch64-linux-android CPU=aarch64 ;;
-      armeabi-v7a) TRIPLE=armv7a-linux-androideabi CPU=arm ;;
-      x86_64) TRIPLE=x86_64-linux-android CPU=x86_64 ;;
+      arm64-v8a) TRIPLE=aarch64-linux-android ;;
+      armeabi-v7a) TRIPLE=armv7a-linux-androideabi ;;
+      x86_64) TRIPLE=x86_64-linux-android ;;
       *) echo "Unknown Android ABI $ABI" >&2; exit 1 ;;
     esac
     CC="$TOOLCHAIN/bin/${TRIPLE}26-clang"
     CXX="$TOOLCHAIN/bin/${TRIPLE}26-clang++"
     CMAKE_OPTIONS+=(-DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" -DANDROID_ABI="$ABI"
       -DANDROID_PLATFORM=android-26 -DANDROID_STL=c++_static)
-    cat > "$BUILD/cross.ini" <<EOF
-[binaries]
-c = '$CC'
-cpp = '$CXX'
-ar = '$TOOLCHAIN/bin/llvm-ar'
-strip = '$TOOLCHAIN/bin/llvm-strip'
-pkg-config = 'pkg-config'
-
-[host_machine]
-system = 'android'
-cpu_family = '$CPU'
-cpu = '$CPU'
-endian = 'little'
-EOF
-    MESON_OPTIONS+=(--cross-file "$BUILD/cross.ini")
     ;;
   *)
     echo "Unknown target $TARGET" >&2
@@ -90,6 +74,8 @@ EOF
     ;;
 esac
 export CC CXX
+# libraries built by another compiler are built again
+BUILD_KEY="$("$CC" --version | head -1)"
 
 # --- the libraries ---
 
@@ -104,8 +90,9 @@ build_jpeg-turbo() {
 }
 
 build_lcms() {
-  meson setup _build "${MESON_OPTIONS[@]}" -Dtests=disabled -Djpeg=disabled -Dtiff=disabled
-  meson install -C _build
+  cmake -S . -B _build "${CMAKE_OPTIONS[@]}" -DLCMS2_BUILD_SHARED=OFF -DLCMS2_BUILD_TOOLS=OFF -DLCMS2_BUILD_TESTS=OFF \
+    -DLCMS2_WITH_THREADS=OFF
+  cmake --build _build --target install
 }
 
 build_de265() {

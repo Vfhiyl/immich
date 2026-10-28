@@ -73,6 +73,9 @@ class RemoteFullImageProvider extends ImageProvider<RemoteFullImageProvider> {
   /// Physical size of the thumbnail shown before the preview.
   final Size? thumbnailSize;
 
+  /// Shown in tiles (region_image.dart): only the preview is decoded, at this physical size, never the original
+  final Size? tiledBaseSize;
+
   const RemoteFullImageProvider({
     required this.assetId,
     required this.thumbhash,
@@ -80,6 +83,7 @@ class RemoteFullImageProvider extends ImageProvider<RemoteFullImageProvider> {
     required this.isAnimated,
     this.edited = true,
     this.thumbnailSize,
+    this.tiledBaseSize,
   });
 
   @override
@@ -139,8 +143,12 @@ class RemoteFullImageProvider extends ImageProvider<RemoteFullImageProvider> {
         thumbhash: key.thumbhash,
         edited: key.edited,
       ),
+      decodeSize: key.tiledBaseSize,
     );
-    final loadOriginal = assetType == AssetType.image && SettingsRepository.instance.appConfig.image.loadOriginal;
+    final loadOriginal =
+        key.tiledBaseSize == null &&
+        assetType == AssetType.image &&
+        SettingsRepository.instance.appConfig.image.loadOriginal;
     yield* loader.loadRequest(previewRequest, decode, isFinal: !loadOriginal);
 
     if (!loadOriginal) {
@@ -201,12 +209,14 @@ class RemoteFullImageProvider extends ImageProvider<RemoteFullImageProvider> {
       return assetId == other.assetId &&
           thumbhash == other.thumbhash &&
           isAnimated == other.isAnimated &&
-          edited == other.edited;
+          edited == other.edited &&
+          tiledBaseSize == other.tiledBaseSize;
     }
 
     return false;
   }
 
   @override
-  int get hashCode => assetId.hashCode ^ thumbhash.hashCode ^ isAnimated.hashCode ^ edited.hashCode;
+  int get hashCode =>
+      assetId.hashCode ^ thumbhash.hashCode ^ isAnimated.hashCode ^ edited.hashCode ^ tiledBaseSize.hashCode;
 }

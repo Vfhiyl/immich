@@ -8,6 +8,7 @@ import 'package:immich_mobile/infrastructure/repositories/settings.repository.da
 import 'package:immich_mobile/presentation/widgets/images/animated_image_stream_completer.dart';
 import 'package:immich_mobile/presentation/widgets/images/image_provider.dart';
 import 'package:immich_mobile/presentation/widgets/images/one_frame_multi_image_stream_completer.dart';
+import 'package:immich_mobile/presentation/widgets/images/region_image.dart';
 import 'package:immich_mobile/presentation/widgets/timeline/constants.dart';
 
 // iOS GPU textures max out at 16384px; larger images squish.
@@ -75,6 +76,9 @@ class LocalFullImageProvider extends ImageProvider<LocalFullImageProvider> {
   final int? height;
   final String? checksum;
 
+  /// Shown in tiles (region_image.dart): only the base is decoded whole, never the original
+  final bool tiled;
+
   const LocalFullImageProvider({
     required this.id,
     required this.assetType,
@@ -83,6 +87,7 @@ class LocalFullImageProvider extends ImageProvider<LocalFullImageProvider> {
     this.width,
     this.height,
     this.checksum,
+    this.tiled = false,
   });
 
   Size _previewTarget(double dpr, bool previewIsFinal) =>
@@ -151,11 +156,15 @@ class LocalFullImageProvider extends ImageProvider<LocalFullImageProvider> {
       return;
     }
 
-    final loadOriginal = SettingsRepository.instance.appConfig.image.loadOriginal;
     final devicePixelRatio = PlatformDispatcher.instance.views.first.devicePixelRatio;
+    final (width, height) = (key.width, key.height);
+    final tiled = key.tiled && width != null && height != null && width > 0 && height > 0;
+    final loadOriginal = !tiled && SettingsRepository.instance.appConfig.image.loadOriginal;
     var request = loader.request = LocalImageRequest(
       localId: key.id,
-      size: _previewTarget(devicePixelRatio, !loadOriginal),
+      size: tiled
+          ? regionBaseSize(width, height, key.size * devicePixelRatio)
+          : _previewTarget(devicePixelRatio, !loadOriginal),
       assetType: key.assetType,
     );
     yield* loader.loadRequest(request, decode, isFinal: !loadOriginal);
@@ -219,11 +228,12 @@ class LocalFullImageProvider extends ImageProvider<LocalFullImageProvider> {
           isAnimated == other.isAnimated &&
           width == other.width &&
           height == other.height &&
-          checksum == other.checksum;
+          checksum == other.checksum &&
+          tiled == other.tiled;
     }
     return false;
   }
 
   @override
-  int get hashCode => Object.hash(id, size, isAnimated, width, height, checksum);
+  int get hashCode => Object.hash(id, size, isAnimated, width, height, checksum, tiled);
 }

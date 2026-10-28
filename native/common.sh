@@ -34,14 +34,14 @@ unpack() {
   done
 }
 
-# Builds a library unless the same source, patches and build script built it already, and nothing it may depend on
-# (the libraries before it) was built again
+# Builds a library unless the same source, patches and build script (and BUILD_KEY, if set) built it already, and
+# nothing it may depend on (the libraries before it) was built again
 REBUILT=false
 build() {
   local name="$1" stamp
   stamp="$PREFIX/.built-$name"
   local key
-  key="$(source_field "$name" 4) $( [[ $name == jpegli ]] && source_field libjpeg-turbo 4) $(cat "$NATIVE/patches/$name"/*.patch 2>/dev/null | sha256sum) $(declare -f "build_$name" | sha256sum)"
+  key="$(source_field "$name" 4) $( [[ $name == jpegli ]] && source_field libjpeg-turbo 4) $(cat "$NATIVE/patches/$name"/*.patch 2>/dev/null | sha256sum) $(declare -f "build_$name" | sha256sum)${BUILD_KEY:+ $BUILD_KEY}"
   if [[ $REBUILT == false && -f "$stamp" && "$(cat "$stamp")" == "$key" ]]; then
     return
   fi

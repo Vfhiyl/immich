@@ -248,7 +248,8 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
     val orientation = if (handleRaw) rawOrientation(uri) else ExifInterface.ORIENTATION_NORMAL
 
     if (size.width <= 0 || size.height <= 0 || size.width > 768 || size.height > 768) {
-      // A "load original" request is unsized -> a full-res decode (a sized > 768 just samples to target).
+      // A "load original" request is unsized -> a full-res decode. A sized > 768 decodes to the target itself, not to
+      // the power of two above it (up to four times its pixels).
       return decodeSource(uri, size, signal) to orientation
     }
 
@@ -286,7 +287,7 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
   private fun decodeSource(uri: Uri, target: Size, signal: CancellationSignal): Bitmap {
     signal.throwIfCanceled()
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      ImageDecoder.createSource(resolver, uri).decodeBitmap(target)
+      ImageDecoder.createSource(resolver, uri).decodeBitmap(target, exactSize = true)
     } else {
       val ref =
         Glide.with(ctx).asBitmap().priority(Priority.IMMEDIATE).load(uri).disallowHardwareConfig()

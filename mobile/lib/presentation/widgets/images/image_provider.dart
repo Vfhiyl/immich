@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:async/async.dart';
@@ -8,9 +9,13 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/infrastructure/loaders/image_request.dart';
 import 'package:immich_mobile/infrastructure/repositories/settings.repository.dart';
 import 'package:immich_mobile/presentation/widgets/images/local_image_provider.dart';
+import 'package:immich_mobile/presentation/widgets/images/region_image.dart';
 import 'package:immich_mobile/presentation/widgets/images/remote_image_provider.dart';
 import 'package:immich_mobile/presentation/widgets/timeline/constants.dart';
+import 'package:immich_mobile/utils/image_url_builder.dart';
 import 'package:logging/logging.dart';
+import 'package:openapi/api.dart' show AssetMediaSize;
+import 'package:path/path.dart' as p;
 
 // The provider is also the cache key and can be resolved more than once.
 // Keep mutable state per load so cancelling one cannot affect the next load.
@@ -156,12 +161,14 @@ class ImageLoader {
   }
 }
 
+/// [tiled]: shown in tiles, from [getRegionSource]: the provider decodes only the base
 ImageProvider getFullImageProvider(
   BaseAsset asset, {
   Size size = const Size(1080, 1920),
   bool edited = true,
   String? localFilePath,
   Size? remoteThumbnailSize,
+  bool tiled = false,
 }) {
   // Create new provider and cache it
   final ImageProvider provider;
@@ -177,6 +184,7 @@ ImageProvider getFullImageProvider(
       width: asset.width,
       height: asset.height,
       checksum: asset.checksum,
+      tiled: tiled,
     );
   } else {
     final String assetId;
@@ -197,6 +205,9 @@ ImageProvider getFullImageProvider(
       isAnimated: asset.isAnimatedImage,
       edited: edited,
       thumbnailSize: remoteThumbnailSize,
+      tiledBaseSize: tiled && asset.width != null && asset.height != null
+          ? regionBaseSize(asset.width!, asset.height!, size * _devicePixelRatio)
+          : null,
     );
   }
 
@@ -220,6 +231,65 @@ ImageProvider? getThumbnailImageProvider(
   final thumbhash = asset is RemoteAsset ? asset.thumbHash ?? "" : "";
   return assetId != null
       ? RemoteImageProvider.thumbnail(assetId: assetId, thumbhash: thumbhash, edited: edited, decodeSize: remoteSize)
+      : null;
+}
+
+double get _devicePixelRatio => ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
+
+// what the app's decoders read in parts (native/region)
+const _regionExtensions = {'.jpg', '.jpeg', '.png', '.heic', '.heif'};
+
+// the server's previews: 1440 pixels on their short side (its default)
+const _previewShortSide = 1440;
+
+/// What the viewer shows [asset] from in tiles, on a screen of [size] logical pixels, or null where it is
+/// decoded whole as before: on iOS (for now), for animated images and videos, formats the app's decoders do not read,
+/// and images no larger than the base (tiles would show nothing more). It is the original of a local asset; of a
+/// remote one, the preview (long images, whose previews are large), or the original if the settings load originals.
+RegionSource? getRegionSource(
+  BaseAsset asset, {
+  required Size size,
+  bool edited = true,
+  @visibleForTesting bool? android,
+}) {
+  final (width, height) = (asset.width, asset.height);
+  if (!(android ?? Platform.isAndroid) || !asset.isImage || asset.isAnimatedImage || width == null || height == null) {
+    return null;
+  }
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+  final base = regionBaseSize(width, height, size * _devicePixelRatio);
+  final basePixels = base.width * base.height;
+  final readable = _regionExtensions.contains(p.extension(asset.name).toLowerCase());
+  final pixels = width * height;
+
+  if (_shouldUseLocalAsset(asset)) {
+    final id = asset is LocalAsset ? asset.id : (asset as RemoteAsset).localId!;
+    return readable && pixels > basePixels ? RegionSource(localAssetId: id, basePixels: basePixels) : null;
+  }
+
+  final assetId = asset is RemoteAsset ? asset.id : (asset as LocalAsset).remoteId;
+  if (assetId == null) {
+    return null;
+  }
+  final previewScale = math.min(1.0, _previewShortSide / math.min(width, height));
+  final previewPixels = pixels * previewScale * previewScale;
+  if (SettingsRepository.instance.appConfig.image.loadOriginal) {
+    // the base is the preview, which may be smaller
+    return readable && pixels > basePixels
+        ? RegionSource(
+            url: getOriginalUrlForRemoteId(assetId, edited: edited),
+            basePixels: math.min(basePixels, previewPixels),
+          )
+        : null;
+  }
+  final thumbhash = asset is RemoteAsset ? asset.thumbHash ?? "" : "";
+  return previewPixels > basePixels
+      ? RegionSource(
+          url: getThumbnailUrlForRemoteId(assetId, type: AssetMediaSize.preview, thumbhash: thumbhash, edited: edited),
+          basePixels: basePixels,
+        )
       : null;
 }
 

@@ -18,6 +18,7 @@ import 'package:immich_mobile/presentation/widgets/asset_viewer/ocr_overlay.widg
 import 'package:immich_mobile/presentation/widgets/asset_viewer/video_viewer.widget.dart';
 import 'package:immich_mobile/presentation/widgets/images/image_provider.dart';
 import 'package:immich_mobile/presentation/widgets/images/progressive_image.widget.dart';
+import 'package:immich_mobile/presentation/widgets/images/region_image.dart';
 import 'package:immich_mobile/presentation/widgets/images/thumbnail.widget.dart';
 import 'package:immich_mobile/providers/asset_viewer/asset_viewer.provider.dart';
 import 'package:immich_mobile/providers/asset_viewer/is_motion_video_playing.provider.dart';
@@ -65,6 +66,9 @@ class _AssetPageState extends ConsumerState<AssetPage> {
 
   BaseAsset? _asset;
 
+  // the image shown in tiles
+  RegionImage? _region;
+
   @override
   void initState() {
     super.initState();
@@ -91,6 +95,7 @@ class _AssetPageState extends ConsumerState<AssetPage> {
 
   @override
   void dispose() {
+    _region?.dispose();
     _scrollController.dispose();
     unawaited(_scaleBoundarySub?.cancel());
     unawaited(_eventSubscription?.cancel());
@@ -345,6 +350,27 @@ class _AssetPageState extends ConsumerState<AssetPage> {
     _listenForScaleBoundaries(controller);
   }
 
+  RegionImage? _regionImage(BaseAsset asset, Size size, {required bool isCurrent}) {
+    final source = getRegionSource(asset, size: size);
+    if (_region?.source != source) {
+      _region?.dispose();
+      _region = source == null ? null : (RegionImage(source)..addListener(_onRegionChanged));
+    }
+    final region = _region;
+    if (region == null || region.failed) {
+      return null;
+    }
+    region.active = isCurrent;
+    return region;
+  }
+
+  // shown whole, as before, if it cannot be shown in tiles
+  void _onRegionChanged() {
+    if (_region?.failed == true && mounted) {
+      setState(() {});
+    }
+  }
+
   Widget _buildPhotoView({
     required BaseAsset asset,
     required PhotoViewHeroAttributes? heroAttributes,
@@ -354,11 +380,13 @@ class _AssetPageState extends ConsumerState<AssetPage> {
     required Size? remoteThumbnailSize,
   }) {
     final size = context.sizeData;
+    final region = localFilePath == null ? _regionImage(asset, size, isCurrent: isCurrent) : null;
     final imageProvider = getFullImageProvider(
       asset,
       size: size,
       localFilePath: localFilePath,
       remoteThumbnailSize: remoteThumbnailSize,
+      tiled: region != null,
     );
 
     if (asset.isImage && !isPlayingMotionVideo) {
@@ -384,6 +412,9 @@ class _AssetPageState extends ConsumerState<AssetPage> {
           onDragCancel: _onDragCancel,
           onTapUp: _onTapUp,
           onLongPressStart: asset.isMotionPhoto ? _onLongPress : null,
+          overlayBuilder: region == null
+              ? null
+              : (context, display, visible) => RegionTiles(image: region, display: display, visible: visible),
           errorBuilder: (_, _, _) => SizedBox(
             width: size.width,
             height: size.height,

@@ -18,6 +18,8 @@ import app.alextran.immich.core.NetworkApiPlugin
 import me.albemala.native_video_player.NativeVideoPlayerPlugin
 import app.alextran.immich.images.LocalImageApi
 import app.alextran.immich.images.LocalImagesImpl
+import app.alextran.immich.images.RegionImageApi
+import app.alextran.immich.images.RegionImagesImpl
 import app.alextran.immich.images.RemoteImageApi
 import app.alextran.immich.images.RemoteImagesImpl
 import app.alextran.immich.permission.PermissionApi
@@ -61,6 +63,7 @@ class MainActivity : FlutterFragmentActivity() {
       PermissionApi.setUp(messenger, permissionApiImpl)
       LocalImageApi.setUp(messenger, LocalImagesImpl(ctx))
       RemoteImageApi.setUp(messenger, RemoteImagesImpl(ctx))
+      RegionImageApi.setUp(messenger, RegionImagesImpl(ctx))
 
       BackgroundWorkerFgHostApi.setUp(messenger, BackgroundWorkerApiImpl(ctx))
       ConnectivityApi.setUp(messenger, ConnectivityApiImpl(ctx))

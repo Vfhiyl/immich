@@ -45,7 +45,11 @@ The app shows very large images (photos of 100 MP and more, long screenshots) by
 - JPEG: rows are decoded from the top, only the columns of the part, made smaller by the DCT where it can.
 - PNG: opening the image decodes it once and keeps an entry into its compressed data about every megabyte of rows (as zlib's zran.c), with the row before it; a part is decoded from the entry before it.
 
-Colours are converted to sRGB from the embedded profile, and the orientation is applied. `region/test/test.sh` (in `misc/check.sh`) compares the parts with whole images decoded by libheif, libjpeg-turbo and libpng: the same pixels at full size, their averages when smaller. Measured on a server's processor: a screen of 1080 × 2400 at the bottom of a 200 MP HEIC in 0.17 s and 96 MB at most, where decoding it whole takes 3.7 s and 870 MB.
+Colours are converted to sRGB from the embedded profile, and the orientation is applied. `region/test/test.sh` (in `misc/check.sh`) compares the parts with whole images decoded by libheif, libjpeg-turbo and libpng: the same pixels at full size, their averages when smaller. Then it runs the app's bridge to it (`mobile/android/app/src/main/cpp/region_jni.c`) on this machine's JVM (`region/test/RegionDecoderTest.java`). Measured on a server's processor: a screen of 1080 × 2400 at the bottom of a 200 MP HEIC in 0.17 s and 96 MB at most, where decoding it whole takes 3.7 s and 870 MB.
+
+`build-region.sh` needs only curl, CMake and make (and the NDK). The Android app's build runs it for its three ABIs (`mobile/android/app/build.gradle`), into `IMMICH_NATIVE_WORK` (by default `~/.cache/immich-native`); it builds a library again only when its source, its patches or the compiler changed. The app links them into `libimmich_region.so` (`mobile/android/app/CMakeLists.txt`), which depends only on Android's C library.
+
+In the app (Android; iOS later), the viewer decodes a base of the image whole, at most twice the pixels of the screen and 4096 pixels on its long side, and draws over it the tiles of the part on the screen (512 × 512, at its scale, 64 MB of them kept), when the base is not enough there (`mobile/lib/presentation/widgets/images/region_image.dart`). Tiles come from the original of a local asset; of a remote one, from its preview (long images, whose previews are larger than the base), or from its original if the settings load originals, downloaded to a file first (512 MB of them kept). Formats the decoders do not read (WebP, AVIF, RAW...) and animated images are decoded whole, as before.
 
 ## Releasing
 
@@ -60,3 +64,5 @@ Without Docker, download the archive of the release, check its SHA-256, and run 
 ## Licences and patents
 
 The libraries keep their licences (libvips, libheif, libde265, glib and others are LGPL; the archive has their sources list and our patches, so that they can be built again and linked with other versions). The archive includes a decoder of HEVC (libde265), which HEIC photos need. HEVC is covered by patents in some countries; whoever deploys the server is responsible for what their use of it requires. We provide the program and its code.
+
+The Android app links libheif and libde265 (LGPL), libjpeg-turbo, lcms2 and zlib-ng statically; the app's sources (AGPL) and this directory are what it is built from, so that it can be built again with other versions of them. It decodes HEVC with libde265 too: whoever distributes the app is responsible for what that requires.
