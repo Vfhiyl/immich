@@ -7,6 +7,7 @@ import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { Colorspace, ImageFormat } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
+import { getDerivedDimensions } from 'src/utils/derived-size.js';
 import { automock } from 'test/utils.js';
 
 const testAssets = join(dirname(import.meta.filename), '../../../e2e/test-assets/formats');
@@ -379,6 +380,32 @@ describe(MediaRepository.name, () => {
         expect(max).toBeLessThanOrEqual(5);
       });
     }
+
+    it('should make the preview of a long screenshot as getDerivedDimensions says', async () => {
+      const dir = mkdtempDisposableSync(join(tmpdir(), 'media-repository-'));
+      const file = join(dir.path, 'screenshot.png');
+      await sharp({ create: { width: 1080, height: 20_000, channels: 3, background: '#336699' } })
+        .png()
+        .toFile(file);
+
+      const smaller = await sut.decodeImage(file, {
+        colorspace: Colorspace.Srgb,
+        processInvalidImages: false,
+        size: 1440,
+      });
+
+      expect(smaller.info).toEqual({ ...getDerivedDimensions({ width: 1080, height: 20_000 }, 1440), channels: 3 });
+      expect(smaller.info).toMatchObject({ width: 885, height: 16_383 });
+      // the preview and the thumbnail made from it
+      const dir2 = mkdtempDisposableSync(join(tmpdir(), 'media-repository-'));
+      const preview = join(dir2.path, 'preview.jpeg');
+      const thumbnail = join(dir2.path, 'thumbnail.webp');
+      const options = { colorspace: Colorspace.Srgb, processInvalidImages: false, quality: 80 };
+      await sut.generateThumbnail(smaller, { ...options, format: ImageFormat.Jpeg, size: 1440 }, preview);
+      await sut.generateThumbnail(smaller, { ...options, format: ImageFormat.Webp, size: 250 }, thumbnail);
+      await expect(sharp(preview).metadata()).resolves.toMatchObject({ width: 885, height: 16_383 });
+      await expect(sharp(thumbnail).metadata()).resolves.toMatchObject({ width: 221, height: 4096 });
+    });
 
     it('should not make a photo larger than it is', async () => {
       const smaller = await sut.decodeImage(join(testAssets, 'jpg/el_torcal_rocks.jpg'), {

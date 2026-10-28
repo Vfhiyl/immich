@@ -30,6 +30,7 @@ import {
   RawExtractedFormat,
   StorageBackendRole,
   StorageFolder,
+  SystemMetadataKey,
   TranscodeHardwareAcceleration,
   TranscodePolicy,
   TranscodeTarget,
@@ -47,6 +48,7 @@ import {
 } from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
+import { DERIVED_MAX_RATIO, DERIVED_SIZE_RULE_VERSION } from 'src/utils/derived-size.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { BaseConfig, ThumbnailConfig } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -75,6 +77,30 @@ export class MediaService extends BaseService {
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
   async onBootstrap() {
     this.videoInterfaces = await this.storageCore.getVideoInterfaces();
+  }
+
+  /**
+   * The previews and thumbnails of images longer than 4096:1440 were made by their short side alone (a long screenshot
+   * of 1080 x 20000 had a preview of its own size); they are made again by the rule of getDerivedScale, once
+   */
+  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  async onDerivedSizeRule() {
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.DerivedSizeRule);
+    if ((state?.version ?? 0) >= DERIVED_SIZE_RULE_VERSION) {
+      return;
+    }
+
+    let count = 0;
+    for await (const assets of batched(this.assetJobRepository.streamLongImages(DERIVED_MAX_RATIO))) {
+      await this.jobRepository.queueAll(
+        assets.map(({ id }) => ({ name: JobName.AssetGenerateThumbnails, data: { id } })),
+      );
+      count += assets.length;
+    }
+    await this.systemMetadataRepository.set(SystemMetadataKey.DerivedSizeRule, { version: DERIVED_SIZE_RULE_VERSION });
+    if (count > 0) {
+      this.logger.log(`Making the previews and thumbnails of ${count} long images again`);
+    }
   }
 
   @OnJob({ name: JobName.AssetGenerateThumbnailsQueueAll, queue: QueueName.ThumbnailGeneration })

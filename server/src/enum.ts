@@ -410,6 +410,7 @@ export enum SystemMetadataKey {
   StorageMasterKeySaved = 'storage-master-key-saved',
   MachineLearningModels = 'machine-learning-models',
   MachineLearningBackoff = 'machine-learning-backoff',
+  DerivedSizeRule = 'derived-size-rule',
 }
 
 export enum UserMetadataKey {

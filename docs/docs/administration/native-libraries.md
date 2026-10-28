@@ -22,3 +22,7 @@ or build it from source with `native/build.sh` (see `native/README.md`). The ser
 ## Patents and licences
 
 The libraries include a decoder of HEVC (libde265), which HEIC photos need. HEVC is covered by patents in some countries. **Whoever deploys the server is responsible for what their use of it requires**; this project provides the program and its code. The libraries keep their licences (several are LGPL); the archive lists their sources and includes our patches, so that they can be built again.
+
+## Previews of very long images
+
+Previews and thumbnails have the size set in the settings as their short side, as in Immich, for images up to about 7.7:1 (almost all photos). Longer images, such as long screenshots and panoramas, get previews of at most 16 megapixels (for the default preview size of 1440, in proportion for other sizes), so that a long screenshot can still be read in its preview: one of 1080 × 10000 keeps its size, one of 1080 × 20000 gets a preview of 885 × 16383. Thumbnails keep a long side of at most 4096. No side is larger than 16383 pixels, which WebP cannot exceed. The previews and thumbnails of long images made before are made again once, in the background.

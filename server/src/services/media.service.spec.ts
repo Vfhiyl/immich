@@ -24,6 +24,7 @@ import {
   RawExtractedFormat,
   StorageBackendDriver,
   StorageBackendRole,
+  SystemMetadataKey,
   TranscodeHardwareAcceleration,
   TranscodePolicy,
   VideoCodec,
@@ -66,6 +67,31 @@ describe(MediaService.name, () => {
 
   // TODO these should all become medium tests of either the service or the repository.
   // The entire logic of what to queue lives in the SQL query now
+  describe('onDerivedSizeRule', () => {
+    it('should make the previews and thumbnails of long images again, once', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null);
+      mocks.assetJob.streamLongImages.mockReturnValue(makeStream([{ id: 'asset-1' }, { id: 'asset-2' }]));
+
+      await sut.onDerivedSizeRule();
+
+      expect(mocks.assetJob.streamLongImages).toHaveBeenCalledWith(16_000_000 / (1440 * 1440));
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } },
+        { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-2' } },
+      ]);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.DerivedSizeRule, { version: 1 });
+    });
+
+    it('should do nothing once done', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ version: 1 });
+
+      await sut.onDerivedSizeRule();
+
+      expect(mocks.assetJob.streamLongImages).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleQueueGenerateThumbnails', () => {
     it('should queue all assets', async () => {
       const asset = AssetFactory.create();

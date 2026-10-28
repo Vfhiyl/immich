@@ -99,6 +99,19 @@ where
 limit
   $3
 
+-- AssetJobRepository.streamLongImages
+select
+  "asset"."id"
+from
+  "asset"
+where
+  "asset"."deletedAt" is null
+  and "asset"."visibility" != 'hidden'
+  and "asset"."type" = 'IMAGE'
+  and "asset"."width" > $1
+  and "asset"."height" > $2
+  and greatest(asset.width, asset.height)::float / least(asset.width, asset.height) > $3
+
 -- AssetJobRepository.streamForThumbnailJob
 select
   "asset"."id",

@@ -72,6 +72,21 @@ export class AssetJobRepository {
       .executeTakeFirst();
   }
 
+  /** Images longer than `ratio` (long screenshots, panoramas): their previews and thumbnails are sized by their pixels */
+  @GenerateSql({ params: [7.7], stream: true })
+  streamLongImages(ratio: number) {
+    return this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
+      .where('asset.type', '=', sql.lit(AssetType.Image))
+      .where('asset.width', '>', 0)
+      .where('asset.height', '>', 0)
+      .where(sql<boolean>`greatest(asset.width, asset.height)::float / least(asset.width, asset.height) > ${ratio}`)
+      .stream();
+  }
+
   @GenerateSql({ params: [{ force: false, fullsizeEnabled: true }], stream: true })
   streamForThumbnailJob(options: { force: boolean | undefined; fullsizeEnabled: boolean }) {
     return this.db

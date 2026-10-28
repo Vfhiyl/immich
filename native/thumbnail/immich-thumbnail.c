@@ -2,7 +2,8 @@
  * photo, with the memory of a few hundred lines of it rather than of all its pixels.
  *
  * Usage: immich-thumbnail INPUT SIZE COLORSPACE [--process-invalid]
- *   SIZE        the shorter side of the result, in pixels (no larger than the photo)
+ *   SIZE        the size of the server's preview: the shorter side of the result, but for very long images (see
+ *               derived_scale), and no larger than the photo
  *   COLORSPACE  srgb or p3: the colours of the result, and of the files made from it
  *
  * Writes to stdout one line of JSON ({"width":..,"height":..,"channels":..}) and then the pixels: 8 bits per channel,
@@ -20,6 +21,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -61,6 +63,22 @@ set_tile_height(void)
 	}
 
 	return 0;
+}
+
+/* The scale of the preview of an image of @width x @height for @size, as the server's getDerivedScale
+ * (server/src/utils/derived-size.ts), which the server's tests compare with this: @size as the short side for images
+ * up to 16 MP:1440² (7.7:1); for longer ones at most 16 MP (in proportion to @size), with a long side of at least 4096;
+ * never more than 16383 a side (WebP), nor larger than the image.
+ */
+static double
+derived_scale(int width, int height, int size)
+{
+	const double short_side = VIPS_MIN(width, height);
+	const double long_side = VIPS_MAX(width, height);
+	const double by_pixels = sqrt((double) size * size * (16000000.0 / (1440.0 * 1440.0)) / ((double) width * height));
+
+	return VIPS_MIN(VIPS_MIN(1.0, size / short_side),
+		VIPS_MIN(16383.0 / long_side, VIPS_MAX(by_pixels, 4096.0 / long_side)));
 }
 
 /* Whether the operation @nickname (a loader) takes the argument @name */
@@ -194,7 +212,7 @@ main(int argc, char **argv)
 		x = t[2];
 	}
 
-	scale = (double) size / VIPS_MIN(x->Xsize, x->Ysize);
+	scale = derived_scale(x->Xsize, x->Ysize, size);
 	if (scale < 1.0) {
 		if (vips_resize(x, &t[3], scale, "kernel", VIPS_KERNEL_LANCZOS3, NULL))
 			return fail("cannot resize: ");

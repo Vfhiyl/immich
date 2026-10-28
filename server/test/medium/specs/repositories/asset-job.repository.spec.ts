@@ -1,11 +1,11 @@
 import { Kysely } from 'kysely';
-import { AssetFileType } from 'src/enum.js';
+import { AssetFileType, AssetType } from 'src/enum.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getKyselyDB } from 'test/utils.js';
+import { getKyselyDB, getTestKyselyDB } from 'test/utils.js';
 
 const consume = async <T>(generator: AsyncIterableIterator<T>) => {
   const values: T[] = await Array.fromAsync(generator);
@@ -29,6 +29,24 @@ beforeAll(async () => {
 });
 
 describe(AssetJobRepository.name, () => {
+  describe('streamLongImages', () => {
+    it('should stream the images longer than a ratio, either way', async () => {
+      const { ctx, sut } = setup(await getTestKyselyDB());
+      const { user } = await ctx.newUser();
+      const screenshot = await ctx.newAsset({ ownerId: user.id, width: 1080, height: 20_000 });
+      const panorama = await ctx.newAsset({ ownerId: user.id, width: 30_000, height: 3000 });
+      await ctx.newAsset({ ownerId: user.id, width: 1080, height: 6000 });
+      await ctx.newAsset({ ownerId: user.id, width: 4032, height: 3024 });
+      await ctx.newAsset({ ownerId: user.id, width: null, height: null });
+      await ctx.newAsset({ ownerId: user.id, width: 1080, height: 20_000, type: AssetType.Video });
+      await ctx.newAsset({ ownerId: user.id, width: 1080, height: 20_000, deletedAt: new Date() });
+
+      const assets = await consume(sut.streamLongImages(16_000_000 / (1440 * 1440)));
+
+      expect(assets.map(({ id }) => id).toSorted()).toEqual([screenshot.asset.id, panorama.asset.id].toSorted());
+    });
+  });
+
   describe('streamForThumbnailJob', () => {
     it('should work', async () => {
       const { sut } = setup();

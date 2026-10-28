@@ -39,9 +39,10 @@ import {
   RawExtractedFormat,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { getDerivedScale } from 'src/utils/derived-size.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 import { OutputTail } from 'src/utils/output-tail.js';
-import { createAffineMatrix } from 'src/utils/transform.js';
+import { createAffineMatrix, getOutputDimensions } from 'src/utils/transform.js';
 
 const probe = (input: string, options: string[]): Promise<FfprobeData> =>
   new Promise((resolve, reject) =>
@@ -258,10 +259,23 @@ export class MediaRepository {
       return Promise.resolve(image);
     }
 
-    return this.edit(this.raw(image).pipelineColorspace('scrgb'), edits)
-      .resize(size, size, { fit, withoutEnlargement: true })
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    let pipeline = this.edit(this.raw(image).pipelineColorspace('scrgb'), edits);
+    if (size && fit === 'outside') {
+      // the size of a preview or thumbnail (see getDerivedScale), with one scale for both sides
+      const edited = getOutputDimensions(edits, image.info);
+      const short = Math.min(edited.width, edited.height);
+      const long = Math.max(edited.width, edited.height);
+      const scale = getDerivedScale(edited, size);
+      if (scale >= size / short) {
+        pipeline = pipeline.resize(size, size, { fit: 'outside', withoutEnlargement: true });
+      } else if (Math.round(long * scale) < long - 1) {
+        const target = Math.round(long * scale);
+        pipeline = pipeline.resize(target, target, { fit: 'inside', withoutEnlargement: true });
+      }
+    } else if (size) {
+      pipeline = pipeline.resize(size, size, { fit, withoutEnlargement: true });
+    }
+    return pipeline.raw().toBuffer({ resolveWithObject: true });
   }
 
   private raw({ data, info: raw }: Bitmap) {
