@@ -200,6 +200,8 @@ describe('storage backends for originals and derived files', () => {
       `select id from asset where "livePhotoVideoId" is not null or id = $1`,
       [assetId],
     );
+    // no job still makes files for them
+    await api.waitForIdleQueues();
     const stored = [...(await environment.listBackend('originals')), ...(await environment.listBackend('derived'))];
     await api.deleteAssets(assets.map(({ id }) => id));
 
@@ -227,7 +229,8 @@ describe('storage backends for originals and derived files', () => {
       },
       { timeout: 60_000 },
     );
-  });
+    // (the restart and its wait take longer than a test may by default)
+  }, 180_000);
 
   it('should refuse to start while a backend that holds files is not configured', async () => {
     const { id } = await api.upload(photoPath, photo);

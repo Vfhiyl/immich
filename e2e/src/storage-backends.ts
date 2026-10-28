@@ -782,6 +782,20 @@ export class Api {
     return { status: response.status, body: Buffer.from(await response.arrayBuffer()) };
   }
 
+  /** Resolves once no queue of the server has jobs waiting or running (the work of uploads is done) */
+  async waitForIdleQueues({ timeout = 60_000 } = {}) {
+    await eventually(
+      async () => {
+        const { body } = await this.json<Array<{ name: string; statistics: Record<string, number> }>>('/queues');
+        const busy = body.filter(({ statistics: { active, waiting } }) => active + waiting > 0);
+        if (busy.length > 0) {
+          throw new Error(`Queues still busy: ${busy.map(({ name }) => name).join(', ')}`);
+        }
+      },
+      { timeout },
+    );
+  }
+
   /** A JSON request, resolving with the status and the parsed body, if any */
   async json<T = unknown>(path: string, { method = 'GET', body }: { method?: string; body?: unknown } = {}) {
     const response = await this.request(path, {
