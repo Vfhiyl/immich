@@ -32,6 +32,57 @@ fail(const char *message)
 	return 1;
 }
 
+/* libvips works through an image in strips of 128 lines (its tile height), and keeps two strips of the result, and
+ * the lines of the photo they are made from: 1500 lines of floats for a photo made 6 times smaller, 280 MB for a
+ * width of 15000. With 16 lines it keeps an eighth of that, makes the same pixels, and is no slower (we measured).
+ * The tile height is an option of libvips' command line (--vips-tile-height), which we parse as vips(1) does.
+ */
+static int
+set_tile_height(void)
+{
+	char *args[] = { "immich-thumbnail", "--vips-tile-height=16", NULL };
+	char **argv = args;
+	int argc = 2;
+	GOptionContext *context;
+	GOptionGroup *group;
+	GError *error = NULL;
+	gboolean parsed;
+
+	context = g_option_context_new(NULL);
+	group = g_option_group_new(NULL, NULL, NULL, NULL, NULL);
+	g_option_context_set_main_group(context, group);
+	vips_add_option_entries(group);
+	parsed = g_option_context_parse(context, &argc, &argv, &error);
+	g_option_context_free(context);
+	if (!parsed) {
+		vips_error("immich-thumbnail", "%s", error->message);
+		g_error_free(error);
+		return -1;
+	}
+
+	return 0;
+}
+
+/* Whether the operation @nickname (a loader) takes the argument @name */
+static gboolean
+has_argument(const char *nickname, const char *name)
+{
+	VipsOperation *operation;
+	GParamSpec *pspec;
+	VipsArgumentClass *argument_class;
+	VipsArgumentInstance *argument_instance;
+	gboolean found;
+
+	if (!(operation = vips_operation_new(nickname)))
+		return FALSE;
+	found = !vips_object_get_argument(VIPS_OBJECT(operation), name,
+		&pspec, &argument_class, &argument_instance);
+	g_object_unref(operation);
+	vips_error_clear();
+
+	return found;
+}
+
 static int
 write_all(const void *data, size_t length)
 {
@@ -56,6 +107,7 @@ main(int argc, char **argv)
 	VipsImage *t[10] = { NULL };
 	VipsImage *x;
 	const char *input;
+	const char *loader;
 	int size;
 	const char *colorspace;
 	gboolean process_invalid;
@@ -84,11 +136,25 @@ main(int argc, char **argv)
 	/* reading the photo is the slow part, and it is sequential: more threads would only take more memory */
 	vips_concurrency_set(1);
 	vips_cache_set_max(0);
+	if (set_tile_height())
+		return fail("cannot set the tile height: ");
 
-	if (!(in = vips_image_new_from_file(input,
-			  "access", VIPS_ACCESS_SEQUENTIAL,
-			  "fail_on", process_invalid ? VIPS_FAIL_ON_NONE : VIPS_FAIL_ON_ERROR,
-			  NULL)))
+	/* without the limits of libvips' loaders against denial of service (as the server's sharp: `unlimited`): a
+	 * photo of 200 MP from a phone is a grid of more items than libheif allows by default */
+	if (!(loader = vips_foreign_find_load(input)))
+		return fail("cannot open the photo: ");
+	if (has_argument(loader, "unlimited"))
+		in = vips_image_new_from_file(input,
+			"access", VIPS_ACCESS_SEQUENTIAL,
+			"fail_on", process_invalid ? VIPS_FAIL_ON_NONE : VIPS_FAIL_ON_ERROR,
+			"unlimited", TRUE,
+			NULL);
+	else
+		in = vips_image_new_from_file(input,
+			"access", VIPS_ACCESS_SEQUENTIAL,
+			"fail_on", process_invalid ? VIPS_FAIL_ON_NONE : VIPS_FAIL_ON_ERROR,
+			NULL);
+	if (!in)
 		return fail("cannot open the photo: ");
 	x = in;
 

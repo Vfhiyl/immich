@@ -5,7 +5,7 @@ The server reads and writes images with libvips, through sharp. It does not use 
 - sharp's native module, with libvips inside;
 - `immich-thumbnail`, a program that makes the image the preview, the thumbnail and the thumbhash of a photo are made from. It reads the photo once, from top to bottom, keeping only the lines it still needs, and runs in a process of its own, which gives all of its memory back when it is done.
 
-A 48 MP photo takes about 160 MB to make its preview from, instead of about 500 MB; a 200 MP one about 260 MB instead of about 700 MB. HEIC photos of phones are decoded a row of tiles at a time.
+A 48 MP photo takes about 80 MB to make its preview from, instead of about 250 to 500 MB; a 200 MP HEIC photo of a phone about 110 MB instead of about 900 MB. HEIC photos of phones are decoded a row of tiles at a time.
 
 The sources, the patches (each says what it changes and why) and how to build them are in [`native/`](https://github.com/Vfhiyl/immich/tree/feat/object-storage/native) of the repository.
 

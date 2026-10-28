@@ -7,7 +7,7 @@ The server reads and writes images with [libvips](https://github.com/libvips/lib
 | `lib/sharp-linux-x64.node` | sharp's native module (the version the server uses), with libvips inside |
 | `bin/immich-thumbnail` | a program that makes the image the preview, the thumbnail and the thumbhash of a photo are made from ([thumbnail/immich-thumbnail.c](thumbnail/immich-thumbnail.c)) |
 
-Why: **memory**. The server ran on whatever libvips it found, which decoded a photo whole before making it smaller: about 500 MB for a 48 MP photo, 700 MB for 200 MP. With these libraries the same photos take 160 to 260 MB, which depends on the width of the photo rather than on all its pixels, and a HEIC photo of a phone is decoded a row of tiles at a time. The colours and pixels of the results are those of before (within the rounding of a few pixels; the tests compare them).
+Why: **memory**. The server ran on whatever libvips it found, which decoded a photo whole before making it smaller: about 500 MB for a 48 MP photo, 700 MB for 200 MP. With these libraries a photo is read once, from top to bottom, and a HEIC photo of a phone a row of tiles at a time: 48 MP photos take about 80 MB, a 200 MP HEIC of a Galaxy S24 Ultra 110 MB, a 133 MP HEIC 160 MB (the memory depends on the width of the photo, not on all its pixels). immich-thumbnail works in strips of 16 lines instead of libvips' 128, which keeps an eighth of the lines in memory and makes the same pixels as fast. The colours and pixels of the results are those of before (within the rounding of a few pixels; the tests compare them).
 
 ## What is in it
 
