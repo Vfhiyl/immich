@@ -37,6 +37,16 @@ It needs a C and C++ compiler (GCC), make, cmake, nasm, autoconf, automake, libt
 
 `server/bin/install-native <directory or archive> [root]` installs the files: sharp's module where sharp loads a module built from source (`node_modules/sharp/src/build/Release`), in every copy of sharp below `root` (default: the server; in the repository the web app uses sharp too, when it is built), and `immich-thumbnail` in `server/native/bin`. It checks that the archive was built for the version of sharp in use, and that sharp loads it. `misc/check.sh` builds and installs them before the tests.
 
+## Decoding parts of large images (the app)
+
+The app shows very large images (photos of 100 MP and more, long screenshots) by decoding only the part on the screen, at the scale it is shown, with decoders it brings: `region/` (C, for Android and iOS) over libheif with libde265, libjpeg-turbo, zlib and lcms2, which `build-region.sh <target>` builds as static libraries from `sources.txt` with our patches (`host` for the tests, `android-arm64-v8a`, `android-armeabi-v7a`, `android-x86_64`).
+
+- HEIC made of tiles (the photos of phones): only the tiles of the part are decoded (libheif places the tiles of rotated photos by `heif/0001`).
+- JPEG: rows are decoded from the top, only the columns of the part, made smaller by the DCT where it can.
+- PNG: opening the image decodes it once and keeps an entry into its compressed data about every megabyte of rows (as zlib's zran.c), with the row before it; a part is decoded from the entry before it.
+
+Colours are converted to sRGB from the embedded profile, and the orientation is applied. `region/test/test.sh` (in `misc/check.sh`) compares the parts with whole images decoded by libheif, libjpeg-turbo and libpng: the same pixels at full size, their averages when smaller. Measured on a server's processor: a screen of 1080 × 2400 at the bottom of a 200 MP HEIC in 0.17 s and 96 MB at most, where decoding it whole takes 3.7 s and 870 MB.
+
 ## Releasing
 
 Docker images install the release named in `release.txt` (its URL and SHA-256). Releases are built on Rocky Linux 8 (glibc 2.28, the oldest that Node.js 24 runs on), so that they run on every Linux that runs the server:

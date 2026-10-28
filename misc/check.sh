@@ -194,6 +194,9 @@ mobile_android() {
 
 # --- build, schema and generated SQL ---
 
+# the app decodes parts of large images with native/region, built for this machine and compared with whole decodes
+native_region() { "$repo/native/region/test/test.sh"; }
+
 # the native libraries (libvips in sharp's module, immich-thumbnail), built from the sources and patches in native/
 # (only what changed is built again) and installed for every sharp of the repository, which loads nothing else
 native() {
@@ -262,6 +265,7 @@ end_to_end_web() {
 }
 
 step 'native: libraries built and installed' native
+step "native: the app's decoding of parts of images" native_region
 step 'server: formatting' server_format
 step 'server: lint' server_lint
 step 'server: types' server_types

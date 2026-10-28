@@ -38,3 +38,5 @@ libvips|8.18.7|https://github.com/libvips/libvips/releases/download/v8.18.7/vips
 # built against the libraries above (the version of sharp must be that of the server's dependency)
 sharp|0.35.5|https://registry.npmjs.org/sharp/-/sharp-0.35.5.tgz|3b6bbbe6b308f5c383938ca4a31926cd5d79c4651ed8c5fda16a97da2014a9ac
 node-addon-api|8.8.0|https://registry.npmjs.org/node-addon-api/-/node-addon-api-8.8.0.tgz|72528f1a8235a8bc19855e21cc5ae28252c276338afa73887dc7e54515bc76c5
+# the app's decoding of parts of large images (build-region.sh; region/)
+jpeg-turbo|3.1.4|https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.1.4/libjpeg-turbo-3.1.4.tar.gz|e23d3ebb2c6ee4d0e2a5823dbb55b614845df5ea3435c956fed5cf04041a87ad
