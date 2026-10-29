@@ -12,9 +12,17 @@ public class RegionDecoderTest {
     }
   }
 
-  static void decodes(String path) throws IOException {
+  static void decodes(String path, boolean byDescriptor) throws IOException {
     int[] size = new int[2];
-    long image = RegionDecoder.open(path, size);
+    long image;
+    if (byDescriptor) {
+      // as the app opens local assets: a descriptor of the media store, closed once the image is open
+      try (java.io.RandomAccessFile file = new java.io.RandomAccessFile(path, "r")) {
+        image = RegionDecoder.openFd(fdOf(file.getFD()), size);
+      }
+    } else {
+      image = RegionDecoder.open(path, size);
+    }
     check(image != 0 && size[0] > 0 && size[1] > 0, "opens " + path);
     int[] info = new int[3];
     // the bottom right corner, made 3 times smaller (sizes rounded up)
@@ -31,13 +39,26 @@ public class RegionDecoderTest {
       check(e.getMessage().contains("not within the image"), "why a part beyond the image fails: " + e.getMessage());
     }
     RegionDecoder.close(image);
-    System.out.println("ok " + path + " " + size[0] + "x" + size[1]);
+    System.out.println("ok " + path + " " + size[0] + "x" + size[1] + (byDescriptor ? " by its descriptor" : ""));
+  }
+
+  // the number of a FileDescriptor (Android's ParcelFileDescriptor.getFd())
+  static int fdOf(java.io.FileDescriptor descriptor) {
+    try {
+      java.lang.reflect.Field field = java.io.FileDescriptor.class.getDeclaredField("fd");
+      field.setAccessible(true);
+      return field.getInt(descriptor);
+    } catch (ReflectiveOperationException e) {
+      throw new AssertionError(e);
+    }
   }
 
   public static void main(String[] args) throws IOException {
     System.loadLibrary("immich_region");
-    decodes(args[0]);
-    decodes(args[1]);
+    decodes(args[0], false);
+    decodes(args[1], false);
+    decodes(args[0], true);
+    decodes(args[1], true);
     try {
       RegionDecoder.open(args[2], new int[2]);
       check(false, "opening " + args[2] + " fails");
@@ -56,6 +77,8 @@ public class RegionDecoderTest {
 
 class RegionDecoder {
   static native long open(String path, int[] size) throws IOException;
+
+  static native long openFd(int fd, int[] size) throws IOException;
 
   static native long decode(long handle, int x, int y, int width, int height, int sample, int[] info)
     throws IOException;

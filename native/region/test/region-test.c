@@ -4,10 +4,12 @@
  *
  * Usage: region-test FILE...
  *        region-test --make-png FILE WIDTH HEIGHT photo|text|palette    (long PNGs to test with) */
+#include <fcntl.h>
 #include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <jpeglib.h>
 #include <libheif/heif.h>
@@ -147,7 +149,15 @@ int main(int argc, char **argv)
 	for (int a = 1; a < argc; a++) {
 		const char *path = argv[a];
 		char error[256];
-		ir_image *image = ir_open(path, error, sizeof(error));
+		/* every other file through its descriptor, closed at once: the image keeps its own */
+		ir_image *image;
+		if (a % 2 == 0) {
+			const int fd = open(path, O_RDONLY);
+			image = ir_open_fd(fd, error, sizeof(error));
+			close(fd);
+		}
+		else
+			image = ir_open(path, error, sizeof(error));
 		if (!image) {
 			printf("FAIL %s: %s\n", path, error);
 			failed++;

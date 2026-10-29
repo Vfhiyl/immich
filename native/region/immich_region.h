@@ -24,6 +24,10 @@ typedef struct ir_image ir_image;
 /* Opens an image file; on failure returns NULL and writes why into `error` */
 ir_image *ir_open(const char *path, char *error, size_t error_size);
 
+/* Opens the image file of a file descriptor (Android's media store gives those), which it duplicates: the caller may
+ * close its own. The image reads it with pread() or after seeking, so the descriptor must be of a regular file. */
+ir_image *ir_open_fd(int fd, char *error, size_t error_size);
+
 /* The size of the image, upright */
 int ir_width(const ir_image *image);
 int ir_height(const ir_image *image);

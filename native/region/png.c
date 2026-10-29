@@ -442,7 +442,7 @@ done:
 	return status;
 }
 
-int ir_open_png(ir_image *image, const char *path)
+int ir_open_png(ir_image *image)
 {
 	png *p = calloc(1, sizeof(png));
 	if (!p) {
@@ -451,7 +451,7 @@ int ir_open_png(ir_image *image, const char *path)
 	}
 	image->format = &format;
 	image->data = p;
-	if (!(p->file = fopen(path, "rb"))) {
+	if (!(p->file = ir_file(image))) {
 		ir_fail(image, "cannot open the file");
 		return -1;
 	}

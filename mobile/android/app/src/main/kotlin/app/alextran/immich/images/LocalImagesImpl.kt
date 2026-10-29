@@ -8,6 +8,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.CancellationSignal
 import android.os.OperationCanceledException
+import android.os.SystemClock
+import android.util.Log
 import android.provider.MediaStore.Images
 import android.provider.MediaStore.Video
 import android.util.Size
@@ -26,6 +28,8 @@ import java.util.Base64
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Future
+
+private const val TAG = "LocalImages"
 
 data class Request(
   val taskFuture: Future<*>,
@@ -221,7 +225,7 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
     try {
       val res = if (isVideo) {
         decodeVideoThumbnail(id, size, signal).toNativeBuffer()
-      } else {
+      } else decodeSmaller(id, size, signal) ?: run {
         val (bitmap, orientation) = decodeImage(id, size, signal)
         signal.throwIfCanceled()
         if (orientation == ExifInterface.ORIENTATION_NORMAL || orientation == ExifInterface.ORIENTATION_UNDEFINED) {
@@ -235,6 +239,46 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
       callback(Result.success(res))
     } catch (e: Exception) {
       callback(if (e is OperationCanceledException) CANCELLED else Result.failure(e))
+    }
+  }
+
+  // Images for the viewer (larger than thumbnails) in the formats the app's own decoders read, made smaller as they are
+  // decoded (HEIC a tile at a time, JPEG by its DCT): the platform's decoders take a few hundred MB more for a photo of
+  // 200 MP, decoding it at half its size or whole first. Null where they cannot: the platform decodes it.
+  private fun decodeSmaller(id: Long, size: Size, signal: CancellationSignal): Map<String, Long>? {
+    if (size.width <= 768 && size.height <= 768) {
+      return null
+    }
+    val uri = ContentUris.withAppendedId(Images.Media.EXTERNAL_CONTENT_URI, id)
+    if (resolver.getType(uri) !in REGION_MIME_TYPES) {
+      return null
+    }
+    val start = SystemClock.elapsedRealtime()
+    return try {
+      val dimensions = IntArray(2)
+      val handle = (resolver.openFileDescriptor(uri, "r", signal) ?: return null)
+        .use { RegionDecoder.openFd(it.fd, dimensions) }
+      try {
+        signal.throwIfCanceled()
+        val (width, height) = dimensions
+        val sample = regionSample(width, height, size.width, size.height)
+        val info = IntArray(3)
+        val pointer = RegionDecoder.decode(handle, 0, 0, width, height, sample, info)
+        Log.d(TAG, "decoded $id ${width}x$height by $sample: ${SystemClock.elapsedRealtime() - start} ms")
+        mapOf(
+          "pointer" to pointer,
+          "width" to info[0].toLong(),
+          "height" to info[1].toLong(),
+          "rowBytes" to info[2].toLong()
+        )
+      } finally {
+        RegionDecoder.close(handle)
+      }
+    } catch (e: OperationCanceledException) {
+      throw e
+    } catch (e: Exception) {
+      Log.w(TAG, "The platform decodes $id: ${e.message}")
+      null
     }
   }
 

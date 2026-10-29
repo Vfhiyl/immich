@@ -31,5 +31,5 @@ gcc -std=c11 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -Werror -Wno-unused-parameter -
   -o "$out/libimmich_region.so" "$REPO/mobile/android/app/src/main/cpp/region_jni.c" "$REGION"/*.c \
   -I"$REGION" -I"$java_home/include" -I"$java_home/include/linux" \
   -I"$PREFIX/include" -L"$PREFIX/lib" -lheif -lde265 -ljpeg -llcms2 -lz -lstdc++ -lm -lpthread
-java -Djava.library.path="$out" "$REGION/test/RegionDecoderTest.java" "$assets/jpg/el_torcal_rocks.jpg" \
+java --add-opens java.base/java.io=ALL-UNNAMED -Djava.library.path="$out" "$REGION/test/RegionDecoderTest.java" "$assets/jpg/el_torcal_rocks.jpg" \
   "$assets/heic/IMG_2682.heic" "$REGION/test/test.sh"

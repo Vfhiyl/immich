@@ -32,6 +32,20 @@ Java_app_alextran_immich_images_RegionDecoder_open(JNIEnv *env, jclass clazz, js
   return (jlong) (intptr_t) image;
 }
 
+// Opens the image of a file descriptor (of the media store), which it duplicates: the caller may close its own.
+JNIEXPORT jlong JNICALL
+Java_app_alextran_immich_images_RegionDecoder_openFd(JNIEnv *env, jclass clazz, jint fd, jintArray size) {
+  char error[256] = "";
+  ir_image *image = ir_open_fd(fd, error, sizeof(error));
+  if (image == NULL) {
+    throw_io(env, error);
+    return 0;
+  }
+  const jint dimensions[2] = {ir_width(image), ir_height(image)};
+  (*env)->SetIntArrayRegion(env, size, 0, 2, dimensions);
+  return (jlong) (intptr_t) image;
+}
+
 // Decodes a part, `sample` times smaller, into a malloc'd RGBA buffer (freed by Dart, like NativeBuffer's), writing
 // {width, height, rowBytes} into `info`. Returns the buffer, or throws IOException.
 JNIEXPORT jlong JNICALL

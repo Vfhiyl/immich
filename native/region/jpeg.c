@@ -11,9 +11,6 @@
 
 #include "region_private.h"
 
-typedef struct {
-	char *path;
-} jpeg;
 
 typedef struct {
 	struct jpeg_error_mgr manager;
@@ -34,20 +31,12 @@ static void on_warning(j_common_ptr info, int level)
 	(void) level;
 }
 
-static void jpeg_close(ir_image *image)
-{
-	jpeg *j = image->data;
-	if (j)
-		free(j->path);
-	free(j);
-}
 
 static int jpeg_decode(ir_image *image, int x, int y, int width, int height, int sample, ir_box *box)
 {
-	jpeg *j = image->data;
 	struct jpeg_decompress_struct info;
 	jpeg_error error;
-	FILE *file = fopen(j->path, "rb");
+	FILE *file = ir_file(image);
 	uint8_t *row = NULL;
 	if (!file) {
 		ir_fail(image, "cannot open the file");
@@ -135,22 +124,15 @@ static int jpeg_decode(ir_image *image, int x, int y, int width, int height, int
 	return 0;
 }
 
-static const ir_format format = { "jpeg", jpeg_decode, jpeg_close };
+static const ir_format format = { "jpeg", jpeg_decode, NULL };
 
-int ir_open_jpeg(ir_image *image, const char *path)
+int ir_open_jpeg(ir_image *image)
 {
-	jpeg *j = calloc(1, sizeof(jpeg));
-	if (!j || !(j->path = strdup(path))) {
-		free(j);
-		ir_fail(image, "out of memory");
-		return -1;
-	}
 	image->format = &format;
-	image->data = j;
 
 	struct jpeg_decompress_struct info;
 	jpeg_error error;
-	FILE *file = fopen(path, "rb");
+	FILE *file = ir_file(image);
 	if (!file) {
 		ir_fail(image, "cannot open the file");
 		return -1;

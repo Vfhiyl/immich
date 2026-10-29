@@ -4,8 +4,9 @@ import android.content.ContentUris
 import android.content.Context
 import android.os.CancellationSignal
 import android.os.OperationCanceledException
-import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.provider.MediaStore.Images
+import android.util.Log
 import app.alextran.immich.core.HttpClientManager
 import okhttp3.Request
 import java.io.File
@@ -25,6 +26,10 @@ object RegionDecoder {
   @JvmStatic
   external fun open(path: String, size: IntArray): Long
 
+  /** Opens the image of a file descriptor, which it duplicates (the caller closes its own). */
+  @JvmStatic
+  external fun openFd(fd: Int, size: IntArray): Long
+
   /**
    * Decodes a part, [sample] times smaller, into a malloc'd RGBA buffer; writes {width, height, rowBytes} into [info].
    * Not thread safe for one image.
@@ -36,10 +41,26 @@ object RegionDecoder {
   external fun close(handle: Long)
 }
 
+private const val TAG = "RegionImages"
+
+/** The formats the app's own decoders read (native/region) */
+val REGION_MIME_TYPES = setOf("image/jpeg", "image/png", "image/heic", "image/heif")
+
+/**
+ * How many times smaller to decode an image of [width] x [height] (either way round) for [targetWidth] x [targetHeight]:
+ * the most that keeps it at least as large, long side to long side and short side to short side.
+ */
+fun regionSample(width: Int, height: Int, targetWidth: Int, targetHeight: Int): Int {
+  val long = maxOf(targetWidth, targetHeight)
+  val short = minOf(targetWidth, targetHeight)
+  if (long <= 0 || short <= 0) return 1
+  return maxOf(1, minOf(maxOf(width, height) / long, minOf(width, height) / short))
+}
+
 // Downloaded remote images, kept for the next time they are shown, the least recently used removed past this size
 private const val DOWNLOADS_MAX_BYTES = 512L * 1024 * 1024
 
-private class RegionImage(val handle: Long, val descriptor: ParcelFileDescriptor?, val file: File?) {
+private class RegionImage(val handle: Long, val file: File?) {
   var closed = false
 }
 
@@ -59,7 +80,7 @@ class RegionImagesImpl(context: Context) : RegionImageApi {
     private val decodeExecutor = Executors.newFixedThreadPool(2)
     private val nextId = AtomicLong(1)
 
-    // the downloads open now, which eviction leaves alone (the decoders open the file again for each part)
+    // the downloads open now, which eviction leaves alone
     private val openFiles = ConcurrentHashMap<File, Int>()
   }
 
@@ -69,33 +90,39 @@ class RegionImagesImpl(context: Context) : RegionImageApi {
     val signal = CancellationSignal()
     requests[requestId] = RegionRequest(signal)
     openExecutor.execute {
-      var descriptor: ParcelFileDescriptor? = null
       var file: File? = null
+      val start = SystemClock.elapsedRealtime()
       try {
         signal.throwIfCanceled()
-        val path = if (localAssetId != null) {
+        val size = IntArray(2)
+        var opening = start
+        val handle = if (localAssetId != null) {
           val uri = ContentUris.withAppendedId(Images.Media.EXTERNAL_CONTENT_URI, localAssetId.toLong())
-          descriptor = ctx.contentResolver.openFileDescriptor(uri, "r", signal)
-            ?: throw IOException("Could not open $localAssetId")
-          // the file of the descriptor, which the decoders open (again for each part, as the descriptor's position
-          // is shared): the descriptor stays open as long as the image
-          "/proc/self/fd/${descriptor.fd}"
+          // the decoders keep a duplicate of the media store's descriptor (it may not be opened again by a path)
+          (ctx.contentResolver.openFileDescriptor(uri, "r", signal) ?: throw IOException("Could not open $localAssetId"))
+            .use { RegionDecoder.openFd(it.fd, size) }
         } else {
           file = download(url ?: throw IllegalArgumentException("No asset or URL"), signal)
           openFiles.merge(file, 1, Int::plus)
-          file.path
+          signal.throwIfCanceled()
+          opening = SystemClock.elapsedRealtime()
+          RegionDecoder.open(file.path, size)
         }
-        signal.throwIfCanceled()
-        val size = IntArray(2)
-        val handle = RegionDecoder.open(path, size)
         val id = nextId.getAndIncrement()
-        images[id] = RegionImage(handle, descriptor, file)
+        Log.d(
+          TAG,
+          "open $id ${size[0]}x${size[1]}: ${SystemClock.elapsedRealtime() - start} ms " +
+            "(${SystemClock.elapsedRealtime() - opening} ms decoding)"
+        )
+        images[id] = RegionImage(handle, file)
         requests.remove(requestId)
         callback(Result.success(mapOf("id" to id, "width" to size[0].toLong(), "height" to size[1].toLong())))
       } catch (e: Exception) {
-        descriptor?.close()
         file?.let(::release)
         requests.remove(requestId)
+        if (e !is OperationCanceledException && !signal.isCanceled) {
+          Log.w(TAG, "Cannot open ${localAssetId ?: url} in parts: ${e.message}")
+        }
         callback(if (e is OperationCanceledException || signal.isCanceled) CANCELLED else Result.failure(e))
       }
     }
@@ -121,8 +148,10 @@ class RegionImagesImpl(context: Context) : RegionImageApi {
             null
           } else {
             val info = IntArray(3)
+            val start = SystemClock.elapsedRealtime()
             val pointer =
               RegionDecoder.decode(image.handle, x.toInt(), y.toInt(), width.toInt(), height.toInt(), sample.toInt(), info)
+            Log.d(TAG, "decode $imageId $x,$y ${width}x$height by $sample: ${SystemClock.elapsedRealtime() - start} ms")
             mapOf(
               "pointer" to pointer,
               "width" to info[0].toLong(),
@@ -136,6 +165,9 @@ class RegionImagesImpl(context: Context) : RegionImageApi {
         callback(if (result == null) CANCELLED else Result.success(result))
       } catch (e: Exception) {
         requests.remove(requestId)
+        if (!signal.isCanceled) {
+          Log.w(TAG, "Cannot decode a part of $imageId: ${e.message}")
+        }
         callback(if (signal.isCanceled) CANCELLED else Result.failure(e))
       }
     }
@@ -152,7 +184,6 @@ class RegionImagesImpl(context: Context) : RegionImageApi {
         image.closed = true
         RegionDecoder.close(image.handle)
       }
-      image.descriptor?.close()
       image.file?.let(::release)
     }
   }

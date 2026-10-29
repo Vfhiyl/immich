@@ -1,5 +1,8 @@
+#include <errno.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "region_private.h"
 
@@ -8,22 +11,65 @@ int ir_sampled(int length, int sample)
 	return (length + sample - 1) / sample;
 }
 
-int ir_box_init(ir_box *box, int x, int y, int factor, int width, int height)
+/* The point of the upright image that shows the point (`s`, `t`) of the stored one, `width` x `height` */
+static void to_upright(int orientation, int width, int height, int s, int t, int *u, int *v)
+{
+	switch (orientation) {
+	case 2: *u = width - 1 - s; *v = t; break;
+	case 3: *u = width - 1 - s; *v = height - 1 - t; break;
+	case 4: *u = s; *v = height - 1 - t; break;
+	case 5: *u = t; *v = s; break;
+	case 6: *u = height - 1 - t; *v = s; break;
+	case 7: *u = height - 1 - t; *v = width - 1 - s; break;
+	case 8: *u = t; *v = width - 1 - s; break;
+	default: *u = s; *v = t; break;
+	}
+}
+
+int ir_box_init(ir_box *box, int x, int y, int factor, int width, int height, int band, uint8_t *out, size_t stride,
+	int orientation)
 {
 	box->x = x;
 	box->y = y;
 	box->factor = factor;
 	box->width = width;
 	box->height = height;
-	box->sums = calloc((size_t) width * height * 5, sizeof(uint32_t));
+	/* the rows of averages a band of rows of the image touches, and the one being added to */
+	box->rows = band / factor + 2 < height ? band / factor + 2 : height;
+	box->first = 0;
+	box->out = out;
+	box->stride = stride;
+	box->orientation = orientation;
+	box->sums = calloc((size_t) width * box->rows * 5, sizeof(uint32_t));
 	return box->sums ? 0 : -1;
+}
+
+/* Writes the averages of the first row not written yet, and empties its place for the row after the last kept */
+static void write_row(ir_box *box)
+{
+	const int row = box->first++;
+	uint32_t *sum = box->sums + (size_t) (row % box->rows) * box->width * 5;
+	for (int column = 0; column < box->width; column++, sum += 5) {
+		int u = column, v = row;
+		if (box->orientation != 1)
+			to_upright(box->orientation, box->width, box->height, column, row, &u, &v);
+		uint8_t *out = box->out + box->stride * v + (size_t) u * 4;
+		const uint32_t n = sum[4] ? sum[4] : 1;
+		for (int c = 0; c < 4; c++)
+			out[c] = (uint8_t) ((sum[c] + n / 2) / n);
+		memset(sum, 0, 5 * sizeof(uint32_t));
+	}
 }
 
 void ir_box_add(ir_box *box, int x, int y, const uint8_t *rgba, int count)
 {
 	const int row = (y - box->y) / box->factor;
-	if (y < box->y || row >= box->height)
+	/* (a row before those kept cannot come: see `band`) */
+	if (y < box->y || row >= box->height || row < box->first)
 		return;
+	while (row >= box->first + box->rows)
+		write_row(box);
+	uint32_t *sums = box->sums + (size_t) (row % box->rows) * box->width * 5;
 	for (int i = 0; i < count; i++) {
 		const int px = x + i;
 		if (px < box->x)
@@ -31,7 +77,7 @@ void ir_box_add(ir_box *box, int x, int y, const uint8_t *rgba, int count)
 		const int column = (px - box->x) / box->factor;
 		if (column >= box->width)
 			break;
-		uint32_t *sum = box->sums + ((size_t) row * box->width + column) * 5;
+		uint32_t *sum = sums + (size_t) column * 5;
 		const uint8_t *p = rgba + (size_t) i * 4;
 		sum[0] += p[0];
 		sum[1] += p[1];
@@ -41,17 +87,10 @@ void ir_box_add(ir_box *box, int x, int y, const uint8_t *rgba, int count)
 	}
 }
 
-void ir_box_write(const ir_box *box, uint8_t *rgba, size_t stride)
+void ir_box_finish(ir_box *box)
 {
-	for (int row = 0; row < box->height; row++) {
-		uint8_t *out = rgba + stride * row;
-		const uint32_t *sum = box->sums + (size_t) row * box->width * 5;
-		for (int column = 0; column < box->width; column++, sum += 5, out += 4) {
-			const uint32_t n = sum[4] ? sum[4] : 1;
-			for (int c = 0; c < 4; c++)
-				out[c] = (uint8_t) ((sum[c] + n / 2) / n);
-		}
-	}
+	while (box->first < box->height)
+		write_row(box);
 }
 
 void ir_box_free(ir_box *box)
@@ -167,36 +206,44 @@ int ir_exif_orientation(const uint8_t *exif, size_t size)
 	return 1;
 }
 
-ir_image *ir_open(const char *path, char *error, size_t error_size)
+FILE *ir_file(ir_image *image)
+{
+	const int fd = fcntl(image->fd, F_DUPFD_CLOEXEC, 0);
+	if (fd < 0)
+		return NULL;
+	FILE *file = lseek(fd, 0, SEEK_SET) == 0 ? fdopen(fd, "rb") : NULL;
+	if (!file)
+		close(fd);
+	return file;
+}
+
+/* Opens the image of `fd`, which it owns from now on */
+static ir_image *open_owned(int fd, char *error, size_t error_size)
 {
 	ir_image *image = calloc(1, sizeof(ir_image));
 	if (!image) {
+		close(fd);
 		snprintf(error, error_size, "out of memory");
 		return NULL;
 	}
+	image->fd = fd;
 	image->orientation = 1;
+	image->band = 1;
 	image->error = error;
 	image->error_size = error_size;
 
 	uint8_t magic[16] = { 0 };
-	FILE *file = fopen(path, "rb");
-	if (!file) {
-		snprintf(error, error_size, "cannot open %s", path);
-		free(image);
-		return NULL;
-	}
-	const size_t read = fread(magic, 1, sizeof(magic), file);
-	fclose(file);
-
+	const ssize_t read = pread(fd, magic, sizeof(magic), 0);
 	int status;
 	if (read >= 3 && magic[0] == 0xff && magic[1] == 0xd8 && magic[2] == 0xff)
-		status = ir_open_jpeg(image, path);
+		status = ir_open_jpeg(image);
 	else if (read >= 8 && !memcmp(magic, "\x89PNG\r\n\x1a\n", 8))
-		status = ir_open_png(image, path);
+		status = ir_open_png(image);
 	else if (read >= 12 && !memcmp(magic + 4, "ftyp", 4))
-		status = ir_open_heif(image, path);
+		status = ir_open_heif(image);
 	else {
-		snprintf(error, error_size, "not a format that can be decoded in parts");
+		snprintf(error, error_size, read < 0 ? "cannot read the file: %s" : "not a format that can be decoded in parts",
+			strerror(errno));
 		status = -1;
 	}
 	if (status) {
@@ -205,6 +252,26 @@ ir_image *ir_open(const char *path, char *error, size_t error_size)
 	}
 	image->error = NULL;
 	return image;
+}
+
+ir_image *ir_open(const char *path, char *error, size_t error_size)
+{
+	const int fd = open(path, O_RDONLY | O_CLOEXEC);
+	if (fd < 0) {
+		snprintf(error, error_size, "cannot open %s: %s", path, strerror(errno));
+		return NULL;
+	}
+	return open_owned(fd, error, error_size);
+}
+
+ir_image *ir_open_fd(int fd, char *error, size_t error_size)
+{
+	const int own = fcntl(fd, F_DUPFD_CLOEXEC, 0);
+	if (own < 0) {
+		snprintf(error, error_size, "cannot open the file: %s", strerror(errno));
+		return NULL;
+	}
+	return open_owned(own, error, error_size);
 }
 
 static int rotated(const ir_image *image)
@@ -259,35 +326,17 @@ int ir_decode(ir_image *image, int x, int y, int width, int height, int sample, 
 	const int sh = abs(t1 - t0) + 1;
 
 	ir_box box;
-	if (ir_box_init(&box, sx, sy, sample, ir_sampled(sw, sample), ir_sampled(sh, sample))) {
+	if (ir_box_init(&box, sx, sy, sample, ir_sampled(sw, sample), ir_sampled(sh, sample), image->band, rgba, stride,
+			image->orientation)) {
 		ir_fail(image, "out of memory");
 		return -1;
 	}
 	int status = image->format->decode(image, sx, sy, sw, sh, sample, &box);
 	if (status == 0) {
+		ir_box_finish(&box);
 		const int out_width = ir_sampled(width, sample);
 		const int out_height = ir_sampled(height, sample);
-		if (image->orientation == 1)
-			ir_box_write(&box, rgba, stride);
-		else {
-			const size_t stored_stride = (size_t) box.width * 4;
-			uint8_t *stored = malloc(stored_stride * box.height);
-			if (!stored) {
-				ir_fail(image, "out of memory");
-				status = -1;
-			}
-			else {
-				ir_box_write(&box, stored, stored_stride);
-				for (int v = 0; v < out_height; v++)
-					for (int u = 0; u < out_width; u++) {
-						int s, t;
-						to_stored(image->orientation, box.width, box.height, u, v, &s, &t);
-						memcpy(rgba + stride * v + (size_t) u * 4, stored + stored_stride * t + (size_t) s * 4, 4);
-					}
-				free(stored);
-			}
-		}
-		if (status == 0 && image->transform)
+		if (image->transform)
 			for (int v = 0; v < out_height; v++)
 				cmsDoTransform(image->transform, rgba + stride * v, rgba + stride * v, (cmsUInt32Number) out_width);
 	}
@@ -304,5 +353,6 @@ void ir_close(ir_image *image)
 		image->format->close(image);
 	if (image->transform)
 		cmsDeleteTransform(image->transform);
+	close(image->fd);
 	free(image);
 }
