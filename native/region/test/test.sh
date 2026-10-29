@@ -15,7 +15,7 @@ trap 'rm -rf "${out:?}"' EXIT
 # shellcheck disable=SC2046
 gcc -std=c11 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -Werror -o "$out/region-test" "$REGION"/*.c "$REGION/test/region-test.c" \
   -I"$REGION" \
-  -I"$PREFIX/include" -L"$PREFIX/lib" -lheif -lde265 -lpng16 -ljpeg -llcms2 -lz -lstdc++ -lm -lpthread
+  -I"$PREFIX/include" -L"$PREFIX/lib" -lheif -lavcodec -lavutil -lpng16 -ljpeg -llcms2 -lz -lstdc++ -lm -lpthread
 
 assets="$REPO/e2e/test-assets/formats"
 "$out/region-test" --make-png "$out/long-photo.png" 1200 9000 photo
@@ -41,6 +41,6 @@ java_home="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"
 gcc -std=c11 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -Werror -Wno-unused-parameter -shared -fPIC -fvisibility=hidden \
   -o "$out/libimmich_region.so" "$REPO/mobile/android/app/src/main/cpp/region_jni.c" "$REGION"/*.c \
   -I"$REGION" -I"$java_home/include" -I"$java_home/include/linux" \
-  -I"$PREFIX/include" -L"$PREFIX/lib" -lheif -lde265 -ljpeg -llcms2 -lz -lstdc++ -lm -lpthread
+  -I"$PREFIX/include" -L"$PREFIX/lib" -lheif -lavcodec -lavutil -ljpeg -llcms2 -lz -lstdc++ -lm -lpthread
 java --add-opens java.base/java.io=ALL-UNNAMED -Djava.library.path="$out" "$REGION/test/RegionDecoderTest.java" "$assets/jpg/el_torcal_rocks.jpg" \
   "$assets/heic/IMG_2682.heic" "$REGION/test/test.sh"

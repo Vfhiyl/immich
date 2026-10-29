@@ -172,7 +172,9 @@ ImageProvider getFullImageProvider(
   Size? remoteThumbnailSize,
   bool? tiled,
 }) {
-  tiled ??= localFilePath == null && getRegionSource(asset, size: size, edited: edited) != null;
+  // the base is for the screen at most (the default size, 1080 x 1920 logical pixels, is larger than most)
+  final baseSize = _atMostTheScreen(size);
+  tiled ??= localFilePath == null && getRegionSource(asset, size: baseSize, edited: edited) != null;
   // Create new provider and cache it
   final ImageProvider provider;
   if (localFilePath != null) {
@@ -181,7 +183,7 @@ ImageProvider getFullImageProvider(
     final id = asset is LocalAsset ? asset.id : (asset as RemoteAsset).localId!;
     provider = LocalFullImageProvider(
       id: id,
-      size: size,
+      size: tiled ? baseSize : size,
       assetType: asset.type,
       isAnimated: asset.isAnimatedImage,
       width: asset.width,
@@ -209,7 +211,7 @@ ImageProvider getFullImageProvider(
       edited: edited,
       thumbnailSize: remoteThumbnailSize,
       tiledBaseSize: tiled && asset.width != null && asset.height != null
-          ? regionBaseSize(asset.width!, asset.height!, size * _devicePixelRatio)
+          ? regionBaseSize(asset.width!, asset.height!, baseSize * _devicePixelRatio)
           : null,
     );
   }
@@ -238,6 +240,13 @@ ImageProvider? getThumbnailImageProvider(
 }
 
 double get _devicePixelRatio => ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
+
+// [size], or the screen (in logical pixels) where [size] has more pixels
+Size _atMostTheScreen(Size size) {
+  final view = ui.PlatformDispatcher.instance.views.first;
+  final screen = view.physicalSize / view.devicePixelRatio;
+  return screen.isEmpty || size.width * size.height <= screen.width * screen.height ? size : screen;
+}
 
 // what the app's decoders read in parts (native/region)
 const _regionExtensions = {'.jpg', '.jpeg', '.png', '.heic', '.heif'};

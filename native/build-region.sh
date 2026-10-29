@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the libraries the app decodes parts of large images with (region/, see README.md), from the sources of
-# sources.txt with our patches, as static libraries: zlib, libjpeg-turbo, lcms2, libde265 and libheif. It needs only
+# sources.txt with our patches, as static libraries: zlib, libjpeg-turbo, lcms2, FFmpeg's HEVC decoder and libheif. It needs only
 # curl, CMake and make (and the NDK for Android); the app's Android build runs it.
 #
 # Usage: native/build-region.sh TARGET [output directory]
@@ -58,9 +58,10 @@ case "$TARGET" in
     NDK="${ANDROID_NDK_HOME:-$(find "${ANDROID_HOME:?ANDROID_HOME or ANDROID_NDK_HOME must be set}/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)}"
     TOOLCHAIN="$(echo "$NDK"/toolchains/llvm/prebuilt/*)"
     case "$ABI" in
-      arm64-v8a) TRIPLE=aarch64-linux-android ;;
-      armeabi-v7a) TRIPLE=armv7a-linux-androideabi ;;
-      x86_64) TRIPLE=x86_64-linux-android ;;
+      arm64-v8a) TRIPLE=aarch64-linux-android FFMPEG_ARCH=(--arch=aarch64) ;;
+      armeabi-v7a) TRIPLE=armv7a-linux-androideabi FFMPEG_ARCH=(--arch=arm --cpu=armv7-a --enable-neon) ;;
+      # (the emulator's: without assembly, as for the host)
+      x86_64) TRIPLE=x86_64-linux-android FFMPEG_ARCH=(--arch=x86_64 --disable-asm) ;;
       *) echo "Unknown Android ABI $ABI" >&2; exit 1 ;;
     esac
     CC="$TOOLCHAIN/bin/${TRIPLE}26-clang"
@@ -95,17 +96,33 @@ build_lcms() {
   cmake --build _build --target install
 }
 
-build_de265() {
-  cmake -S . -B _build "${CMAKE_OPTIONS[@]}" -DENABLE_SDL=OFF -DENABLE_DECODER=OFF -DENABLE_ENCODER=OFF
-  cmake --build _build --target install
+# FFmpeg's HEVC decoder only, which libheif decodes HEIC with: on arm64 libde265 has no NEON code, and FFmpeg decodes
+# a photo of 48 MP twice as fast on a phone (the same pixels). LGPL (no --enable-gpl); nothing found on the machine
+# (--disable-autodetect).
+build_ffmpeg() {
+  local options=(--prefix="$PREFIX" --cc="$CC" --cxx="$CXX" --enable-static --disable-shared --enable-pic
+    --disable-autodetect --disable-everything --enable-decoder=hevc --enable-parser=hevc --disable-programs
+    --disable-doc --disable-avformat --disable-avdevice --disable-avfilter --disable-swscale --disable-swresample
+    --disable-network --disable-debug)
+  # x86 (the tests, the emulator): no assembly, which would need nasm, and whose inline part cannot be in a shared
+  # library (the app's JNI library)
+  if [[ "$TARGET" == host ]]; then
+    options+=(--disable-asm)
+  else
+    options+=(--target-os=android --enable-cross-compile --ar="$TOOLCHAIN/bin/llvm-ar" --nm="$TOOLCHAIN/bin/llvm-nm"
+      --ranlib="$TOOLCHAIN/bin/llvm-ranlib" --strip="$TOOLCHAIN/bin/llvm-strip" "${FFMPEG_ARCH[@]}")
+  fi
+  ./configure "${options[@]}"
+  make
+  make install
 }
 
-# decoding only, HEVC only (HEIC); with our patches (patches/heif)
+# decoding only, HEVC only (HEIC), with FFmpeg's decoder; with our patches (patches/heif)
 build_heif() {
   cmake -S . -B _build "${CMAKE_OPTIONS[@]}" -DENABLE_PLUGIN_LOADING=OFF -DWITH_EXAMPLES=OFF -DBUILD_DOCUMENTATION=OFF \
-    -DWITH_LIBDE265=ON -DWITH_DAV1D=OFF -DWITH_AOM_DECODER=OFF -DWITH_AOM_ENCODER=OFF -DWITH_X265=OFF \
+    -DWITH_LIBDE265=OFF -DWITH_FFMPEG_DECODER=ON -DWITH_DAV1D=OFF -DWITH_AOM_DECODER=OFF -DWITH_AOM_ENCODER=OFF -DWITH_X265=OFF \
     -DWITH_SvtEnc=OFF -DWITH_RAV1E=OFF -DWITH_KVAZAAR=OFF -DWITH_OpenJPEG_DECODER=OFF -DWITH_OpenJPEG_ENCODER=OFF \
-    -DWITH_FFMPEG_DECODER=OFF -DWITH_JPEG_DECODER=OFF -DWITH_JPEG_ENCODER=OFF -DWITH_UNCOMPRESSED_CODEC=OFF \
+    -DWITH_JPEG_DECODER=OFF -DWITH_JPEG_ENCODER=OFF -DWITH_UNCOMPRESSED_CODEC=OFF \
     -DWITH_LIBSHARPYUV=OFF -DWITH_GDK_PIXBUF=OFF -DENABLE_PARALLEL_TILE_DECODING=OFF
   cmake --build _build --target install
 }
@@ -119,7 +136,7 @@ build_png() {
   make install
 }
 
-LIBRARIES=(zlib-ng jpeg-turbo lcms de265 heif)
+LIBRARIES=(zlib-ng jpeg-turbo lcms ffmpeg heif)
 [[ "$TARGET" == host ]] && LIBRARIES+=(png)
 for library in "${LIBRARIES[@]}"; do
   build "$library"
@@ -130,6 +147,7 @@ cat > "$PREFIX/region.cmake" <<EOF
 # written by native/build-region.sh
 set(IMMICH_REGION_INCLUDE "$PREFIX/include")
 set(IMMICH_REGION_LIBRARIES
-  "$PREFIX/lib/libheif.a" "$PREFIX/lib/libde265.a" "$PREFIX/lib/libjpeg.a" "$PREFIX/lib/liblcms2.a" "$PREFIX/lib/libz.a")
+  "$PREFIX/lib/libheif.a" "$PREFIX/lib/libavcodec.a" "$PREFIX/lib/libavutil.a" "$PREFIX/lib/libjpeg.a"
+  "$PREFIX/lib/liblcms2.a" "$PREFIX/lib/libz.a")
 EOF
 echo "Built $PREFIX"

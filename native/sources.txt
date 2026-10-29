@@ -17,6 +17,7 @@ png|1.6.59|https://github.com/pnggroup/libpng/archive/v1.6.59.tar.gz|2540302a184
 webp|1.6.0|https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz|e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564
 de265|1.0.16|https://github.com/strukturag/libde265/releases/download/v1.0.16/libde265-1.0.16.tar.gz|b92beb6b53c346db9a8fae968d686ab706240099cdd5aff87777362d668b0de7
 dav1d|1.5.2|https://downloads.videolan.org/pub/videolan/dav1d/1.5.2/dav1d-1.5.2.tar.xz|cce88ebcffd3f790bde49caa75f97b9cc2dd54ca8f57e38c62707266ec71bc4e
+ffmpeg|9.0.2|https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz|8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
 heif|1.23.6|https://github.com/strukturag/libheif/releases/download/v1.23.6/libheif-1.23.6.tar.gz|4484346dc5995319dbc11e3a1c35d0a2ec46511ce370900869337fd2c7033125
 brotli|1.1.0|https://github.com/google/brotli/archive/refs/tags/v1.1.0.tar.gz|e720a6ca29428b803f4ad165371771f5398faba397edf6778837a18599ea13ff
 jxl|0.12.0|https://github.com/libjxl/libjxl/archive/refs/tags/v0.12.0.tar.gz|03e9be69a30be4011f559da75328b6d7cea8ad921fabfbd551ce10bf45cdc992
