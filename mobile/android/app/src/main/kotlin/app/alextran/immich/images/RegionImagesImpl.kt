@@ -131,6 +131,54 @@ class RegionImagesImpl(context: Context) : RegionImageApi {
     }
   }
 
+  override fun decodeWhole(
+    url: String,
+    requestId: Long,
+    width: Long,
+    height: Long,
+    callback: (Result<Map<String, Long>?>) -> Unit
+  ) {
+    val signal = CancellationSignal()
+    requests[requestId] = RegionRequest(signal)
+    openExecutor.execute {
+      var file: File? = null
+      val start = SystemClock.elapsedRealtime()
+      try {
+        signal.throwIfCanceled()
+        file = download(url, signal).also { openFiles.merge(it, 1, Int::plus) }
+        signal.throwIfCanceled()
+        val size = IntArray(2)
+        val handle = RegionDecoder.open(file.path, size)
+        val result = try {
+          signal.throwIfCanceled()
+          val sample = regionSample(size[0], size[1], width.toInt(), height.toInt())
+          val info = IntArray(3)
+          val pointer = RegionDecoder.decode(handle, 0, 0, size[0], size[1], sample, info)
+          Log.d(TAG, "decoded whole ${size[0]}x${size[1]} by $sample: ${SystemClock.elapsedRealtime() - start} ms")
+          mapOf(
+            "pointer" to pointer,
+            "width" to info[0].toLong(),
+            "height" to info[1].toLong(),
+            "rowBytes" to info[2].toLong()
+          )
+        } finally {
+          RegionDecoder.close(handle)
+        }
+        requests.remove(requestId)
+        // Delivered even if cancelled meanwhile: Dart frees the buffer itself when it sees the cancel.
+        callback(Result.success(result))
+      } catch (e: Exception) {
+        requests.remove(requestId)
+        if (e !is OperationCanceledException && !signal.isCanceled) {
+          Log.w(TAG, "Cannot decode $url: ${e.message}")
+        }
+        callback(if (e is OperationCanceledException || signal.isCanceled) CANCELLED else Result.failure(e))
+      } finally {
+        file?.let(::release)
+      }
+    }
+  }
+
   override fun decode(
     imageId: Long,
     requestId: Long,
@@ -218,6 +266,7 @@ class RegionImagesImpl(context: Context) : RegionImageApi {
           part.outputStream().use { output -> body.byteStream().copyTo(output) }
         }
         signal.throwIfCanceled()
+        Log.d(TAG, "downloaded ${part.length()} bytes of $url")
         if (!part.renameTo(file)) {
           throw IOException("Could not save the download")
         }

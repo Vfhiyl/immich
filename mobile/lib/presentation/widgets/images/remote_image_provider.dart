@@ -136,19 +136,32 @@ class RemoteFullImageProvider extends ImageProvider<RemoteFullImageProvider> {
       return;
     }
 
-    final previewRequest = loader.request = RemoteImageRequest(
-      uri: getThumbnailUrlForRemoteId(
-        key.assetId,
-        type: AssetMediaSize.preview,
-        thumbhash: key.thumbhash,
-        edited: key.edited,
-      ),
-      decodeSize: key.tiledBaseSize,
+    final previewUrl = getThumbnailUrlForRemoteId(
+      key.assetId,
+      type: AssetMediaSize.preview,
+      thumbhash: key.thumbhash,
+      edited: key.edited,
     );
-    final loadOriginal =
-        key.tiledBaseSize == null &&
-        assetType == AssetType.image &&
-        SettingsRepository.instance.appConfig.image.loadOriginal;
+    final settingsLoadOriginal = SettingsRepository.instance.appConfig.image.loadOriginal;
+    final tiledBaseSize = key.tiledBaseSize;
+    // Shown in tiles from its preview (unless originals are loaded, which the tiles then come from): the base comes
+    // from the same download as the tiles, decoded by the app's own decoders; as before if they cannot (a preview in
+    // a format they do not read)
+    if (tiledBaseSize != null && !settingsLoadOriginal) {
+      final request = loader.request = RegionWholeImageRequest(uri: previewUrl, decodeSize: tiledBaseSize);
+      var loaded = false;
+      await for (final image in loader.loadRequest(request, decode, isFinal: false)) {
+        loaded = true;
+        loader.isFinished = true;
+        yield image;
+      }
+      if (loaded || loader.isCancelled) {
+        return;
+      }
+    }
+
+    final previewRequest = loader.request = RemoteImageRequest(uri: previewUrl, decodeSize: tiledBaseSize);
+    final loadOriginal = tiledBaseSize == null && assetType == AssetType.image && settingsLoadOriginal;
     yield* loader.loadRequest(previewRequest, decode, isFinal: !loadOriginal);
 
     if (!loadOriginal) {

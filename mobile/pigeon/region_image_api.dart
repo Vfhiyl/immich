@@ -31,6 +31,13 @@ abstract class RegionImageApi {
     required int sample,
   });
 
+  /// Decodes a remote image whole, made smaller to about `width` x `height` (at least, either way round), from the
+  /// cache file that [open] uses too (downloaded first if it is not there): a remote image shown in tiles is
+  /// downloaded once, for its base and its tiles. Returns `pointer` (RGBA, freed by the caller), `width`, `height` and
+  /// `rowBytes`, or null if cancelled.
+  @async
+  Map<String, int>? decodeWhole(String url, {required int requestId, required int width, required int height});
+
   /// Cancels an open or a decode that has not finished.
   void cancel(int requestId);
 

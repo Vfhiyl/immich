@@ -8,6 +8,7 @@ import 'package:immich_mobile/platform/local_image_api.g.dart';
 import 'package:immich_mobile/platform/native_sync_api.g.dart';
 import 'package:immich_mobile/platform/network_api.g.dart';
 import 'package:immich_mobile/platform/permission_api.g.dart';
+import 'package:immich_mobile/platform/region_image_api.g.dart';
 import 'package:immich_mobile/platform/remote_image_api.g.dart';
 import 'package:immich_mobile/platform/user_upload_api.g.dart';
 
@@ -33,5 +34,7 @@ final connectivityApiProvider = Provider<ConnectivityApi>((_) => ConnectivityApi
 final localImageApi = LocalImageApi();
 
 final remoteImageApi = RemoteImageApi();
+
+final regionImageApi = RegionImageApi();
 
 final networkApi = NetworkApi();
