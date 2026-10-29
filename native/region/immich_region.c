@@ -218,7 +218,7 @@ FILE *ir_file(ir_image *image)
 }
 
 /* Opens the image of `fd`, which it owns from now on */
-static ir_image *open_owned(int fd, char *error, size_t error_size)
+static ir_image *open_owned(int fd, int want_width, int want_height, char *error, size_t error_size)
 {
 	ir_image *image = calloc(1, sizeof(ir_image));
 	if (!image) {
@@ -229,6 +229,8 @@ static ir_image *open_owned(int fd, char *error, size_t error_size)
 	image->fd = fd;
 	image->orientation = 1;
 	image->band = 1;
+	image->want_width = want_width;
+	image->want_height = want_height;
 	image->error = error;
 	image->error_size = error_size;
 
@@ -261,17 +263,22 @@ ir_image *ir_open(const char *path, char *error, size_t error_size)
 		snprintf(error, error_size, "cannot open %s: %s", path, strerror(errno));
 		return NULL;
 	}
-	return open_owned(fd, error, error_size);
+	return open_owned(fd, 0, 0, error, error_size);
 }
 
-ir_image *ir_open_fd(int fd, char *error, size_t error_size)
+ir_image *ir_open_fd_for(int fd, int width, int height, char *error, size_t error_size)
 {
 	const int own = fcntl(fd, F_DUPFD_CLOEXEC, 0);
 	if (own < 0) {
 		snprintf(error, error_size, "cannot open the file: %s", strerror(errno));
 		return NULL;
 	}
-	return open_owned(own, error, error_size);
+	return open_owned(own, width, height, error, error_size);
+}
+
+ir_image *ir_open_fd(int fd, char *error, size_t error_size)
+{
+	return ir_open_fd_for(fd, 0, 0, error, error_size);
 }
 
 static int rotated(const ir_image *image)

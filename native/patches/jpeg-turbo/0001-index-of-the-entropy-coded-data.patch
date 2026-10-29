@@ -1,0 +1,251 @@
+From: Vfhiyl <VfhiyL@proton.me>
+Date: Thu, 29 Oct 2026 18:00:00 +0800
+Subject: [PATCH] An index of the entropy-coded data, so that jpeg_skip_scanlines() starts near the rows to skip to
+
+The app decodes parts of very large photos (native/region/jpeg.c). The Huffman-coded data of a baseline JPEG can only
+be read from its start, so a part at the bottom of a photo of 200 MP decoded every row above it again: 0.75 s for a
+part of 512 x 448 at the bottom of a JPEG of 65 MB on a phone, 0.04 s at the top.
+
+jpeg_use_scan_index() gives a decompressor an index (jpeg_scan_index), which jpeg_skip_scanlines() fills with the
+state of the Huffman decoder at the iMCU rows it skips: the position of the source, the bits read ahead, the DC
+predictions, the restart counter and marker. It then starts from the last row recorded before the rows it skips to,
+instead of decoding all of them. The index stays valid for other decompressors of the same file (the state of the
+entropy decoder does not depend on scaling or cropping). Android's BitmapRegionDecoder once did the same with a
+"Huffman index" in its libjpeg.
+
+Only baseline JPEGs (one scan, Huffman coding) use the index; the source must be able to tell and seek (callbacks of
+the index). Without an index nothing changes.
+---
+diff -ru a/src/jdapistd.c b/src/jdapistd.c
+--- a/src/jdapistd.c	2026-10-29 17:36:25.757857000 +0800
++++ b/src/jdapistd.c	2026-10-29 17:37:42.797857000 +0800
+@@ -624,8 +624,30 @@
+     return num_lines;
+   }
+ 
++  /* Immich: start from the last iMCU row of the scan index before the rows to
++   * skip to, if there is one (see jpeg_use_scan_index())
++   */
++  i = 0;
++  if (jpeg_scan_index_in_use(cinfo) && lines_to_skip > 0) {
++    JDIMENSION from = cinfo->input_iMCU_row;
++    JDIMENSION to = jpeg_scan_point_restore(cinfo, from +
++                                            lines_to_skip / lines_per_iMCU_row);
++
++    if (to > from) {
++      cinfo->input_iMCU_row = to;
++      cinfo->output_iMCU_row += to - from;
++      i = (to - from) * lines_per_iMCU_row;
++      if (cinfo->input_iMCU_row < cinfo->total_iMCU_rows)
++        start_iMCU_row(cinfo);
++      else
++        (*cinfo->inputctl->finish_input_pass) (cinfo);
++    }
++  }
++
+   /* Skip the iMCU rows that we can safely skip. */
+-  for (i = 0; i < lines_to_skip; i += lines_per_iMCU_row) {
++  for (; i < lines_to_skip; i += lines_per_iMCU_row) {
++    if (jpeg_scan_index_in_use(cinfo))
++      jpeg_scan_point_save(cinfo);
+     for (y = 0; y < coef->MCU_rows_per_iMCU_row; y++) {
+       for (x = 0; x < cinfo->MCUs_per_row; x++) {
+         /* Calling decode_mcu() with a NULL pointer causes it to discard the
+@@ -645,6 +667,9 @@
+       (*cinfo->inputctl->finish_input_pass) (cinfo);
+   }
+   cinfo->output_scanline += lines_to_skip;
++  if (jpeg_scan_index_in_use(cinfo) &&
++      cinfo->input_iMCU_row < cinfo->total_iMCU_rows)
++    jpeg_scan_point_save(cinfo);
+ 
+   if (cinfo->upsample->need_context_rows) {
+     /* Context-based upsampling keeps track of iMCU rows. */
+diff -ru a/src/jdhuff.c b/src/jdhuff.c
+--- a/src/jdhuff.c	2026-10-29 17:36:25.757857000 +0800
++++ b/src/jdhuff.c	2026-10-29 17:38:12.269857000 +0800
+@@ -27,6 +27,7 @@
+ #include "jinclude.h"
+ #include "jpeglib.h"
+ #include "jdhuff.h"             /* Declarations shared with jd*huff.c */
++#include "jdmaster.h"
+ #include "jpegapicomp.h"
+ #include "jstdhuff.c"
+ 
+@@ -834,3 +835,100 @@
+     entropy->dc_derived_tbls[i] = entropy->ac_derived_tbls[i] = NULL;
+   }
+ }
++
++
++/*
++ * Immich: an index of the entropy-coded data, to start at an iMCU row (see
++ * jpeg_use_scan_index() in jpeglib.h).  The state of this decoder between
++ * MCUs is its bit buffer, its DC predictions and restart counter, and the
++ * position of the source.
++ */
++
++GLOBAL(void)
++jpeg_use_scan_index(j_decompress_ptr cinfo, jpeg_scan_index *index)
++{
++  my_master_ptr master = (my_master_ptr)cinfo->master;
++
++  if (cinfo->global_state != DSTATE_SCANNING)
++    ERREXIT1(cinfo, JERR_BAD_STATE, cinfo->global_state);
++  master->scan_index = NULL;
++  /* Baseline: one scan, Huffman coding (this decoder) */
++  if (index && !cinfo->progressive_mode && !cinfo->arith_code &&
++      !cinfo->master->lossless && !cinfo->inputctl->has_multiple_scans &&
++      !cinfo->buffered_image && cinfo->comps_in_scan <= MAX_COMPS_IN_SCAN &&
++      index->interval > 0)
++    master->scan_index = index;
++}
++
++GLOBAL(jpeg_scan_index *)
++jpeg_scan_index_in_use(j_decompress_ptr cinfo)
++{
++  return ((my_master_ptr)cinfo->master)->scan_index;
++}
++
++/* Records the state at the start of iMCU row cinfo->input_iMCU_row */
++GLOBAL(void)
++jpeg_scan_point_save(j_decompress_ptr cinfo)
++{
++  huff_entropy_ptr entropy = (huff_entropy_ptr)cinfo->entropy;
++  jpeg_scan_index *index = jpeg_scan_index_in_use(cinfo);
++  jpeg_scan_point *point;
++  int ci;
++
++  if (!index || cinfo->input_iMCU_row % index->interval != 0 ||
++      cinfo->input_iMCU_row / index->interval >= index->count)
++    return;
++  point = &index->points[cinfo->input_iMCU_row / index->interval];
++  if (point->iMCU_row_plus_1)
++    return;
++  point->offset = (*index->tell) (cinfo);
++  point->get_buffer = (unsigned long long)entropy->bitstate.get_buffer;
++  point->bits_left = entropy->bitstate.bits_left;
++  for (ci = 0; ci < cinfo->comps_in_scan; ci++)
++    point->last_dc_val[ci] = entropy->saved.last_dc_val[ci];
++  point->restarts_to_go = entropy->restarts_to_go;
++  point->next_restart_num = cinfo->marker->next_restart_num;
++  point->unread_marker = cinfo->unread_marker;
++  point->insufficient_data = entropy->pub.insufficient_data;
++  point->iMCU_row_plus_1 = cinfo->input_iMCU_row + 1;
++}
++
++/* Restores the state of the last iMCU row recorded after
++ * cinfo->input_iMCU_row and at most `last_iMCU_row`; returns that row, or
++ * cinfo->input_iMCU_row if there is none.  The caller starts the row.
++ */
++GLOBAL(JDIMENSION)
++jpeg_scan_point_restore(j_decompress_ptr cinfo, JDIMENSION last_iMCU_row)
++{
++  huff_entropy_ptr entropy = (huff_entropy_ptr)cinfo->entropy;
++  jpeg_scan_index *index = jpeg_scan_index_in_use(cinfo);
++  jpeg_scan_point *point = NULL;
++  JDIMENSION n;
++  int ci;
++
++  if (!index || index->count == 0)
++    return cinfo->input_iMCU_row;
++  /* the last point recorded in (input_iMCU_row, last_iMCU_row] */
++  n = last_iMCU_row / index->interval;
++  if (n >= index->count)
++    n = index->count - 1;
++  for (;;) {
++    if (n * index->interval <= cinfo->input_iMCU_row)
++      return cinfo->input_iMCU_row;
++    if (index->points[n].iMCU_row_plus_1) {
++      point = &index->points[n];
++      break;
++    }
++    n--;
++  }
++  (*index->seek) (cinfo, point->offset);
++  entropy->bitstate.get_buffer = (bit_buf_type)point->get_buffer;
++  entropy->bitstate.bits_left = point->bits_left;
++  for (ci = 0; ci < cinfo->comps_in_scan; ci++)
++    entropy->saved.last_dc_val[ci] = point->last_dc_val[ci];
++  entropy->restarts_to_go = point->restarts_to_go;
++  cinfo->marker->next_restart_num = point->next_restart_num;
++  cinfo->unread_marker = point->unread_marker;
++  entropy->pub.insufficient_data = point->insufficient_data;
++  return point->iMCU_row_plus_1 - 1;
++}
+diff -ru a/src/jdmaster.h b/src/jdmaster.h
+--- a/src/jdmaster.h	2026-10-29 17:36:25.757857000 +0800
++++ b/src/jdmaster.h	2026-10-29 17:37:42.793857000 +0800
+@@ -23,6 +23,9 @@
+    */
+   struct jpeg_color_quantizer *quantizer_1pass;
+   struct jpeg_color_quantizer *quantizer_2pass;
++
++  /* Immich: see jpeg_use_scan_index() */
++  jpeg_scan_index *scan_index;
+ } my_decomp_master;
+ 
+ typedef my_decomp_master *my_master_ptr;
+diff -ru a/src/jpegint.h b/src/jpegint.h
+--- a/src/jpegint.h	2026-10-29 17:36:25.757857000 +0800
++++ b/src/jpegint.h	2026-10-29 17:37:42.793857000 +0800
+@@ -350,6 +350,14 @@
+ };
+ 
+ /* Entropy decoding */
++/* Immich: the state of the Huffman decoder at the start of an iMCU row
++ * (jdhuff.c, for jpeg_skip_scanlines with a jpeg_scan_index)
++ */
++EXTERN(jpeg_scan_index *) jpeg_scan_index_in_use(j_decompress_ptr cinfo);
++EXTERN(void) jpeg_scan_point_save(j_decompress_ptr cinfo);
++EXTERN(JDIMENSION) jpeg_scan_point_restore(j_decompress_ptr cinfo,
++                                           JDIMENSION last_iMCU_row);
++
+ struct jpeg_entropy_decoder {
+   void (*start_pass) (j_decompress_ptr cinfo);
+ 
+diff -ru a/src/jpeglib.h b/src/jpeglib.h
+--- a/src/jpeglib.h	2026-10-29 17:36:25.761857000 +0800
++++ b/src/jpeglib.h	2026-10-29 17:37:42.793857000 +0800
+@@ -1088,6 +1088,41 @@
+                                          JDIMENSION num_lines);
+ EXTERN(void) jpeg_crop_scanline(j_decompress_ptr cinfo, JDIMENSION *xoffset,
+                                 JDIMENSION *width);
++
++/* Immich: an index of the entropy-coded data of a baseline JPEG (one scan,
++ * Huffman coding), to start decoding at an iMCU row without decoding the rows
++ * before it.  jpeg_skip_scanlines() records the state of the decoder at the
++ * iMCU rows it skips (every `interval` rows), and starts from the last one
++ * recorded before the rows it is asked to skip to.  The index stays valid for
++ * other decompressors of the same file, whatever their scaling or cropping.
++ * `tell` gives the position in the file of the next byte of the source;
++ * `seek` moves the source to such a position (emptying its buffer).
++ */
++typedef struct {
++  JDIMENSION iMCU_row_plus_1;   /* 0: not recorded */
++  long offset;
++  unsigned long long get_buffer;
++  int bits_left;
++  int last_dc_val[MAX_COMPS_IN_SCAN];
++  unsigned int restarts_to_go;
++  int next_restart_num;
++  int unread_marker;
++  boolean insufficient_data;
++} jpeg_scan_point;
++
++typedef struct {
++  jpeg_scan_point *points;      /* points[n]: iMCU row n * interval */
++  JDIMENSION count;
++  JDIMENSION interval;
++  long (*tell) (j_decompress_ptr cinfo);
++  void (*seek) (j_decompress_ptr cinfo, long offset);
++} jpeg_scan_index;
++
++/* Uses `index` (after jpeg_start_decompress(); NULL to stop).  It is used only
++ * for baseline JPEGs: for others, jpeg_skip_scanlines() decodes as before.
++ */
++EXTERN(void) jpeg_use_scan_index(j_decompress_ptr cinfo,
++                                 jpeg_scan_index *index);
+ EXTERN(void) jpeg12_crop_scanline(j_decompress_ptr cinfo, JDIMENSION *xoffset,
+                                   JDIMENSION *width);
+ EXTERN(boolean) jpeg_finish_decompress(j_decompress_ptr cinfo);

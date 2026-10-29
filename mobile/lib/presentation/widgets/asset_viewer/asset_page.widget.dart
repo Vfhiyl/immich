@@ -28,6 +28,15 @@ import 'package:immich_mobile/providers/view_intent/view_intent_file_path.provid
 import 'package:immich_mobile/widgets/common/immich_loading_indicator.dart';
 import 'package:immich_mobile/widgets/photo_view/photo_view.dart';
 
+/// A long image (a long screenshot): fit to the screen, it would be less than half as wide. The viewer shows it as wide
+/// as the screen from its top instead, dragged up and down to read it; pulled down at its top it closes, pushed up at
+/// its bottom it shows the details, and double tapping zooms in (twice as large) and back.
+bool isLongImage(Size? image, Size viewport) =>
+    image != null &&
+    viewport.width > 0 &&
+    viewport.height > 0 &&
+    image.height / image.width > 2 * viewport.height / viewport.width;
+
 enum _DragIntent { none, scroll, dismiss }
 
 class AssetPage extends ConsumerStatefulWidget {
@@ -334,7 +343,8 @@ class _AssetPageState extends ConsumerState<AssetPage> {
   double _getImageHeight(double maxWidth, double maxHeight, BaseAsset? asset) {
     final sb = _viewController?.scaleBoundaries;
     if (sb != null) {
-      return sb.childSize.height * sb.initialScale;
+      // a long image shown as wide as the screen is taller than it
+      return math.min(sb.childSize.height * sb.initialScale, maxHeight);
     }
 
     if (asset == null || asset.width == null || asset.height == null) {
@@ -371,6 +381,19 @@ class _AssetPageState extends ConsumerState<AssetPage> {
     }
   }
 
+  // The size of the asset upright (a local asset's orientation turns it)
+  static Size? _uprightSize(BaseAsset asset) {
+    final (width, height) = (asset.width, asset.height);
+    if (width == null || height == null || width <= 0 || height <= 0) {
+      return null;
+    }
+    final turned = asset is LocalAsset && (asset.orientation == 90 || asset.orientation == 270);
+    return turned ? Size(height.toDouble(), width.toDouble()) : Size(width.toDouble(), height.toDouble());
+  }
+
+  static PhotoViewScaleState _longImageScaleCycle(PhotoViewScaleState state) =>
+      state == PhotoViewScaleState.initial ? PhotoViewScaleState.covering : PhotoViewScaleState.initial;
+
   Widget _buildPhotoView({
     required BaseAsset asset,
     required PhotoViewHeroAttributes? heroAttributes,
@@ -390,6 +413,7 @@ class _AssetPageState extends ConsumerState<AssetPage> {
     );
 
     if (asset.isImage && !isPlayingMotionVideo) {
+      final long = isLongImage(_uprightSize(asset), size);
       return ProgressiveImage(
         provider: imageProvider,
         builder: (context, provider) => PhotoView(
@@ -402,6 +426,10 @@ class _AssetPageState extends ConsumerState<AssetPage> {
           filterQuality: FilterQuality.high,
           tightMode: true,
           enablePanAlways: true,
+          minScale: long ? PhotoViewComputedScale.contained : null,
+          initialScale: long ? PhotoViewComputedScale.covered : null,
+          basePosition: long ? Alignment.topCenter : null,
+          scaleStateCycle: long ? _longImageScaleCycle : null,
           maxScale: PhotoViewComputedScale.contained * _maxScaleMultiplier,
           disableScaleGestures: _showingDetails,
           scaleStateChangedCallback: _onScaleStateChanged,
@@ -530,6 +558,9 @@ class _AssetPageState extends ConsumerState<AssetPage> {
                       imageSize: Size(displayAsset.width!.toDouble(), displayAsset.height!.toDouble()),
                       viewportSize: Size(viewportWidth, viewportHeight),
                       controller: _viewController,
+                      alignment: isLongImage(_uprightSize(displayAsset), Size(viewportWidth, viewportHeight))
+                          ? Alignment.topCenter
+                          : Alignment.center,
                     ),
                   ),
                 IgnorePointer(

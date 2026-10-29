@@ -161,15 +161,18 @@ class ImageLoader {
   }
 }
 
-/// [tiled]: shown in tiles, from [getRegionSource]: the provider decodes only the base
+/// [tiled]: shown in tiles, from [getRegionSource]: the provider decodes only the base. By default, wherever it can
+/// be: the base is at most twice the pixels of [size] (on the screen), enough for what shows the image at that size
+/// (slideshows, memories...), where a long screenshot would otherwise be decoded at up to 16384 pixels long.
 ImageProvider getFullImageProvider(
   BaseAsset asset, {
   Size size = const Size(1080, 1920),
   bool edited = true,
   String? localFilePath,
   Size? remoteThumbnailSize,
-  bool tiled = false,
+  bool? tiled,
 }) {
+  tiled ??= localFilePath == null && getRegionSource(asset, size: size, edited: edited) != null;
   // Create new provider and cache it
   final ImageProvider provider;
   if (localFilePath != null) {

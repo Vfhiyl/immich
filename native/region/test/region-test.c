@@ -3,7 +3,11 @@
  * smaller by its DCT, within a few levels).
  *
  * Usage: region-test FILE...
- *        region-test --make-png FILE WIDTH HEIGHT photo|text|palette    (long PNGs to test with) */
+ *        region-test --make-png FILE WIDTH HEIGHT photo|text|palette    (long PNGs to test with)
+ *        region-test --make-jpeg FILE WIDTH HEIGHT 420|422|444 RESTART  (JPEGs with restart markers every RESTART
+ *                                                                        MCUs, 0 for none)
+ *        region-test --for FILE WIDTH HEIGHT                            (opened for that size: a HEIF's thumbnail,
+ *                                                                        compared with libheif's decode of it) */
 #include <fcntl.h>
 #include <setjmp.h>
 #include <stdio.h>
@@ -140,8 +144,127 @@ static int make_png(const char *path, int w, int h, const char *kind)
 	return 0;
 }
 
+/* A photo-like JPEG (gradients and grain), with the chroma subsampling and restart interval asked for */
+static int make_jpeg(const char *path, int w, int h, const char *subsampling, int restart)
+{
+	FILE *f = fopen(path, "wb");
+	if (!f)
+		return 1;
+	struct jpeg_compress_struct c;
+	struct jpeg_error_mgr e;
+	c.err = jpeg_std_error(&e);
+	jpeg_create_compress(&c);
+	jpeg_stdio_dest(&c, f);
+	c.image_width = (JDIMENSION) w;
+	c.image_height = (JDIMENSION) h;
+	c.input_components = 3;
+	c.in_color_space = JCS_RGB;
+	jpeg_set_defaults(&c);
+	jpeg_set_quality(&c, 90, TRUE);
+	c.comp_info[0].h_samp_factor = !strcmp(subsampling, "444") ? 1 : 2;
+	c.comp_info[0].v_samp_factor = !strcmp(subsampling, "420") ? 2 : 1;
+	c.restart_interval = (unsigned) restart;
+	jpeg_start_compress(&c, TRUE);
+	JSAMPROW row = malloc((size_t) w * 3);
+	unsigned seed = 7;
+	while (c.next_scanline < c.image_height) {
+		const int y = (int) c.next_scanline;
+		for (int x = 0; x < w; x++) {
+			seed = seed * 1103515245 + 12345;
+			for (int i = 0; i < 3; i++)
+				row[x * 3 + i] = (JSAMPLE) ((x * (i + 2) + y * (4 - i)) / 9 + (seed >> (27 - i)) % 17);
+		}
+		jpeg_write_scanlines(&c, &row, 1);
+	}
+	jpeg_finish_compress(&c);
+	jpeg_destroy_compress(&c);
+	free(row);
+	fclose(f);
+	return 0;
+}
+
+/* Opens FILE for WIDTH x HEIGHT: the size of what it opened, and the pixels of a HEIF's thumbnail compared */
+static int open_for(const char *path, int want_width, int want_height)
+{
+	char error[256];
+	const int fd = open(path, O_RDONLY);
+	ir_image *image = ir_open_fd_for(fd, want_width, want_height, error, sizeof(error));
+	close(fd);
+	if (!image) {
+		printf("FAIL %s for %dx%d: %s\n", path, want_width, want_height, error);
+		return 1;
+	}
+	const int w = ir_width(image), h = ir_height(image);
+	uint8_t *out = malloc((size_t) w * h * 4);
+	int status = ir_decode(image, 0, 0, w, h, 1, out, (size_t) w * 4, error, sizeof(error));
+	ir_close(image);
+	if (status) {
+		printf("FAIL %s for %dx%d: %s\n", path, want_width, want_height, error);
+		free(out);
+		return 1;
+	}
+	/* libheif's smallest thumbnail at least that large */
+	struct heif_context *context = heif_context_alloc();
+	struct heif_image_handle *primary, *thumbnail = NULL;
+	heif_context_read_from_file(context, path, NULL);
+	heif_context_get_primary_image_handle(context, &primary);
+	heif_item_id ids[16];
+	const int count = heif_image_handle_get_list_of_thumbnail_IDs(primary, ids, 16);
+	for (int i = 0; i < count; i++) {
+		struct heif_image_handle *t;
+		heif_image_handle_get_thumbnail(primary, ids[i], &t);
+		const int tw = heif_image_handle_get_width(t), th = heif_image_handle_get_height(t);
+		const int large = (tw > th ? tw : th) >= (want_width > want_height ? want_width : want_height) &&
+			(tw > th ? th : tw) >= (want_width > want_height ? want_height : want_width);
+		if (large && (!thumbnail || tw * th < heif_image_handle_get_width(thumbnail) * heif_image_handle_get_height(thumbnail))) {
+			if (thumbnail)
+				heif_image_handle_release(thumbnail);
+			thumbnail = t;
+		}
+		else
+			heif_image_handle_release(t);
+	}
+	struct heif_image_handle *expected = thumbnail ? thumbnail : primary;
+	int max = 0;
+	if (heif_image_handle_get_width(expected) != w || heif_image_handle_get_height(expected) != h) {
+		printf("FAIL %s for %dx%d: opened %dx%d\n", path, want_width, want_height, w, h);
+		status = 1;
+	}
+	else if (thumbnail) {
+		struct heif_image *decoded;
+		heif_decode_image(thumbnail, &decoded, heif_colorspace_RGB, heif_chroma_interleaved_RGBA, NULL);
+		int stride;
+		const uint8_t *data = heif_image_get_plane_readonly(decoded, heif_channel_interleaved, &stride);
+		for (int y = 0; y < h; y++)
+			for (int x = 0; x < w * 4; x++) {
+				const int d = abs(data[(size_t) stride * y + x] - out[(size_t) w * 4 * y + x]);
+				if (d > max)
+					max = d;
+			}
+		heif_image_release(decoded);
+		if (max) {
+			printf("FAIL %s for %dx%d: thumbnail differs by %d\n", path, want_width, want_height, max);
+			status = 1;
+		}
+	}
+	if (!status)
+		printf("ok   %s for %dx%d: %dx%d%s\n", path, want_width, want_height, w, h, thumbnail ? " (its thumbnail)" : "");
+	if (thumbnail)
+		heif_image_handle_release(thumbnail);
+	heif_image_handle_release(primary);
+	heif_context_free(context);
+	free(out);
+	return status;
+}
+
 int main(int argc, char **argv)
 {
+	if (argc == 5 && !strcmp(argv[1], "--for")) {
+		setenv("IMMICH_REGION_KEEP_COLOURS", "1", 1);
+		return open_for(argv[2], atoi(argv[3]), atoi(argv[4]));
+	}
+	if (argc == 7 && !strcmp(argv[1], "--make-jpeg"))
+		return make_jpeg(argv[2], atoi(argv[3]), atoi(argv[4]), argv[5], atoi(argv[6]));
 	if (argc == 6 && !strcmp(argv[1], "--make-png"))
 		return make_png(argv[2], atoi(argv[3]), atoi(argv[4]), argv[5]);
 	setenv("IMMICH_REGION_KEEP_COLOURS", "1", 1);
@@ -171,6 +294,8 @@ int main(int argc, char **argv)
 			{ 0, 0, 512, 512, 1 }, { w / 2 - 300, h / 2 - 200, 600, 400, 1 }, { w - 513, h - 777, 513, 777, 1 },
 			{ 0, 0, w, h, 16 }, { w / 3, h / 3, 1024, 1024, 2 }, { w / 4, h / 2, 1536, 1536, 4 },
 			{ w - 2048, h - 2048, 2048, 2048, 8 },
+			/* again, after the parts below it (JPEG: from its index), and a part above the last one */
+			{ w - 513, h - 777, 513, 777, 1 }, { w / 2 - 300, h / 2 - 200, 600, 400, 1 }, { 3, h / 5 + 5, 700, 900, 2 },
 		};
 		for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
 			int x = parts[i][0], y = parts[i][1], pw = parts[i][2], ph = parts[i][3];

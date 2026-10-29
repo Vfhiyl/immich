@@ -28,6 +28,10 @@ ir_image *ir_open(const char *path, char *error, size_t error_size);
  * close its own. The image reads it with pread() or after seeking, so the descriptor must be of a regular file. */
 ir_image *ir_open_fd(int fd, char *error, size_t error_size);
 
+/* As ir_open_fd, to decode the image at about `width` x `height` (either way round): of a HEIF with thumbnails (the
+ * photos of phones), the smallest at least that large, if there is one, rather than the image itself. */
+ir_image *ir_open_fd_for(int fd, int width, int height, char *error, size_t error_size);
+
 /* The size of the image, upright */
 int ir_width(const ir_image *image);
 int ir_height(const ir_image *image);

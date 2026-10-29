@@ -225,7 +225,7 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
     try {
       val res = if (isVideo) {
         decodeVideoThumbnail(id, size, signal).toNativeBuffer()
-      } else decodeSmaller(id, size, signal) ?: run {
+      } else decodeSmaller(id, size, signal) ?: try {
         val (bitmap, orientation) = decodeImage(id, size, signal)
         signal.throwIfCanceled()
         if (orientation == ExifInterface.ORIENTATION_NORMAL || orientation == ExifInterface.ORIENTATION_UNDEFINED) {
@@ -233,6 +233,11 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
         } else {
           rotateToNativeBuffer(bitmap, orientation)
         }
+      } catch (e: Exception) {
+        // The platform makes no thumbnail of some photos (HEICs of 100 MP and more, on some phones): the app's own
+        // decoders may (from the thumbnail inside a HEIC)
+        if (e is OperationCanceledException) throw e
+        decodeSmaller(id, size, signal, thumbnail = true) ?: throw e
       }
       // Don't re-check cancellation here: res owns a malloc'd buffer, and bailing to CANCELLED would
       // orphan it. Deliver it; Dart frees the buffer itself if the request was cancelled meanwhile.
@@ -244,9 +249,15 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
 
   // Images for the viewer (larger than thumbnails) in the formats the app's own decoders read, made smaller as they are
   // decoded (HEIC a tile at a time, JPEG by its DCT): the platform's decoders take a few hundred MB more for a photo of
-  // 200 MP, decoding it at half its size or whole first. Null where they cannot: the platform decodes it.
-  private fun decodeSmaller(id: Long, size: Size, signal: CancellationSignal): Map<String, Long>? {
-    if (size.width <= 768 && size.height <= 768) {
+  // 200 MP, decoding it at half its size or whole first. Thumbnails too when the platform cannot make them
+  // ([thumbnail]). Null where they cannot: the platform decodes it.
+  private fun decodeSmaller(
+    id: Long,
+    size: Size,
+    signal: CancellationSignal,
+    thumbnail: Boolean = false
+  ): Map<String, Long>? {
+    if (!thumbnail && size.width <= 768 && size.height <= 768) {
       return null
     }
     val uri = ContentUris.withAppendedId(Images.Media.EXTERNAL_CONTENT_URI, id)
@@ -257,7 +268,7 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
     return try {
       val dimensions = IntArray(2)
       val handle = (resolver.openFileDescriptor(uri, "r", signal) ?: return null)
-        .use { RegionDecoder.openFd(it.fd, dimensions) }
+        .use { RegionDecoder.openFd(it.fd, size.width, size.height, dimensions) }
       try {
         signal.throwIfCanceled()
         val (width, height) = dimensions

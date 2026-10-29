@@ -15,12 +15,16 @@ class OcrOverlay extends ConsumerStatefulWidget {
   final Size viewportSize;
   final PhotoViewControllerBase? controller;
 
+  /// Where the viewer aligns the image (its basePosition)
+  final Alignment alignment;
+
   const OcrOverlay({
     super.key,
     required this.asset,
     required this.imageSize,
     required this.viewportSize,
     this.controller,
+    this.alignment = Alignment.center,
   });
 
   @override
@@ -103,6 +107,7 @@ class _OcrOverlayState extends ConsumerState<OcrOverlay> {
           controller: widget.controller,
           imageSize: widget.imageSize,
           viewportSize: widget.viewportSize,
+          alignment: widget.alignment,
           controllerValue: _controllerValue,
           selectedBoxIndex: _selectedBoxIndex,
           onSelectionChanged: (index) => setState(() => _selectedBoxIndex = index),
@@ -119,6 +124,7 @@ class _OcrBoxes extends StatelessWidget {
   final PhotoViewControllerBase? controller;
   final Size imageSize;
   final Size viewportSize;
+  final Alignment alignment;
   final PhotoViewControllerValue? controllerValue;
   final int? selectedBoxIndex;
   final ValueChanged<int?> onSelectionChanged;
@@ -128,6 +134,7 @@ class _OcrBoxes extends StatelessWidget {
     required this.controller,
     required this.imageSize,
     required this.viewportSize,
+    required this.alignment,
     required this.controllerValue,
     required this.selectedBoxIndex,
     required this.onSelectionChanged,
@@ -152,9 +159,10 @@ class _OcrBoxes extends StatelessWidget {
     final viewportWidth = viewportSize.width;
     final viewportHeight = viewportSize.height;
 
-    // Image center in viewport space, accounting for pan
-    final cx = viewportWidth / 2 + position.dx;
-    final cy = viewportHeight / 2 + position.dy;
+    // Image center in viewport space, accounting for pan: the viewer lays the image out at
+    // (viewport - image) * (alignment + 1) / 2, moved by the position
+    final cx = (viewportWidth - imageWidth * scale) * (alignment.x + 1) / 2 + imageWidth * scale / 2 + position.dx;
+    final cy = (viewportHeight - imageHeight * scale) * (alignment.y + 1) / 2 + imageHeight * scale / 2 + position.dy;
 
     final quads = <List<Offset>>[];
     final boxes = <Widget>[];

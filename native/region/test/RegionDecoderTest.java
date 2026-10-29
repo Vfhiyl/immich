@@ -18,7 +18,7 @@ public class RegionDecoderTest {
     if (byDescriptor) {
       // as the app opens local assets: a descriptor of the media store, closed once the image is open
       try (java.io.RandomAccessFile file = new java.io.RandomAccessFile(path, "r")) {
-        image = RegionDecoder.openFd(fdOf(file.getFD()), size);
+        image = RegionDecoder.openFd(fdOf(file.getFD()), 0, 0, size);
       }
     } else {
       image = RegionDecoder.open(path, size);
@@ -72,13 +72,22 @@ public class RegionDecoderTest {
       check(e.getMessage().startsWith("cannot open"), "why opening a missing file fails: " + e.getMessage());
     }
     System.out.println("ok errors");
+
+    // opened for a thumbnail's size: the thumbnail of the HEIC (320 x 240)
+    try (java.io.RandomAccessFile file = new java.io.RandomAccessFile(args[1], "r")) {
+      int[] size = new int[2];
+      long image = RegionDecoder.openFd(fdOf(file.getFD()), 200, 200, size);
+      check(size[0] == 320 && size[1] == 240, "the thumbnail of " + args[1] + ": " + size[0] + "x" + size[1]);
+      RegionDecoder.close(image);
+    }
+    System.out.println("ok opened for a size");
   }
 }
 
 class RegionDecoder {
   static native long open(String path, int[] size) throws IOException;
 
-  static native long openFd(int fd, int[] size) throws IOException;
+  static native long openFd(int fd, int width, int height, int[] size) throws IOException;
 
   static native long decode(long handle, int x, int y, int width, int height, int sample, int[] info)
     throws IOException;

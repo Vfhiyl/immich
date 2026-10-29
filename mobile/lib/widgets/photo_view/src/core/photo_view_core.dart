@@ -318,8 +318,28 @@ class PhotoViewCoreState extends State<PhotoViewCore>
 
   void animateOnScaleStateUpdate(double prevScale, double nextScale) {
     unawaited(animateScale(prevScale, nextScale));
-    unawaited(animatePosition(controller.position, Offset.zero));
+    unawaited(animatePosition(controller.position, _positionAfterScaling(prevScale, nextScale)));
     unawaited(animateRotation(controller.rotation, 0.0));
+  }
+
+  // Centred images go back to the centre. An image aligned otherwise (a long image, from its top) keeps the point at
+  // the middle of the viewport where it is, so that it does not jump back to its top.
+  Offset _positionAfterScaling(double prevScale, double nextScale) {
+    if (basePosition == Alignment.center || prevScale <= 0) {
+      return Offset.zero;
+    }
+    final ratio = nextScale / prevScale;
+    final outer = scaleBoundaries.outerSize;
+    final position = controller.position;
+    // the child is laid out at (outer - child size) * (alignment + 1) / 2, moved by the position: the point of it at
+    // the middle of the viewport stays there when the position becomes ratio * (alignment * outer / 2 + position)
+    // - alignment * outer / 2
+    final x = basePosition.x * outer.width / 2;
+    final y = basePosition.y * outer.height / 2;
+    return clampPosition(
+      position: Offset(ratio * (x + position.dx) - x, ratio * (y + position.dy) - y),
+      scale: nextScale,
+    );
   }
 
   @override
@@ -435,9 +455,10 @@ class PhotoViewCoreState extends State<PhotoViewCore>
     }
     final display = scaleBoundaries.childSize * scale;
     final outer = scaleBoundaries.outerSize;
+    // where the alignment puts the child, moved by the position
     final visible = Rect.fromLTWH(
-      (display.width - outer.width) / 2 - value.position.dx,
-      (display.height - outer.height) / 2 - value.position.dy,
+      (display.width - outer.width) * (basePosition.x + 1) / 2 - value.position.dx,
+      (display.height - outer.height) * (basePosition.y + 1) / 2 - value.position.dy,
       outer.width,
       outer.height,
     ).intersect(Offset.zero & display);

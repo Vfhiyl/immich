@@ -55,6 +55,9 @@ struct ir_image {
 	int orientation;
 	/* how far back (in rows) the format may add rows to a box: 1 for formats decoded row by row */
 	int band;
+	/* the size it is to be decoded at about, if known (ir_open_fd_for): a format may open a smaller image of it */
+	int want_width;
+	int want_height;
 	/* the embedded colours to sRGB, or none (sRGB already) */
 	cmsHTRANSFORM transform;
 	char *error;

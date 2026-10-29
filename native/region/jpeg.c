@@ -1,16 +1,104 @@
 /* JPEG through libjpeg-turbo. Rows are decoded from the top (a baseline JPEG cannot be entered elsewhere), but only
  * the columns of the part (jpeg_crop_scanline), the rows above it are skipped without colour conversion and IDCT
- * (jpeg_skip_scanlines), and a part made smaller is decoded smaller by the DCT itself where it can (1/2, 1/4, 1/8). */
+ * (jpeg_skip_scanlines), and a part made smaller is decoded smaller by the DCT itself where it can (1/2, 1/4, 1/8).
+ * Skipping the rows above still decodes their entropy-coded data, so the image keeps an index of it (our patch of
+ * libjpeg-turbo, patches/jpeg-turbo/0001), filled as rows are skipped: the parts after start near their rows. */
 #include <setjmp.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <stdio.h>
 
 #include <jpeglib.h>
+#include <jerror.h>
 
 #include "region_private.h"
 
+typedef struct {
+	/* the state of the entropy decoder at each iMCU row skipped so far (allocated at the first part) */
+	jpeg_scan_index index;
+} jpeg;
+
+/* A source of the file read with pread(), which can tell where it is and seek, for the index */
+#define SOURCE_BUFFER 65536
+
+typedef struct {
+	struct jpeg_source_mgr pub;
+	int fd;
+	long end; /* the position in the file of the byte after the buffer */
+	JOCTET buffer[SOURCE_BUFFER];
+} source;
+
+static void source_init(j_decompress_ptr info)
+{
+	(void) info;
+}
+
+static boolean source_fill(j_decompress_ptr info)
+{
+	source *src = (source *) info->src;
+	const ssize_t n = pread(src->fd, src->buffer, SOURCE_BUFFER, (off_t) src->end);
+	if (n <= 0) {
+		/* the end of the file before the end of the image: as jpeg_stdio_src does */
+		WARNMS(info, JWRN_JPEG_EOF);
+		src->buffer[0] = (JOCTET) 0xFF;
+		src->buffer[1] = (JOCTET) JPEG_EOI;
+		src->pub.next_input_byte = src->buffer;
+		src->pub.bytes_in_buffer = 2;
+		return TRUE;
+	}
+	src->end += n;
+	src->pub.next_input_byte = src->buffer;
+	src->pub.bytes_in_buffer = (size_t) n;
+	return TRUE;
+}
+
+static void source_skip(j_decompress_ptr info, long bytes)
+{
+	source *src = (source *) info->src;
+	if (bytes <= 0)
+		return;
+	if ((size_t) bytes <= src->pub.bytes_in_buffer) {
+		src->pub.next_input_byte += bytes;
+		src->pub.bytes_in_buffer -= (size_t) bytes;
+		return;
+	}
+	src->end += bytes - (long) src->pub.bytes_in_buffer;
+	src->pub.bytes_in_buffer = 0;
+}
+
+static void source_term(j_decompress_ptr info)
+{
+	(void) info;
+}
+
+static long source_tell(j_decompress_ptr info)
+{
+	source *src = (source *) info->src;
+	return src->end - (long) src->pub.bytes_in_buffer;
+}
+
+static void source_seek(j_decompress_ptr info, long offset)
+{
+	source *src = (source *) info->src;
+	src->end = offset;
+	src->pub.next_input_byte = src->buffer;
+	src->pub.bytes_in_buffer = 0;
+}
+
+static void use_source(j_decompress_ptr info, source *src, int fd)
+{
+	memset(&src->pub, 0, sizeof(src->pub));
+	src->fd = fd;
+	src->end = 0;
+	src->pub.init_source = source_init;
+	src->pub.fill_input_buffer = source_fill;
+	src->pub.skip_input_data = source_skip;
+	src->pub.resync_to_restart = jpeg_resync_to_restart;
+	src->pub.term_source = source_term;
+	info->src = &src->pub;
+}
 
 typedef struct {
 	struct jpeg_error_mgr manager;
@@ -34,12 +122,14 @@ static void on_warning(j_common_ptr info, int level)
 
 static int jpeg_decode(ir_image *image, int x, int y, int width, int height, int sample, ir_box *box)
 {
+	jpeg *j = image->data;
 	struct jpeg_decompress_struct info;
 	jpeg_error error;
-	FILE *file = ir_file(image);
+	source *src = malloc(sizeof(source));
 	uint8_t *row = NULL;
-	if (!file) {
-		ir_fail(image, "cannot open the file");
+	uint8_t *rgba = NULL;
+	if (!src) {
+		ir_fail(image, "out of memory");
 		return -1;
 	}
 	info.err = jpeg_std_error(&error.manager);
@@ -48,12 +138,13 @@ static int jpeg_decode(ir_image *image, int x, int y, int width, int height, int
 	if (setjmp(error.jump)) {
 		ir_fail(image, "%s", error.message);
 		jpeg_destroy_decompress(&info);
-		fclose(file);
+		free(src);
 		free(row);
+		free(rgba);
 		return -1;
 	}
 	jpeg_create_decompress(&info);
-	jpeg_stdio_src(&info, file);
+	use_source(&info, src, image->fd);
 	jpeg_read_header(&info, TRUE);
 
 	/* the largest scale of the DCT within the factor, on whose pixels the part begins */
@@ -65,6 +156,17 @@ static int jpeg_decode(ir_image *image, int x, int y, int width, int height, int
 	const int cmyk = info.jpeg_color_space == JCS_CMYK || info.jpeg_color_space == JCS_YCCK;
 	info.out_color_space = cmyk ? JCS_CMYK : JCS_EXT_RGBA;
 	jpeg_start_decompress(&info);
+
+	/* the index, the same for every scale and part */
+	if (!j->index.points) {
+		j->index.points = calloc(info.total_iMCU_rows, sizeof(jpeg_scan_point));
+		j->index.count = j->index.points ? info.total_iMCU_rows : 0;
+		j->index.interval = 1;
+		j->index.tell = source_tell;
+		j->index.seek = source_seek;
+	}
+	if (j->index.points)
+		jpeg_use_scan_index(&info, &j->index);
 
 	/* the part, in the image as scaled by the DCT */
 	const int sx0 = x / scale;
@@ -91,10 +193,8 @@ static int jpeg_decode(ir_image *image, int x, int y, int width, int height, int
 	box->y = sy0;
 	box->factor = sample / scale;
 	row = malloc((size_t) info.output_width * 4);
-	uint8_t *rgba = malloc((size_t) crop_width * 4);
+	rgba = malloc((size_t) crop_width * 4);
 	if (!row || !rgba) {
-		free(rgba);
-		error.message[0] = 0;
 		snprintf(error.message, sizeof(error.message), "out of memory");
 		longjmp(error.jump, 1);
 	}
@@ -116,25 +216,37 @@ static int jpeg_decode(ir_image *image, int x, int y, int width, int height, int
 		}
 		ir_box_add(box, (int) crop_x, line, pixels, (int) crop_width);
 	}
-	free(rgba);
 	jpeg_abort_decompress(&info);
 	jpeg_destroy_decompress(&info);
-	fclose(file);
+	free(src);
 	free(row);
+	free(rgba);
 	return 0;
 }
 
-static const ir_format format = { "jpeg", jpeg_decode, NULL };
+static void jpeg_close(ir_image *image)
+{
+	jpeg *j = image->data;
+	if (j)
+		free(j->index.points);
+	free(j);
+}
+
+static const ir_format format = { "jpeg", jpeg_decode, jpeg_close };
 
 int ir_open_jpeg(ir_image *image)
 {
 	image->format = &format;
+	if (!(image->data = calloc(1, sizeof(jpeg)))) {
+		ir_fail(image, "out of memory");
+		return -1;
+	}
 
 	struct jpeg_decompress_struct info;
 	jpeg_error error;
-	FILE *file = ir_file(image);
-	if (!file) {
-		ir_fail(image, "cannot open the file");
+	source *src = malloc(sizeof(source));
+	if (!src) {
+		ir_fail(image, "out of memory");
 		return -1;
 	}
 	info.err = jpeg_std_error(&error.manager);
@@ -143,11 +255,11 @@ int ir_open_jpeg(ir_image *image)
 	if (setjmp(error.jump)) {
 		ir_fail(image, "%s", error.message);
 		jpeg_destroy_decompress(&info);
-		fclose(file);
+		free(src);
 		return -1;
 	}
 	jpeg_create_decompress(&info);
-	jpeg_stdio_src(&info, file);
+	use_source(&info, src, image->fd);
 	jpeg_save_markers(&info, JPEG_APP0 + 1, 0xffff);
 	jpeg_save_markers(&info, JPEG_APP0 + 2, 0xffff);
 	jpeg_read_header(&info, TRUE);
@@ -157,7 +269,7 @@ int ir_open_jpeg(ir_image *image)
 	if (info.progressive_mode && (uint64_t) info.image_width * info.image_height > 50000000) {
 		ir_fail(image, "a progressive JPEG this large cannot be decoded in parts");
 		jpeg_destroy_decompress(&info);
-		fclose(file);
+		free(src);
 		return -1;
 	}
 	for (jpeg_saved_marker_ptr marker = info.marker_list; marker; marker = marker->next)
@@ -172,6 +284,6 @@ int ir_open_jpeg(ir_image *image)
 		free(icc);
 	}
 	jpeg_destroy_decompress(&info);
-	fclose(file);
+	free(src);
 	return 0;
 }

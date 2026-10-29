@@ -9,9 +9,11 @@ mixin HitCornersDetector on PhotoViewControllerDelegate {
     if (screenWidth - childWidth > -0.001) {
       return const HitCorners(true, true);
     }
-    final x = -position.dx;
+    // the position is within cornersX: at its max the child shows its left edge, at its min its right edge (with a
+    // centred child the range is symmetric, so comparing -position as before gave the same; not for other alignments)
+    final x = position.dx;
     final cornersX = this.cornersX();
-    return HitCorners(x <= cornersX.min, x >= cornersX.max);
+    return HitCorners(x >= cornersX.max, x <= cornersX.min);
   }
 
   HitCorners _hitCornersY() {
@@ -20,9 +22,10 @@ mixin HitCornersDetector on PhotoViewControllerDelegate {
     if (screenHeight - childHeight > -0.001) {
       return const HitCorners(true, true);
     }
-    final y = -position.dy;
+    // as for x: at the max the child shows its top, at the min its bottom
+    final y = position.dy;
     final cornersY = this.cornersY();
-    return HitCorners(y <= cornersY.min, y >= cornersY.max);
+    return HitCorners(y >= cornersY.max, y <= cornersY.min);
   }
 
   bool _shouldMoveAxis(HitCorners hitCorners, double mainAxisMove) {

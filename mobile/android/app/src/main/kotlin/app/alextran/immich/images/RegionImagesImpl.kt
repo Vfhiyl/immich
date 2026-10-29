@@ -26,9 +26,12 @@ object RegionDecoder {
   @JvmStatic
   external fun open(path: String, size: IntArray): Long
 
-  /** Opens the image of a file descriptor, which it duplicates (the caller closes its own). */
+  /**
+   * Opens the image of a file descriptor, which it duplicates (the caller closes its own). With a [width] and
+   * [height] (else 0), to decode it at about that size: a HEIF's thumbnail if one is that large.
+   */
   @JvmStatic
-  external fun openFd(fd: Int, size: IntArray): Long
+  external fun openFd(fd: Int, width: Int, height: Int, size: IntArray): Long
 
   /**
    * Decodes a part, [sample] times smaller, into a malloc'd RGBA buffer; writes {width, height, rowBytes} into [info].
@@ -100,7 +103,7 @@ class RegionImagesImpl(context: Context) : RegionImageApi {
           val uri = ContentUris.withAppendedId(Images.Media.EXTERNAL_CONTENT_URI, localAssetId.toLong())
           // the decoders keep a duplicate of the media store's descriptor (it may not be opened again by a path)
           (ctx.contentResolver.openFileDescriptor(uri, "r", signal) ?: throw IOException("Could not open $localAssetId"))
-            .use { RegionDecoder.openFd(it.fd, size) }
+            .use { RegionDecoder.openFd(it.fd, 0, 0, size) }
         } else {
           file = download(url ?: throw IllegalArgumentException("No asset or URL"), signal)
           openFiles.merge(file, 1, Int::plus)

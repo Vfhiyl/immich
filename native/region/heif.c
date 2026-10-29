@@ -17,7 +17,9 @@
 #define TILE_CACHE 4
 
 /* the threads that decode the tiles of a part, and the tiles decoded but not added to the box yet, at most */
+#ifndef WORKERS
 #define WORKERS 4
+#endif
 #define WINDOW (2 * WORKERS)
 
 typedef struct {
@@ -372,6 +374,35 @@ static const struct heif_reader reader = {
 
 static const ir_format format = { "heif", heif_decode, heif_close };
 
+/* The smallest thumbnail of the image at least `width` x `height` (either way round), or NULL */
+static struct heif_image_handle *smallest_thumbnail(struct heif_image_handle *handle, int width, int height)
+{
+	if (width <= 0 || height <= 0)
+		return NULL;
+	const int want_long = width > height ? width : height;
+	const int want_short = width > height ? height : width;
+	heif_item_id ids[16];
+	const int count = heif_image_handle_get_list_of_thumbnail_IDs(handle, ids, 16);
+	struct heif_image_handle *best = NULL;
+	for (int i = 0; i < count; i++) {
+		struct heif_image_handle *thumbnail;
+		if (heif_image_handle_get_thumbnail(handle, ids[i], &thumbnail).code)
+			continue;
+		const int w = heif_image_handle_get_width(thumbnail);
+		const int h = heif_image_handle_get_height(thumbnail);
+		const int large = (w > h ? w : h) >= want_long && (w > h ? h : w) >= want_short;
+		if (large && (!best || (int64_t) w * h <
+								   (int64_t) heif_image_handle_get_width(best) * heif_image_handle_get_height(best))) {
+			if (best)
+				heif_image_handle_release(best);
+			best = thumbnail;
+		}
+		else
+			heif_image_handle_release(thumbnail);
+	}
+	return best;
+}
+
 int ir_open_heif(ir_image *image)
 {
 	heif *h = calloc(1, sizeof(heif));
@@ -398,6 +429,15 @@ int ir_open_heif(ir_image *image)
 		ir_fail(image, "%s", error.message);
 		return -1;
 	}
+	/* a thumbnail large enough, if asked for; with the colours of the image if it has none of its own */
+	struct heif_image_handle *primary = h->handle;
+	struct heif_image_handle *colours = primary;
+	struct heif_image_handle *thumbnail = smallest_thumbnail(primary, image->want_width, image->want_height);
+	if (thumbnail) {
+		h->handle = thumbnail;
+		if (heif_image_handle_get_color_profile_type(thumbnail) != heif_color_profile_type_not_present)
+			colours = thumbnail;
+	}
 	image->stored_width = heif_image_handle_get_width(h->handle);
 	image->stored_height = heif_image_handle_get_height(h->handle);
 
@@ -408,19 +448,19 @@ int ir_open_heif(ir_image *image)
 	/* tiles are added to a box a row of them at a time */
 	image->band = h->tiled ? (int) h->tiling.tile_height : image->stored_height;
 
-	switch (heif_image_handle_get_color_profile_type(h->handle)) {
+	switch (heif_image_handle_get_color_profile_type(colours)) {
 	case heif_color_profile_type_prof:
 	case heif_color_profile_type_rICC: {
-		const size_t size = heif_image_handle_get_raw_color_profile_size(h->handle);
+		const size_t size = heif_image_handle_get_raw_color_profile_size(colours);
 		void *icc = malloc(size);
-		if (icc && !heif_image_handle_get_raw_color_profile(h->handle, icc).code)
+		if (icc && !heif_image_handle_get_raw_color_profile(colours, icc).code)
 			ir_set_profile(image, icc, size);
 		free(icc);
 		break;
 	}
 	case heif_color_profile_type_nclx: {
 		struct heif_color_profile_nclx *nclx = NULL;
-		if (!heif_image_handle_get_nclx_color_profile(h->handle, &nclx).code && nclx) {
+		if (!heif_image_handle_get_nclx_color_profile(colours, &nclx).code && nclx) {
 			ir_set_primaries(image, nclx->color_primaries);
 			heif_nclx_color_profile_free(nclx);
 		}
@@ -429,5 +469,7 @@ int ir_open_heif(ir_image *image)
 	default:
 		break;
 	}
+	if (primary != h->handle)
+		heif_image_handle_release(primary);
 	return 0;
 }

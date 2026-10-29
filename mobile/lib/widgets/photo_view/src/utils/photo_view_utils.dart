@@ -10,12 +10,17 @@ double getScaleForScaleState(PhotoViewScaleState scaleState, ScaleBoundaries sca
     PhotoViewScaleState.initial ||
     PhotoViewScaleState.zoomedIn ||
     PhotoViewScaleState.zoomedOut => _clampSize(scaleBoundaries.initialScale, scaleBoundaries),
-    PhotoViewScaleState.covering => _clampSize(
-      _scaleForCovering(scaleBoundaries.outerSize, scaleBoundaries.childSize),
-      scaleBoundaries,
-    ),
+    PhotoViewScaleState.covering => _clampSize(_coveringScale(scaleBoundaries), scaleBoundaries),
     PhotoViewScaleState.originalSize => _clampSize(1.0, scaleBoundaries),
   };
+}
+
+/// Covering the viewport; an image that covers it at its initial scale already (a long image shown as wide as the
+/// viewport) is made twice as large instead, so that double tapping it zooms in.
+double _coveringScale(ScaleBoundaries scaleBoundaries) {
+  final covering = _scaleForCovering(scaleBoundaries.outerSize, scaleBoundaries.childSize);
+  final initial = scaleBoundaries.initialScale;
+  return covering > initial * 1.01 ? covering : initial * 2;
 }
 
 /// Internal class to wraps custom scale boundaries (min, max and initial)

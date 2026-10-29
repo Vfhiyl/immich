@@ -21,9 +21,20 @@ assets="$REPO/e2e/test-assets/formats"
 "$out/region-test" --make-png "$out/long-photo.png" 1200 9000 photo
 "$out/region-test" --make-png "$out/long-text.png" 1080 20000 text
 "$out/region-test" --make-png "$out/palette.png" 777 3000 palette
+# JPEGs with restart markers (every 7 MCUs, across rows; and one a row long), and without, as phones write them
+"$out/region-test" --make-jpeg "$out/restart-420.jpg" 1000 6000 420 7
+"$out/region-test" --make-jpeg "$out/restart-444.jpg" 1003 5000 444 63
+"$out/region-test" --make-jpeg "$out/plain-422.jpg" 2000 4000 422 0
 "$out/region-test" "$assets/heic/IMG_2682.heic" "$assets/motionphoto/samsung-one-ui-6.heic" \
   "$assets/motionphoto/pixel-8a.jpg" "$assets/motionphoto/samsung-one-ui-6.jpg" "$assets/jpg/el_torcal_rocks.jpg" \
-  "$assets/png/density_plot.png" "$out/long-photo.png" "$out/long-text.png" "$out/palette.png"
+  "$assets/png/density_plot.png" "$out/long-photo.png" "$out/long-text.png" "$out/palette.png" "$out/restart-420.jpg" \
+  "$out/restart-444.jpg" "$out/plain-422.jpg"
+
+# opened for a size: the thumbnail of a phone's HEIC when it is large enough (384 x 512 here), else the image
+"$out/region-test" --for "$assets/motionphoto/samsung-one-ui-6.heic" 256 256
+"$out/region-test" --for "$assets/motionphoto/samsung-one-ui-6.heic" 512 384
+"$out/region-test" --for "$assets/motionphoto/samsung-one-ui-6.heic" 600 600
+"$out/region-test" --for "$assets/heic/IMG_2682.heic" 200 200
 
 # the app's bridge, built as the app builds it (CMakeLists.txt) but for this machine
 java_home="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"

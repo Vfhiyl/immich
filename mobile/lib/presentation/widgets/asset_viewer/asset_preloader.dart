@@ -41,12 +41,8 @@ class AssetPreloader {
 
   // the provider the page will show (only its base when it is shown in tiles)
   ImageStream _resolveImage(BaseAsset asset, Size size, Size? thumbnailSize) {
-    return getFullImageProvider(
-      asset,
-      size: size,
-      remoteThumbnailSize: thumbnailSize,
-      tiled: getRegionSource(asset, size: size) != null,
-    ).resolve(ImageConfiguration.empty)..addListener(_dummyListener);
+    return getFullImageProvider(asset, size: size, remoteThumbnailSize: thumbnailSize).resolve(ImageConfiguration.empty)
+      ..addListener(_dummyListener);
   }
 
   void dispose() {

@@ -32,11 +32,13 @@ Java_app_alextran_immich_images_RegionDecoder_open(JNIEnv *env, jclass clazz, js
   return (jlong) (intptr_t) image;
 }
 
-// Opens the image of a file descriptor (of the media store), which it duplicates: the caller may close its own.
+// Opens the image of a file descriptor (of the media store), which it duplicates: the caller may close its own. With a
+// width and height (else 0), to decode it at about that size: a HEIF's thumbnail if one is that large.
 JNIEXPORT jlong JNICALL
-Java_app_alextran_immich_images_RegionDecoder_openFd(JNIEnv *env, jclass clazz, jint fd, jintArray size) {
+Java_app_alextran_immich_images_RegionDecoder_openFd(
+    JNIEnv *env, jclass clazz, jint fd, jint width, jint height, jintArray size) {
   char error[256] = "";
-  ir_image *image = ir_open_fd(fd, error, sizeof(error));
+  ir_image *image = ir_open_fd_for(fd, width, height, error, sizeof(error));
   if (image == NULL) {
     throw_io(env, error);
     return 0;
