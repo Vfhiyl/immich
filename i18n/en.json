@@ -2586,6 +2586,7 @@
   "view_next_asset": "View next asset",
   "view_original": "View original",
   "view_original_size": "View original ({size})",
+  "view_original_too_large": "The original ({size}) is too large to view here. Download it to open it in another app.",
   "view_previous_asset": "View previous asset",
   "view_qr_code": "View QR code",
   "view_similar_photos": "View similar photos",

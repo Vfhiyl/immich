@@ -6,11 +6,13 @@ import 'package:immich_mobile/domain/models/config/app_config.dart';
 import 'package:immich_mobile/domain/models/exif.model.dart';
 import 'package:immich_mobile/domain/models/settings_key.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/view_original_button.widget.dart';
+import 'package:immich_mobile/presentation/widgets/images/image_provider.dart';
 import 'package:immich_mobile/providers/asset_viewer/asset_viewer.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/asset_viewer/asset.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
 
 import '../../../unit/factories/remote_asset_factory.dart';
+import '../../../unit/presentation/presentation_context.dart';
 import '../../../widget_tester_extensions.dart';
 
 void main() {
@@ -49,6 +51,60 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.byKey(const Key('loading_original')), findsNothing);
+  });
+
+  group('a remote photo', () {
+    late PresentationContext context;
+
+    setUp(() async {
+      context = await PresentationContext.create();
+      debugRegionAndroid = true;
+    });
+    tearDown(() async {
+      debugRegionAndroid = null;
+      await context.dispose();
+    });
+
+    // 8064 x 6048, larger than its preview
+    final photo = RemoteAssetFactory.create().copyWith(width: 8064, height: 6048);
+
+    Future<WidgetRef> pump(WidgetTester tester, int fileSize) async {
+      late WidgetRef ref;
+      await tester.pumpConsumerWidget(
+        Consumer(
+          builder: (context, widgetRef, _) {
+            ref = widgetRef;
+            return ViewOriginalButton(asset: photo);
+          },
+        ),
+        overrides: [
+          appConfigProvider.overrideWithValue(const AppConfig()),
+          assetExifProvider.overrideWith((ref, asset) => Stream.value(ExifInfo(fileSize: fileSize))),
+        ],
+      );
+      await tester.pumpAndSettle();
+      return ref;
+    }
+
+    testWidgets('is shown from its original on asking', (tester) async {
+      final ref = await pump(tester, 20 * 1000 * 1000);
+
+      await tester.tap(find.text('View original (19.1 MiB)'));
+      await tester.pumpAndSettle();
+
+      expect(ref.read(assetViewerProvider).originals, {photo.id});
+    });
+
+    testWidgets('larger than the viewer downloads stays shown from its preview, and says why', (tester) async {
+      final ref = await pump(tester, maxOriginalBytes + 1);
+
+      await tester.tap(find.byKey(const Key('view_original')));
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(ref.read(assetViewerProvider).originals, isEmpty);
+      expect(find.textContaining('too large to view here'), findsOneWidget);
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+    });
   });
 
   testWidgets('not when originals are played anyway', (tester) async {

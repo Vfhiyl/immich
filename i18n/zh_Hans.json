@@ -2344,6 +2344,7 @@
   "view_next_asset": "查看下一项",
   "view_original": "查看原图",
   "view_original_size": "查看原图（{size}）",
+  "view_original_too_large": "原图（{size}）太大，无法在这里查看。请下载后用其他应用打开。",
   "view_previous_asset": "查看上一项",
   "view_qr_code": "查看二维码",
   "view_similar_photos": "查看相似照片",

@@ -11,6 +11,8 @@ import app.alextran.immich.core.HttpClientManager
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -60,8 +62,25 @@ fun regionSample(width: Int, height: Int, targetWidth: Int, targetHeight: Int): 
   return maxOf(1, minOf(maxOf(width, height) / long, minOf(width, height) / short))
 }
 
+/** Copies [input] to [output], failing once more than [max] bytes came (a response that did not say its length) */
+fun copyAtMost(input: InputStream, output: OutputStream, max: Long): Long {
+  val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+  var total = 0L
+  while (true) {
+    val read = input.read(buffer)
+    if (read < 0) return total
+    total += read
+    if (total > max) throw IOException("Too large to show: more than $max bytes")
+    output.write(buffer, 0, read)
+  }
+}
+
 // Downloaded remote images, kept for the next time they are shown, the least recently used removed past this size
 private const val DOWNLOADS_MAX_BYTES = 512L * 1024 * 1024
+
+// The largest image downloaded to be shown in tiles (as MAX_ORIGINAL_BYTES in image_provider.dart): beyond it, the
+// viewer shows the preview (photos of phones are smaller; a larger file is a download to make on purpose)
+const val DOWNLOAD_MAX_BYTES = 100L * 1000 * 1000
 
 private class RegionImage(val handle: Long, val file: File?) {
   var closed = false
@@ -263,7 +282,10 @@ class RegionImagesImpl(context: Context) : RegionImageApi {
             throw IOException("HTTP ${response.code}: ${response.message}")
           }
           val body = response.body ?: throw IOException("Empty response body")
-          part.outputStream().use { output -> body.byteStream().copyTo(output) }
+          if (body.contentLength() > DOWNLOAD_MAX_BYTES) {
+            throw IOException("Too large to show: ${body.contentLength()} bytes")
+          }
+          part.outputStream().use { output -> copyAtMost(body.byteStream(), output, DOWNLOAD_MAX_BYTES) }
         }
         signal.throwIfCanceled()
         Log.d(TAG, "downloaded ${part.length()} bytes of $url")

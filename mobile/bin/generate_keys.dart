@@ -104,6 +104,7 @@ const _kParamTypeOverrides = <String, String>{
   'cleanup_found_assets_with_size.size': 'String',
   'play_original_video_size.size': 'String',
   'view_original_size.size': 'String',
+  'view_original_too_large.size': 'String',
 };
 
 final _usedParamTypeOverrides = <String>{};

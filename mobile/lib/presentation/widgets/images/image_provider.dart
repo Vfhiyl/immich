@@ -288,7 +288,11 @@ RegionSource? getRegionSource(
   @visibleForTesting bool? android,
 }) {
   final (width, height) = (asset.width, asset.height);
-  if (!(android ?? Platform.isAndroid) || !asset.isImage || asset.isAnimatedImage || width == null || height == null) {
+  if (!(android ?? debugRegionAndroid ?? Platform.isAndroid) ||
+      !asset.isImage ||
+      asset.isAnimatedImage ||
+      width == null ||
+      height == null) {
     return null;
   }
   if (width <= 0 || height <= 0) {
@@ -329,12 +333,20 @@ RegionSource? getRegionSource(
       : null;
 }
 
+/// Whether the platform shows images in tiles (Android), for tests of widgets that ask (else the platform's)
+@visibleForTesting
+bool? debugRegionAndroid;
+
 /// Whether the viewer can show the original of [asset] on asking (view original): a remote image, not loaded as
 /// originals already, larger than its preview, in a format the app's decoders read in parts (others are not decoded
 /// whole on asking: their originals may take hundreds of MB).
 bool canViewOriginal(BaseAsset asset, {@visibleForTesting bool? android}) {
   final (width, height) = (asset.width, asset.height);
-  if (!(android ?? Platform.isAndroid) || !asset.isImage || asset.isAnimatedImage || width == null || height == null) {
+  if (!(android ?? debugRegionAndroid ?? Platform.isAndroid) ||
+      !asset.isImage ||
+      asset.isAnimatedImage ||
+      width == null ||
+      height == null) {
     return false;
   }
   if (width <= 0 || height <= 0 || _shouldUseLocalAsset(asset) || remoteIdOf(asset) == null) {
@@ -346,6 +358,10 @@ bool canViewOriginal(BaseAsset asset, {@visibleForTesting bool? android}) {
   final previewScale = math.min(1.0, _previewShortSide / math.min(width, height));
   return previewScale < 1 && _regionExtensions.contains(p.extension(asset.name).toLowerCase());
 }
+
+/// The largest original the viewer downloads to show (as DOWNLOAD_MAX_BYTES in RegionImagesImpl.kt): photos of phones
+/// are smaller; a larger one, shown from its preview, is downloaded on purpose and opened in another app
+const maxOriginalBytes = 100 * 1000 * 1000;
 
 /// Whether the viewer can play the original of [asset] on asking (play original): a remote video, played from the
 /// server (not from the phone), transcoded (not played as original already)

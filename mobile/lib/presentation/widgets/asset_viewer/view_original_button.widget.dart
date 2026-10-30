@@ -8,6 +8,7 @@ import 'package:immich_mobile/providers/asset_viewer/asset_viewer.provider.dart'
 import 'package:immich_mobile/providers/infrastructure/asset_viewer/asset.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
 import 'package:immich_mobile/utils/bytes_units.dart';
+import 'package:immich_mobile/widgets/common/immich_toast.dart';
 
 /// "View original (12.3 MB)" under a remote photo shown from its preview, "Play original" under a remote video played
 /// transcoded: shows that asset from its original until the viewer closes, whatever the settings (which do it for all).
@@ -75,7 +76,18 @@ class ViewOriginalButton extends ConsumerWidget {
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
                   key: const Key('view_original'),
-                  onTap: () => ref.read(assetViewerProvider.notifier).showOriginal(id),
+                  onTap: () {
+                    // a photo's original beyond what the viewer downloads: it stays shown from its preview
+                    if (!shown.isVideo && fileSize != null && fileSize > maxOriginalBytes) {
+                      ImmichToast.show(
+                        context: context,
+                        msg: context.t.view_original_too_large(size: size!),
+                        toastType: ToastType.info,
+                      );
+                      return;
+                    }
+                    ref.read(assetViewerProvider.notifier).showOriginal(id);
+                  },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                     child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 13)),
