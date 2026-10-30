@@ -13,7 +13,8 @@ import 'package:pigeon/pigeon.dart';
 )
 @HostApi()
 abstract class RemoteImageApi {
-  /// Width and height are the physical decode size, or null for the source size.
+  /// Width and height are the physical decode size, or null for the source size. [crop]: only the middle of the
+  /// image with their aspect, covering them (a tile of a grid shows that much of a long image)
   @async
   Map<String, int>? requestImage(
     String url, {
@@ -21,6 +22,7 @@ abstract class RemoteImageApi {
     required bool preferEncoded,
     int? width,
     int? height,
+    required bool crop,
   });
 
   void cancelRequest(int requestId);

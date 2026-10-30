@@ -6,7 +6,10 @@ class RemoteImageRequest extends ImageRequest {
   /// Physical size to decode, or null for the source size.
   final ui.Size? decodeSize;
 
-  RemoteImageRequest({required this.uri, this.decodeSize});
+  /// Only the middle of the image with the aspect of [decodeSize], covering it (a grid's tile of a long image)
+  final bool crop;
+
+  RemoteImageRequest({required this.uri, this.decodeSize, this.crop = false});
 
   @override
   Future<ImageInfo?> load(ImageDecoderCallback decode, {double scale = 1.0}) async {
@@ -20,6 +23,7 @@ class RemoteImageRequest extends ImageRequest {
       preferEncoded: false,
       width: decodeSize?.width.ceil(),
       height: decodeSize?.height.ceil(),
+      crop: crop && decodeSize != null,
     );
     // Android falls back to encoded data if native decoding fails, so check for both shapes of the response.
     final frame = switch (info) {
@@ -52,6 +56,7 @@ class RemoteImageRequest extends ImageRequest {
       preferEncoded: true,
       width: null,
       height: null,
+      crop: false,
     );
     if (info == null) {
       return null;

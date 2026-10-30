@@ -16,13 +16,17 @@ class RemoteImageProvider extends ImageProvider<RemoteImageProvider> {
   /// Physical size to decode, or null for the source size.
   final Size? decodeSize;
 
-  const RemoteImageProvider({required this.url, this.edited = true, this.decodeSize});
+  /// Only the middle of the image with the aspect of [decodeSize], covering it (a grid's tile of a long image)
+  final bool crop;
+
+  const RemoteImageProvider({required this.url, this.edited = true, this.decodeSize, this.crop = false});
 
   RemoteImageProvider.thumbnail({
     required String assetId,
     required String thumbhash,
     this.edited = true,
     this.decodeSize,
+    this.crop = false,
   }) : url = getThumbnailUrlForRemoteId(assetId, thumbhash: thumbhash, edited: edited);
 
   @override
@@ -44,7 +48,7 @@ class RemoteImageProvider extends ImageProvider<RemoteImageProvider> {
   }
 
   Stream<ImageInfo> _codec(ImageLoader loader, RemoteImageProvider key, ImageDecoderCallback decode) {
-    final request = loader.request = RemoteImageRequest(uri: key.url, decodeSize: key.decodeSize);
+    final request = loader.request = RemoteImageRequest(uri: key.url, decodeSize: key.decodeSize, crop: key.crop);
     return loader.loadRequest(request, decode, isFinal: true);
   }
 
@@ -54,13 +58,13 @@ class RemoteImageProvider extends ImageProvider<RemoteImageProvider> {
       return true;
     }
     if (other is RemoteImageProvider) {
-      return url == other.url && edited == other.edited && decodeSize == other.decodeSize;
+      return url == other.url && edited == other.edited && decodeSize == other.decodeSize && crop == other.crop;
     }
     return false;
   }
 
   @override
-  int get hashCode => url.hashCode ^ edited.hashCode ^ decodeSize.hashCode;
+  int get hashCode => url.hashCode ^ edited.hashCode ^ decodeSize.hashCode ^ crop.hashCode;
 }
 
 class RemoteFullImageProvider extends ImageProvider<RemoteFullImageProvider> {

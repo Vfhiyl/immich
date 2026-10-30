@@ -35,7 +35,8 @@ class RemoteImageApiImpl: NSObject, RemoteImageApi {
     kCGImageSourceCreateThumbnailFromImageAlways: true
   ]
 
-  func requestImage(url: String, requestId: Int64, preferEncoded: Bool, width: Int64?, height: Int64?, completion: @escaping (Result<[String : Int64]?, any Error>) -> Void) {
+  // (crop: not done on iOS yet; the tile crops what it shows)
+  func requestImage(url: String, requestId: Int64, preferEncoded: Bool, width: Int64?, height: Int64?, crop: Bool, completion: @escaping (Result<[String : Int64]?, any Error>) -> Void) {
     var urlRequest = URLRequest(url: URL(string: url)!)
     urlRequest.cachePolicy = .returnCacheDataElseLoad
 

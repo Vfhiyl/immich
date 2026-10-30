@@ -37,11 +37,27 @@ data class Request(
   val callback: (Result<Map<String, Long>?>) -> Unit
 )
 
-/** Set [exactSize] to decode at the smallest size that covers [target] without upscaling. */
+/**
+ * Set [exactSize] to decode at the smallest size that covers [target] without upscaling; [crop] to keep only its middle
+ * with the aspect of [target] (a decoder that can decodes only that part).
+ */
 @RequiresApi(Build.VERSION_CODES.Q)
-inline fun ImageDecoder.Source.decodeBitmap(target: Size = Size(0, 0), exactSize: Boolean = false): Bitmap {
+inline fun ImageDecoder.Source.decodeBitmap(
+  target: Size = Size(0, 0),
+  exactSize: Boolean = false,
+  crop: Boolean = false
+): Bitmap {
   return ImageDecoder.decodeBitmap(this) { decoder, info, _ ->
-    if (target.width > 0 && target.height > 0) {
+    if (target.width > 0 && target.height > 0 && crop) {
+      val scale = min(1.0, max(target.width.toDouble() / info.size.width, target.height.toDouble() / info.size.height))
+      val width = max(1, ceil(info.size.width * scale).toInt())
+      val height = max(1, ceil(info.size.height * scale).toInt())
+      if (scale < 1) {
+        decoder.setTargetSize(width, height)
+      }
+      val (cropWidth, cropHeight) = centerCrop(width, height, target.width, target.height)
+      decoder.crop = Rect((width - cropWidth) / 2, (height - cropHeight) / 2, (width + cropWidth) / 2, (height + cropHeight) / 2)
+    } else if (target.width > 0 && target.height > 0) {
       if (exactSize) {
         val fillScale = max(
           target.width.toDouble() / info.size.width,
@@ -63,6 +79,13 @@ inline fun ImageDecoder.Source.decodeBitmap(target: Size = Size(0, 0), exactSize
     decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
     decoder.setTargetColorSpace(ColorSpace.get(ColorSpace.Named.SRGB))
   }
+}
+
+/** The largest part of [width] x [height] with the aspect of [targetWidth] x [targetHeight] */
+fun centerCrop(width: Int, height: Int, targetWidth: Int, targetHeight: Int): Pair<Int, Int> {
+  val cropWidth = min(width.toLong(), height.toLong() * targetWidth / targetHeight).toInt()
+  val cropHeight = min(height.toLong(), width.toLong() * targetHeight / targetWidth).toInt()
+  return max(1, cropWidth) to max(1, cropHeight)
 }
 
 fun Bitmap.toNativeBuffer(): Map<String, Long>  {
@@ -142,6 +165,7 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
     height: Long,
     isVideo: Boolean,
     preferEncoded: Boolean,
+    crop: Boolean,
     callback: (Result<Map<String, Long>?>) -> Unit
   ) {
     val signal = CancellationSignal()
@@ -150,7 +174,7 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
         if (preferEncoded) {
           getEncodedImageInternal(assetId, callback, signal)
         } else {
-          getThumbnailBufferInternal(assetId, width, height, isVideo, callback, signal)
+          getThumbnailBufferInternal(assetId, width, height, isVideo, crop, callback, signal)
         }
       } catch (e: Exception) {
         when (e) {
@@ -214,6 +238,7 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
     width: Long,
     height: Long,
     isVideo: Boolean,
+    crop: Boolean,
     callback: (Result<Map<String, Long>?>) -> Unit,
     signal: CancellationSignal
   ) {
@@ -225,7 +250,7 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
     try {
       val res = if (isVideo) {
         decodeVideoThumbnail(id, size, signal).toNativeBuffer()
-      } else decodeSmaller(id, size, signal) ?: try {
+      } else (if (crop) decodeCropped(id, size, signal) else null) ?: decodeSmaller(id, size, signal) ?: try {
         val (bitmap, orientation) = decodeImage(id, size, signal)
         signal.throwIfCanceled()
         if (orientation == ExifInterface.ORIENTATION_NORMAL || orientation == ExifInterface.ORIENTATION_UNDEFINED) {
@@ -338,6 +363,46 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
       signal.setOnCancelListener { Video.Thumbnails.cancelThumbnailRequest(resolver, id) }
       Video.Thumbnails.getThumbnail(resolver, id, Video.Thumbnails.MINI_KIND, OPTIONS)
     }
+  }
+
+  // The middle of a long image with the aspect of a tile, covering it: only that part decoded, by the app's own
+  // decoders (made smaller as they decode), else the platform's. The platform's thumbnails fit the whole long image in
+  // the tile's size, too small to fill it (a 1080 x 20000 screenshot is 17 x 320). Null where neither can.
+  private fun decodeCropped(id: Long, size: Size, signal: CancellationSignal): Map<String, Long>? {
+    val uri = ContentUris.withAppendedId(Images.Media.EXTERNAL_CONTENT_URI, id)
+    try {
+      if (resolver.getType(uri) in REGION_MIME_TYPES) {
+        val dimensions = IntArray(2)
+        val handle = (resolver.openFileDescriptor(uri, "r", signal) ?: return null)
+          .use { RegionDecoder.openFd(it.fd, 0, 0, dimensions) }
+        try {
+          signal.throwIfCanceled()
+          val (width, height) = dimensions
+          val (cropWidth, cropHeight) = centerCrop(width, height, size.width, size.height)
+          val sample = regionSample(cropWidth, cropHeight, size.width, size.height)
+          val info = IntArray(3)
+          val pointer = RegionDecoder.decode(
+            handle, (width - cropWidth) / 2, (height - cropHeight) / 2, cropWidth, cropHeight, sample, info
+          )
+          return mapOf(
+            "pointer" to pointer,
+            "width" to info[0].toLong(),
+            "height" to info[1].toLong(),
+            "rowBytes" to info[2].toLong()
+          )
+        } finally {
+          RegionDecoder.close(handle)
+        }
+      }
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        return ImageDecoder.createSource(resolver, uri).decodeBitmap(size, crop = true).toNativeBuffer()
+      }
+    } catch (e: OperationCanceledException) {
+      throw e
+    } catch (e: Exception) {
+      Log.w(TAG, "No cropped thumbnail of $id: ${e.message}")
+    }
+    return null
   }
 
   // A thumbnail decoded by the platform's decoder (oriented as it decodes), or null if it cannot either

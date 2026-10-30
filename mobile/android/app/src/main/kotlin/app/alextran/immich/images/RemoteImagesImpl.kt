@@ -82,6 +82,7 @@ class RemoteImagesImpl(context: Context) : RemoteImageApi {
     preferEncoded: Boolean,
     width: Long?,
     height: Long?,
+    crop: Boolean,
     callback: (Result<Map<String, Long>?>) -> Unit
   ) {
     val signal = CancellationSignal()
@@ -119,7 +120,7 @@ class RemoteImagesImpl(context: Context) : RemoteImageApi {
                 else -> Size(width?.toInt() ?: 0, height?.toInt() ?: 0)
               }
               val source = ImageDecoder.createSource(NativeBuffer.wrap(buffer.pointer, buffer.offset))
-              val bitmap = source.decodeBitmap(target, exactSize = true)
+              val bitmap = source.decodeBitmap(target, exactSize = true, crop = crop)
               if (orientation == ExifInterface.ORIENTATION_NORMAL || orientation == ExifInterface.ORIENTATION_UNDEFINED) {
                 bitmap.toNativeBuffer()
               } else {

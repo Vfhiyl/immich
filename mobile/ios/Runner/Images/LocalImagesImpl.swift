@@ -52,7 +52,8 @@ class LocalImageApiImpl: LocalImageApi {
     }
   }
 
-  func requestImage(assetId: String, requestId: Int64, width: Int64, height: Int64, isVideo: Bool, preferEncoded: Bool, completion: @escaping (Result<[String: Int64]?, any Error>) -> Void) {
+  // (crop: not done on iOS yet; the tile crops what it shows)
+  func requestImage(assetId: String, requestId: Int64, width: Int64, height: Int64, isVideo: Bool, preferEncoded: Bool, crop: Bool, completion: @escaping (Result<[String: Int64]?, any Error>) -> Void) {
     let request = ImageRequest(completion: completion)
     let operation = BlockOperation {
       if request.isCancelled {

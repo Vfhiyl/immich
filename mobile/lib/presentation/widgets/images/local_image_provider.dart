@@ -22,11 +22,15 @@ class LocalThumbProvider extends ImageProvider<LocalThumbProvider> {
   // an edit on the device keeps the id and changes the bytes, so the checksum is what separates two renders
   final String? checksum;
 
+  /// Only the middle of the image with the aspect of [size], covering it (a grid's tile of a long image)
+  final bool crop;
+
   const LocalThumbProvider({
     required this.id,
     required this.assetType,
     this.checksum,
     this.size = kThumbnailResolution,
+    this.crop = false,
   });
 
   @override
@@ -48,7 +52,12 @@ class LocalThumbProvider extends ImageProvider<LocalThumbProvider> {
   }
 
   Stream<ImageInfo> _codec(ImageLoader loader, LocalThumbProvider key, ImageDecoderCallback decode) {
-    final request = loader.request = LocalImageRequest(localId: key.id, size: key.size, assetType: key.assetType);
+    final request = loader.request = LocalImageRequest(
+      localId: key.id,
+      size: key.size,
+      assetType: key.assetType,
+      crop: key.crop,
+    );
     return loader.loadRequest(request, decode, isFinal: true);
   }
 
@@ -58,13 +67,13 @@ class LocalThumbProvider extends ImageProvider<LocalThumbProvider> {
       return true;
     }
     if (other is LocalThumbProvider) {
-      return id == other.id && checksum == other.checksum;
+      return id == other.id && checksum == other.checksum && crop == other.crop;
     }
     return false;
   }
 
   @override
-  int get hashCode => Object.hash(id, checksum);
+  int get hashCode => Object.hash(id, checksum, crop);
 }
 
 class LocalFullImageProvider extends ImageProvider<LocalFullImageProvider> {

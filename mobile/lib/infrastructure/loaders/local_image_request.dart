@@ -6,7 +6,10 @@ class LocalImageRequest extends ImageRequest {
   final int height;
   final AssetType assetType;
 
-  LocalImageRequest({required this.localId, required ui.Size size, required this.assetType})
+  /// Only the middle of the image with the aspect of [size], covering it (a grid's tile of a long image)
+  final bool crop;
+
+  LocalImageRequest({required this.localId, required ui.Size size, required this.assetType, this.crop = false})
     : width = size.width.toInt(),
       height = size.height.toInt();
 
@@ -23,6 +26,7 @@ class LocalImageRequest extends ImageRequest {
       height: height,
       isVideo: assetType == AssetType.video,
       preferEncoded: false,
+      crop: crop,
     );
     if (info == null) {
       return null;
@@ -45,6 +49,7 @@ class LocalImageRequest extends ImageRequest {
       height: height,
       isVideo: assetType == AssetType.video,
       preferEncoded: true,
+      crop: false,
     );
     if (info == null) {
       return null;

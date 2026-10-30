@@ -219,6 +219,9 @@ ImageProvider getFullImageProvider(
   return provider;
 }
 
+/// [crop]: for a tile that covers [size] with the image (a grid): the thumbnail of a long image (a long screenshot, a
+/// panorama) is then only its middle that the tile shows, made from the image at that scale (the whole thumbnail is
+/// either too small to fill the tile, or as long as the image); other thumbnails are the same as without
 ImageProvider? getThumbnailImageProvider(
   BaseAsset asset, {
   Size size = kThumbnailResolution,
@@ -226,17 +229,36 @@ ImageProvider? getThumbnailImageProvider(
   /// Physical size to decode for remote thumbnails, or null for the source size.
   Size? remoteSize,
   bool edited = true,
+  bool crop = false,
 }) {
+  final cropped = crop && isLongForTile(asset.width, asset.height, remoteSize ?? size);
   if (_shouldUseLocalAsset(asset)) {
     final id = asset is LocalAsset ? asset.id : (asset as RemoteAsset).localId!;
-    return LocalThumbProvider(id: id, size: size, assetType: asset.type, checksum: asset.checksum);
+    return LocalThumbProvider(id: id, size: size, assetType: asset.type, checksum: asset.checksum, crop: cropped);
   }
 
   final assetId = asset is RemoteAsset ? asset.id : (asset as LocalAsset).remoteId;
   final thumbhash = asset is RemoteAsset ? asset.thumbHash ?? "" : "";
   return assetId != null
-      ? RemoteImageProvider.thumbnail(assetId: assetId, thumbhash: thumbhash, edited: edited, decodeSize: remoteSize)
+      ? RemoteImageProvider.thumbnail(
+          assetId: assetId,
+          thumbhash: thumbhash,
+          edited: edited,
+          decodeSize: remoteSize,
+          crop: cropped && remoteSize != null,
+        )
       : null;
+}
+
+/// Whether an image of [width] x [height] (either way round) is more than twice as long as a tile of [tile]
+@visibleForTesting
+bool isLongForTile(int? width, int? height, Size tile) {
+  if (width == null || height == null || width <= 0 || height <= 0 || tile.isEmpty) {
+    return false;
+  }
+  final image = math.max(width, height) / math.min(width, height);
+  final shape = math.max(tile.width, tile.height) / math.min(tile.width, tile.height);
+  return image > 2 * shape;
 }
 
 double get _devicePixelRatio => ui.PlatformDispatcher.instance.views.first.devicePixelRatio;

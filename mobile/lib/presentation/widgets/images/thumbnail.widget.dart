@@ -40,6 +40,9 @@ class Thumbnail extends StatefulWidget {
 
     /// Physical size to decode for remote thumbnails.
     Size? remoteSize,
+
+    /// A tile of a grid: of a long image, only the middle it shows is decoded (with [BoxFit.cover])
+    bool crop = false,
     super.key,
   }) : thumbhashProvider = switch (asset) {
          RemoteAsset() when asset.thumbHash != null && asset.localId == null => ThumbHashProvider(
@@ -47,7 +50,9 @@ class Thumbnail extends StatefulWidget {
          ),
          _ => null,
        },
-       imageProvider = asset == null ? null : getThumbnailImageProvider(asset, size: size, remoteSize: remoteSize);
+       imageProvider = asset == null
+           ? null
+           : getThumbnailImageProvider(asset, size: size, remoteSize: remoteSize, crop: crop && fit == BoxFit.cover);
 
   @override
   State<Thumbnail> createState() => _ThumbnailState();

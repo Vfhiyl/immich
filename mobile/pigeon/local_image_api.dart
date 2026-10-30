@@ -13,6 +13,8 @@ import 'package:pigeon/pigeon.dart';
 )
 @HostApi()
 abstract class LocalImageApi {
+  /// [crop]: only the middle of the image with the aspect of [width] x [height], covering it (a tile of a grid
+  /// shows that much of a long image)
   @async
   Map<String, int>? requestImage(
     String assetId, {
@@ -21,6 +23,7 @@ abstract class LocalImageApi {
     required int height,
     required bool isVideo,
     required bool preferEncoded,
+    required bool crop,
   });
 
   void cancelRequest(int requestId);
