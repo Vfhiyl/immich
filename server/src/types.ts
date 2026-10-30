@@ -81,12 +81,20 @@ type ImageColorOptions = {
 
 export interface DecodeToBufferOptions extends ImageColorOptions {
   size?: number;
+  /** `size` is the shorter side of the result whatever its shape, not the size of a preview (getDerivedScale) */
+  shortSide?: boolean;
   orientation?: ExifOrientation;
 }
 
 export type TransformOptions = {
   size?: number;
-  fit?: 'inside' | 'outside';
+  /** derived: the size of a preview or thumbnail (getDerivedScale); outside: `size` is the shorter side */
+  fit?: 'inside' | 'outside' | 'derived';
+  edits?: AssetEditActionItem[];
+};
+
+export type ShrinkOptions = Pick<ImageColorOptions, 'colorspace'> & {
+  size: number;
   edits?: AssetEditActionItem[];
 };
 

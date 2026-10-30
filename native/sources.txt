@@ -15,7 +15,6 @@ libjpeg-turbo|8ecba364|https://github.com/libjpeg-turbo/libjpeg-turbo/archive/8e
 jpegli|031a0077|https://github.com/google/jpegli/archive/031a0077f5799a6041004267fc12b956c1f52a20.tar.gz|269b3a75d6b2da2351f7fb2d642043f60f9b6d1bd5839f20c0d7c569be073367
 png|1.6.59|https://github.com/pnggroup/libpng/archive/v1.6.59.tar.gz|2540302a1844ad2b2b501977abecfa850f265f97b78f065a712ab4074a89f5b5
 webp|1.6.0|https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz|e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564
-de265|1.0.16|https://github.com/strukturag/libde265/releases/download/v1.0.16/libde265-1.0.16.tar.gz|b92beb6b53c346db9a8fae968d686ab706240099cdd5aff87777362d668b0de7
 dav1d|1.5.2|https://downloads.videolan.org/pub/videolan/dav1d/1.5.2/dav1d-1.5.2.tar.xz|cce88ebcffd3f790bde49caa75f97b9cc2dd54ca8f57e38c62707266ec71bc4e
 ffmpeg|9.0.2|https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz|8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
 heif|1.23.6|https://github.com/strukturag/libheif/releases/download/v1.23.6/libheif-1.23.6.tar.gz|4484346dc5995319dbc11e3a1c35d0a2ec46511ce370900869337fd2c7033125

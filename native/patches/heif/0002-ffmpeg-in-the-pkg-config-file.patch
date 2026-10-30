@@ -1,0 +1,31 @@
+From 9e11c629a488d2eaec4d8e2150384b2a74400e1d Mon Sep 17 00:00:00 2001
+From: Vfhiyl <VfhiyL@proton.me>
+Date: Fri, 30 Oct 2026 17:33:12 +0800
+Subject: [PATCH] Name FFmpeg's libraries in libheif.pc when its decoder is
+ built in
+
+With the FFmpeg decoder built in (WITH_FFMPEG_DECODER, not as a plugin), libheif.pc is to name the libraries it uses, for the programs linked with a static libheif. It checks FFMPEG_DECODER_FOUND, which nothing sets (FindFFMPEG sets FFMPEG_avcodec_FOUND), and would name "ffmpeg", which no pkg-config file is called: Requires.private stays without them, and linking with `pkg-config --static --libs vips` misses libavcodec and libavutil.
+
+The server's libvips decodes HEIC with FFmpeg's HEVC decoder (native/build.sh). Not fixed in libheif 1.23.7 or master (2026-10-30).
+---
+ CMakeLists.txt | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 00b4b4c..d19a9aa 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -517,8 +517,8 @@ if ((AOM_DECODER_FOUND AND NOT (PLUGIN_LOADING_SUPPORTED_AND_ENABLED AND WITH_AO
+         OR (AOM_ENCODER_FOUND AND NOT (PLUGIN_LOADING_SUPPORTED_AND_ENABLED AND WITH_AOM_ENCODER_PLUGIN)))
+     list(APPEND REQUIRES_PRIVATE "aom")
+ endif()
+-if (FFMPEG_DECODER_FOUND AND NOT (PLUGIN_LOADING_SUPPORTED_AND_ENABLED AND WITH_FFMPEG_DECODER_PLUGIN))
+-    list(APPEND REQUIRES_PRIVATE "ffmpeg")
++if (FFMPEG_avcodec_FOUND AND NOT (PLUGIN_LOADING_SUPPORTED_AND_ENABLED AND WITH_FFMPEG_DECODER_PLUGIN))
++    list(APPEND REQUIRES_PRIVATE "libavcodec" "libavutil")
+ endif()
+ if (DAV1D_FOUND AND NOT (PLUGIN_LOADING_SUPPORTED_AND_ENABLED AND WITH_DAV1D_PLUGIN))
+     list(APPEND REQUIRES_PRIVATE "dav1d")
+-- 
+2.43.0
+

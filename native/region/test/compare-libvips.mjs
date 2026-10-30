@@ -1,6 +1,6 @@
 // Compares what the app's decoders (native/region, through ./part) make of images with what libvips makes of them
 // through sharp (the server's: rotated by their orientation, colours converted to sRGB from their profile): a part at
-// full size in the middle must be the same pixels (HEIC, decoded by FFmpeg and libde265 the same; JPEG within what
+// full size in the middle must be the same pixels (HEIC, decoded by FFmpeg in both; JPEG within what
 // libjpeg-turbo and jpegli differ by), the whole made 8 times smaller is reported (the filters differ).
 // Usage: node compare-libvips.mjs PART FILE... (files neither reads, or only libvips, are listed, not failed)
 import { execFileSync } from 'node:child_process';

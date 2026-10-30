@@ -17,6 +17,7 @@ import type {
   ImageDimensions,
   ProbeOptions,
   RawImageInfo,
+  ShrinkOptions,
   TranscodeCommand,
   TransformOptions,
   VideoInfo,
@@ -163,31 +164,35 @@ export class MediaRepository {
   }
 
   async decodeImage(input: string | Buffer, options: DecodeToBufferOptions): Promise<Bitmap> {
-    // a photo made smaller, upright as its orientation tag says, is read in one pass, with the memory of a few hundred of
-    // its lines, by a program of its own: as sharp would, but without decoding it whole first
+    // a photo, made smaller or as large as it is, upright as its orientation tag says, is read in one pass, with the
+    // memory of a few hundred of its lines, by a program of its own: as sharp would, but without decoding it whole first
     const { size, orientation } = options;
-    if (typeof input === 'string' && size !== undefined && size > 0 && orientation === undefined) {
-      return this.decodeSmaller(input, size, options);
+    if (typeof input === 'string' && orientation === undefined) {
+      return this.decodeByProgram(input, size || 0, options);
     }
     const decoded = await this.getImageDecodingPipeline(input, options).raw().toBuffer({ resolveWithObject: true });
-    return await this.transform(decoded, options);
+    return await this.transform(decoded, { size, fit: options.shortSide ? 'outside' : 'derived' });
   }
 
   /**
-   * The photo with `size` as its shorter side (no larger than it is), made by immich-thumbnail in a process of its own,
-   * into a file of the system's temporary directory. A large one (the preview of a long screenshot is up to 16 MP)
-   * stays there, its pixels mapped into memory when read rather than copied, until `releaseImage` removes it
+   * The photo with `size` as its shorter side (no larger than it is), or as large as it is (0), made by immich-thumbnail
+   * in a process of its own, into a file of the system's temporary directory. A large one (the preview of a long
+   * screenshot is up to 16 MP, a full-size image up to 200 MP) stays there, its pixels mapped into memory when read
+   * rather than copied, until `releaseImage` removes it
    */
-  private async decodeSmaller(
+  private async decodeByProgram(
     input: string,
     size: number,
-    { colorspace, processInvalidImages }: DecodeToBufferOptions,
+    { colorspace, processInvalidImages, shortSide }: DecodeToBufferOptions,
   ) {
     const directory = await fs.mkdtemp(join(tmpdir(), 'immich-thumbnail-'));
     const file = join(directory, 'image.v');
     const args = [input, String(size), colorspace === Colorspace.Srgb ? 'srgb' : 'p3', '--output', file];
     if (processInvalidImages) {
       args.push('--process-invalid');
+    }
+    if (shortSide) {
+      args.push('--short-side');
     }
     try {
       const info = await new Promise<RawImageInfo>((resolve, reject) => {
@@ -226,6 +231,30 @@ export class MediaRepository {
   async releaseImage(image: Bitmap): Promise<void> {
     if (image.file) {
       await fs.rm(dirname(image.file), { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * The image edited and made the size of a preview (getDerivedScale), the image the preview, the thumbnail and the
+   * thumbhash of a photo are made from. Of an image kept in a file (a photo as large as it is), by immich-thumbnail from
+   * the file: sharp would resize it in linear light with the memory of hundreds of its lines (190 MB for a width of
+   * 16320, 60 MB in the program). Release it with `releaseImage`
+   */
+  async shrinkImage(image: Bitmap, { size, colorspace, edits = [] }: ShrinkOptions): Promise<Bitmap> {
+    if (!image.file) {
+      return this.transform(image, { size, edits });
+    }
+    if (edits.length === 0) {
+      return this.decodeByProgram(image.file, size, { colorspace, processInvalidImages: false });
+    }
+    // the edits (a crop, quarter turns and mirroring: no pixel is made anew) as a file of its own
+    const directory = await fs.mkdtemp(join(tmpdir(), 'immich-edited-'));
+    try {
+      const edited = join(directory, 'image.v');
+      await this.edit(this.raw(image), edits).toFile(edited);
+      return await this.decodeByProgram(edited, size, { colorspace, processInvalidImages: false });
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
     }
   }
 
@@ -289,13 +318,13 @@ export class MediaRepository {
 
   /* Resamples in linear light; averaging gamma-encoded values darkens the result and loses detail. `colorspace`
    * always has a sRGB transfer function and scRGB applies no primaries matrix, so linearising as sRGB is exact. */
-  private transform(image: Bitmap, { size, fit = 'outside', edits = [] }: TransformOptions): Promise<Bitmap> {
+  private transform(image: Bitmap, { size, fit = 'derived', edits = [] }: TransformOptions): Promise<Bitmap> {
     if (!size && edits.length === 0) {
       return Promise.resolve(image);
     }
 
     let pipeline = this.edit(this.raw(image).pipelineColorspace('scrgb'), edits);
-    if (size && fit === 'outside') {
+    if (size && fit === 'derived') {
       // the size of a preview or thumbnail (see getDerivedScale), with one scale for both sides
       const edited = getOutputDimensions(edits, image.info);
       const short = Math.min(edited.width, edited.height);
@@ -310,7 +339,7 @@ export class MediaRepository {
         // already that size (the preview made by immich-thumbnail): the same pixels, not a copy of them
         return Promise.resolve(image);
       }
-    } else if (size) {
+    } else if (size && fit !== 'derived') {
       pipeline = pipeline.resize(size, size, { fit, withoutEnlargement: true });
     }
     return pipeline.raw().toBuffer({ resolveWithObject: true });

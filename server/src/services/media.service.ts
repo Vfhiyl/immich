@@ -390,13 +390,21 @@ export class MediaService extends BaseService {
 
     // generate final images
     const decoded = { data, info, file };
-    const baseOptions = { colorspace, processInvalidImages: false, edits: useEdits ? asset.edits : [] };
+    const edits = useEdits ? asset.edits : [];
+    // a full-size image kept in a file (a large one): the preview, the thumbnail and the thumbhash from its edited
+    // preview-size image, made from the file by the program, as for photos without a full-size file
+    const small =
+      convertFullsize && file
+        ? await this.mediaRepository.shrinkImage(decoded, { size: image.preview.size, colorspace, edits })
+        : undefined;
+    await using _smallFile = small && { [Symbol.asyncDispose]: () => this.mediaRepository.releaseImage(small) };
+    const baseOptions = { colorspace, processInvalidImages: false, edits: small ? [] : edits };
     const thumbnailOptions = { ...image.thumbnail, ...baseOptions, format: thumbnailFormat };
     const previewOptions = { ...image.preview, ...baseOptions, format: previewFormat };
     const promises = [
-      this.mediaRepository.generateThumbhash(decoded, baseOptions),
-      this.mediaRepository.generateThumbnail(decoded, thumbnailOptions, thumbnailOutput.path),
-      this.mediaRepository.generateThumbnail(decoded, previewOptions, previewOutput.path),
+      this.mediaRepository.generateThumbhash(small ?? decoded, baseOptions),
+      this.mediaRepository.generateThumbnail(small ?? decoded, thumbnailOptions, thumbnailOutput.path),
+      this.mediaRepository.generateThumbnail(small ?? decoded, previewOptions, previewOutput.path),
     ];
 
     let fullsizeFile: UpsertFileOptions | undefined;
@@ -414,6 +422,7 @@ export class MediaService extends BaseService {
       });
       const fullsizeOptions = {
         ...baseOptions,
+        edits,
         format: fullsizeFormat,
         quality: image.fullsize.quality,
         progressive: image.fullsize.progressive,
@@ -511,7 +520,11 @@ export class MediaService extends BaseService {
       processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
       // if this is an extracted image, it may not have orientation metadata
       orientation: Buffer.isBuffer(inputImage) && exifOrientation ? Number(exifOrientation) : undefined,
+      // only as large as the cut around the face needs, rather than whole (a photo of 200 MP took 600 MB)
+      size: this.getFaceSourceSize({ width: oldWidth, height: oldHeight }, { x1, y1, x2, y2 }),
+      shortSide: true,
     });
+    await using _decodedFile = { [Symbol.asyncDispose]: () => this.mediaRepository.releaseImage(decoded) };
 
     const thumbnailPath = StorageCore.getPersonThumbnailPath({ ownerId, personGroupId });
     this.storageCore.ensureFolders(thumbnailPath);
@@ -548,6 +561,18 @@ export class MediaService extends BaseService {
     }
 
     return JobStatus.Success;
+  }
+
+  /**
+   * The shorter side of the image a face is cut from, for the cut (getCrop) to be at least FACE_THUMBNAIL_SIZE across
+   * (and a little more, for the rounding of the cut at that size); undefined, the image whole, if there is no cut
+   */
+  private getFaceSourceSize(dims: ImageDimensions, box: BoundingBox): number | undefined {
+    const crop = this.getCrop({ old: dims, new: dims }, box);
+    if (crop.width <= 0) {
+      return undefined;
+    }
+    return Math.ceil((Math.min(dims.width, dims.height) * (FACE_THUMBNAIL_SIZE + 2)) / crop.width);
   }
 
   private getCrop(
@@ -625,6 +650,7 @@ export class MediaService extends BaseService {
       colorspace: image.colorspace,
       processInvalidImages,
     });
+    await using _decodedFile = { [Symbol.asyncDispose]: () => this.mediaRepository.releaseImage(preview) };
     const thumbhash = await this.mediaRepository.generateThumbhash(preview, {
       colorspace: image.colorspace,
       processInvalidImages,

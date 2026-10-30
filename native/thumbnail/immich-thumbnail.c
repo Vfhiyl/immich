@@ -1,15 +1,17 @@
 /* immich-thumbnail: makes the image from which the server makes the preview, the thumbnail and the thumbhash of a
  * photo, with the memory of a few hundred lines of it rather than of all its pixels.
  *
- * Usage: immich-thumbnail INPUT SIZE COLORSPACE [--process-invalid] [--output FILE.v]
+ * Usage: immich-thumbnail INPUT SIZE COLORSPACE [--process-invalid] [--output FILE.v] [--short-side]
  *   SIZE        the size of the server's preview: the shorter side of the result, but for very long images (see
- *               derived_scale), and no larger than the photo
+ *               derived_scale), and no larger than the photo; with --short-side, the shorter side of the result
+ *               whatever its shape (the image a face is cut from), no larger than the photo; 0: the photo as large
+ *               as it is (the image its full-size file is made from)
  *   COLORSPACE  srgb or p3: the colours of the result, and of the files made from it
  *
  * Writes to stdout one line of JSON ({"width":..,"height":..,"channels":..}) and then the pixels: 8 bits per channel,
  * RGB or RGBA, upright (as its orientation tag says), in COLORSPACE. With --output, the pixels go to FILE.v (libvips'
- * format, which the server's sharp maps into memory rather than reading) instead, as they are made: a photo that need
- * not be rotated is never in memory whole (the preview of a long screenshot is up to 16 MP).
+ * format, which the server's sharp maps into memory rather than reading) instead, as they are made: the result is never
+ * in memory whole (the preview of a long screenshot is up to 16 MP; a photo as large as it is, up to 200 MP).
  *
  * It does what the server did with sharp (src/repositories/media.repository.ts: decodeImage), in the same order, in
  * one pass over the photo instead of two: the colours are converted from the embedded profile to COLORSPACE (16 bits,
@@ -137,6 +139,8 @@ main(int argc, char **argv)
 	void *pixels;
 	char header[128];
 	const char *output = NULL;
+	char *stored = NULL;
+	gboolean short_side = FALSE;
 
 	process_invalid = FALSE;
 	for (int i = 4; i < argc; i++) {
@@ -144,17 +148,21 @@ main(int argc, char **argv)
 			process_invalid = TRUE;
 		else if (strcmp(argv[i], "--output") == 0 && i + 1 < argc)
 			output = argv[++i];
+		else if (strcmp(argv[i], "--short-side") == 0)
+			short_side = TRUE;
 		else
 			argc = 0;
 	}
 	if (argc < 4) {
-		fprintf(stderr, "Usage: immich-thumbnail INPUT SIZE srgb|p3 [--process-invalid] [--output FILE.v]\n");
+		fprintf(stderr, "Usage: immich-thumbnail INPUT SIZE srgb|p3 [--process-invalid] [--output FILE.v] "
+			"[--short-side]\n");
 		return 2;
 	}
 	input = argv[1];
 	size = atoi(argv[2]);
 	colorspace = argv[3];
-	if (size <= 0 || (strcmp(colorspace, "srgb") != 0 && strcmp(colorspace, "p3") != 0)) {
+	if (size < 0 || (size == 0 && strcmp(argv[2], "0") != 0) ||
+		(strcmp(colorspace, "srgb") != 0 && strcmp(colorspace, "p3") != 0)) {
 		fprintf(stderr, "immich-thumbnail: bad size or colorspace\n");
 		return 2;
 	}
@@ -222,7 +230,12 @@ main(int argc, char **argv)
 		x = t[2];
 	}
 
-	scale = derived_scale(x->Xsize, x->Ysize, size);
+	if (size == 0)
+		scale = 1.0;
+	else if (short_side)
+		scale = VIPS_MIN(1.0, (double) size / VIPS_MIN(x->Xsize, x->Ysize));
+	else
+		scale = derived_scale(x->Xsize, x->Ysize, size);
 	if (scale < 1.0) {
 		if (vips_resize(x, &t[3], scale, "kernel", VIPS_KERNEL_LANCZOS3, NULL))
 			return fail("cannot resize: ");
@@ -241,9 +254,16 @@ main(int argc, char **argv)
 		return fail("cannot encode: ");
 	x = t[6];
 
-	/* rotated upright: the photo has been read, the small result is rotated in memory (rotating needs all of it) */
+	/* rotated upright, once the photo has been read (rotating needs all of it): the result in memory, or with
+	 * --output in a file next to FILE.v (FILE.v.stored.v, in the server's directory of it), which libvips maps into
+	 * memory as the rotation reads it, rather than keeping it (a 200 MP photo as large as it is is 600 MB) */
 	if (vips_image_get_orientation(x) != 1) {
-		if (!(t[7] = vips_image_copy_memory(x)))
+		if (output) {
+			stored = g_strconcat(output, ".stored.v", NULL);
+			if (vips_image_write_to_file(x, stored, NULL) || !(t[7] = vips_image_new_from_file(stored, NULL)))
+				return fail("cannot read the photo: ");
+		}
+		else if (!(t[7] = vips_image_copy_memory(x)))
 			return fail("cannot read the photo: ");
 		if (vips_autorot(t[7], &t[8], NULL))
 			return fail("cannot rotate: ");
@@ -266,6 +286,9 @@ main(int argc, char **argv)
 		snprintf(header, sizeof(header), "{\"width\":%d,\"height\":%d,\"channels\":%d}\n",
 			bare->Xsize, bare->Ysize, bare->Bands);
 		g_object_unref(bare);
+		if (stored)
+			unlink(stored);
+		g_free(stored);
 		if (write_all(header, strlen(header))) {
 			perror("immich-thumbnail: cannot write to stdout");
 			return 1;

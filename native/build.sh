@@ -153,9 +153,14 @@ build_webp() {
   make install bin_PROGRAMS= noinst_PROGRAMS= man_MANS=
 }
 
-build_de265() {
-  cmake -S . -B _build "${CMAKE_OPTIONS[@]}" -DENABLE_SDL=OFF -DENABLE_DECODER=OFF -DENABLE_ENCODER=OFF
-  cmake --build _build --target install
+# FFmpeg's HEVC decoder only, which libheif decodes HEIC with: it decodes the same pixels as libde265 in about two thirds
+# of the time (with its assembly, for which nasm is needed), and is the decoder of the app (build-region.sh)
+build_ffmpeg() {
+  ./configure --prefix="$PREFIX" --enable-static --disable-shared --enable-pic --disable-autodetect --disable-everything \
+    --enable-decoder=hevc --enable-parser=hevc --disable-programs --disable-doc --disable-avformat --disable-avdevice \
+    --disable-avfilter --disable-swscale --disable-swresample --disable-network --disable-debug
+  make
+  make install
 }
 
 build_dav1d() {
@@ -166,8 +171,8 @@ build_dav1d() {
 # decoding only: the server makes no HEIF or AVIF files
 build_heif() {
   cmake -S . -B _build "${CMAKE_OPTIONS[@]}" -DENABLE_PLUGIN_LOADING=OFF -DWITH_EXAMPLES=OFF -DBUILD_DOCUMENTATION=OFF \
-    -DWITH_LIBDE265=ON -DWITH_DAV1D=ON -DWITH_AOM_DECODER=OFF -DWITH_AOM_ENCODER=OFF -DWITH_X265=OFF -DWITH_SvtEnc=OFF \
-    -DWITH_RAV1E=OFF -DWITH_KVAZAAR=OFF -DWITH_OpenJPEG_DECODER=OFF -DWITH_OpenJPEG_ENCODER=OFF -DWITH_FFMPEG_DECODER=OFF \
+    -DWITH_LIBDE265=OFF -DWITH_DAV1D=ON -DWITH_AOM_DECODER=OFF -DWITH_AOM_ENCODER=OFF -DWITH_X265=OFF -DWITH_SvtEnc=OFF \
+    -DWITH_RAV1E=OFF -DWITH_KVAZAAR=OFF -DWITH_OpenJPEG_DECODER=OFF -DWITH_OpenJPEG_ENCODER=OFF -DWITH_FFMPEG_DECODER=ON \
     -DWITH_JPEG_DECODER=OFF -DWITH_JPEG_ENCODER=OFF -DWITH_UNCOMPRESSED_CODEC=ON -DWITH_LIBSHARPYUV=OFF \
     -DWITH_GDK_PIXBUF=OFF -DENABLE_PARALLEL_TILE_DECODING=ON
   cmake --build _build --target install
@@ -294,7 +299,7 @@ build_libvips() {
   rm -f "${PREFIX:?}"/lib/libvips*.so*
 }
 
-LIBRARIES=(zlib-ng ffi pcre2 glib expat exif lcms highway jpegli png webp de265 dav1d heif brotli jxl openjpeg
+LIBRARIES=(zlib-ng ffi pcre2 glib expat exif lcms highway jpegli png webp ffmpeg dav1d heif brotli jxl openjpeg
   tiff raw imagemagick xml2 freetype fontconfig harfbuzz pixman cairo fribidi pango rsvg libvips)
 
 

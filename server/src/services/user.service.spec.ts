@@ -2,6 +2,7 @@ import { BadRequestException, InternalServerErrorException, NotFoundException } 
 import { UserAdmin } from 'src/database.js';
 import { CacheControl, JobName, UserMetadataKey } from 'src/enum.js';
 import { UserService } from 'src/services/user.service.js';
+import { Bitmap } from 'src/types.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
@@ -124,6 +125,19 @@ describe(UserService.name, () => {
 
       expect(mocks.user.updateProfileImage).not.toHaveBeenCalled();
       expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
+    });
+
+    it('should decode the upload at the size of a thumbnail, and release it also when making the thumbnail fails', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      mocks.user.get.mockResolvedValue(UserFactory.create());
+      const decoded = { data: Buffer.alloc(0), info: { width: 250, height: 250, channels: 3 }, file: '/tmp/x/image.v' };
+      mocks.media.decodeImage.mockResolvedValue(decoded as Bitmap);
+      mocks.media.generateThumbnail.mockRejectedValue(new Error('disk full'));
+
+      await expect(sut.createProfileImage(authStub.admin, file)).rejects.toThrowError(BadRequestException);
+
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(file.path, expect.objectContaining({ size: 250 }));
+      expect(mocks.media.releaseImage).toHaveBeenCalledWith(decoded);
     });
 
     it('should delete the raw upload and the previous profile image', async () => {

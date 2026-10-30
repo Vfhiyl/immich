@@ -28,7 +28,13 @@ export const generateProfileImage = async (
   // shown next to everything the user did, so it is read often
   await using output = await storageBackend.createOutput(StorageBackendRole.Derived, outputPath, { cache: true });
 
-  const decoded = await media.decodeImage(input, { colorspace: image.colorspace, processInvalidImages: false });
+  // made the size of a thumbnail as it is read, rather than decoded whole
+  const decoded = await media.decodeImage(input, {
+    colorspace: image.colorspace,
+    processInvalidImages: false,
+    size: image.thumbnail.size,
+  });
+  await using _decodedFile = { [Symbol.asyncDispose]: () => media.releaseImage(decoded) };
   await media.generateThumbnail(
     decoded,
     {

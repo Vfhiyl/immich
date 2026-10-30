@@ -3,9 +3,9 @@
 The server reads and writes images with libvips, through sharp. It does not use a libvips installed on the machine or one that comes with sharp's prebuilt packages: libvips and every library it uses are built from source with changes of our own, mostly to use less memory, and shipped as two files that depend on nothing but glibc (Linux x64 only):
 
 - sharp's native module, with libvips inside;
-- `immich-thumbnail`, a program that makes the image the preview, the thumbnail and the thumbhash of a photo are made from. It reads the photo once, from top to bottom, keeping only the lines it still needs, and runs in a process of its own, which gives all of its memory back when it is done. It writes that image to a file in the system's temporary directory (`TMPDIR`, by default `/tmp`), removed once the files are made: a large one (the preview of a long screenshot, up to 16 MP, 48 MB) stays there while the server reads it, mapped into memory rather than copied into it. If `/tmp` is a `tmpfs`, those files are in memory after all; point `TMPDIR` to a disk then.
+- `immich-thumbnail`, a program that makes the image the preview, the thumbnail and the thumbhash of a photo are made from. It reads the photo once, from top to bottom, keeping only the lines it still needs, and runs in a process of its own, which gives all of its memory back when it is done. It writes that image to a file in the system's temporary directory (`TMPDIR`, by default `/tmp`), removed once the files are made: a large one (the preview of a long screenshot, up to 16 MP, 48 MB; the full-size image of an edited photo, 600 MB for 200 MP) stays there while the server reads it, mapped into memory rather than copied into it. If `/tmp` is a `tmpfs`, those files are in memory after all; point `TMPDIR` to a disk then.
 
-A 48 MP photo takes about 80 MB to make its preview from, instead of about 250 to 500 MB; a 200 MP HEIC photo of a phone about 110 MB instead of about 900 MB. HEIC photos of phones are decoded a row of tiles at a time.
+A 48 MP photo takes about 80 MB to make its preview from, instead of about 250 to 500 MB; a 200 MP HEIC photo of a phone about 110 MB instead of about 900 MB. HEIC photos of phones are decoded a row of tiles at a time. The image a person's face is cut from is made the same way, only as large as the face needs, instead of the whole photo (for a 200 MP photo about 110 MB instead of about 680 MB); so is the full-size image of an edited photo, through a file (for a 200 MP photo the server takes about 200 MB instead of about 800 MB).
 
 The sources, the patches (each says what it changes and why) and how to build them are in [`native/`](https://github.com/Vfhiyl/immich/tree/feat/object-storage/native) of the repository.
 
@@ -21,7 +21,7 @@ or build it from source with `native/build.sh` (see `native/README.md`). The ser
 
 ## Patents and licences
 
-The libraries include a decoder of HEVC (libde265), which HEIC photos need. HEVC is covered by patents in some countries. **Whoever deploys the server is responsible for what their use of it requires**; this project provides the program and its code. The libraries keep their licences (several are LGPL); the archive lists their sources and includes our patches, so that they can be built again.
+The libraries include a decoder of HEVC (FFmpeg's, only that part of FFmpeg), which HEIC photos need. HEVC is covered by patents in some countries. **Whoever deploys the server is responsible for what their use of it requires**; this project provides the program and its code. The libraries keep their licences (several are LGPL); the archive lists their sources and includes our patches, so that they can be built again.
 
 ## Previews of very long images
 

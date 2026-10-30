@@ -1,4 +1,4 @@
-import { existsSync, mkdtempDisposableSync, statSync } from 'node:fs';
+import { existsSync, mkdtempDisposableSync, readdirSync, statSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -357,10 +357,13 @@ describe(MediaRepository.name, () => {
       { file: 'avif/10bit-HDR-P3-nclx.avif', colorspace: Colorspace.P3, size: 1440 },
       { file: 'webp/denali.webp', colorspace: Colorspace.Srgb, size: 250 },
       { file: 'jpg/el_torcal_rocks.jpg', colorspace: Colorspace.Srgb, size: 1440 },
+      // as large as it is (the image of the full-size file)
+      { file: 'heic/IMG_2682.heic', colorspace: Colorspace.P3, size: undefined },
+      { file: 'motionphoto/pixel-8a.jpg', colorspace: Colorspace.Srgb, size: undefined },
     ];
 
     for (const { file, colorspace, size } of cases) {
-      it(`should read ${file} as sharp does`, async () => {
+      it(`should read ${file} ${size ? `at ${size}` : 'whole'} as sharp does`, async () => {
         const path = join(testAssets, file);
         const options = { colorspace, processInvalidImages: false, size };
 
@@ -387,6 +390,74 @@ describe(MediaRepository.name, () => {
         await sut.releaseImage(smaller);
       });
     }
+
+    it('should read a photo that must be rotated whole as sharp does, through a file removed when released', async () => {
+      const dir = mkdtempDisposableSync(join(tmpdir(), 'media-repository-'));
+      const rotated = join(dir.path, 'rotated.jpg');
+      // stored upright (3472 x 4624), with the tag that says to turn it a quarter clockwise
+      await sharp(join(testAssets, 'motionphoto/pixel-8a.jpg')).withMetadata({ orientation: 6 }).toFile(rotated);
+      const options = { colorspace: Colorspace.Srgb, processInvalidImages: false };
+
+      const whole = await sut.decodeImage(rotated, options);
+      const expected = await sut.decodeImage(await readFile(rotated), options);
+
+      expect(whole.info).toEqual({ width: expected.info.width, height: expected.info.height, channels: 3 });
+      expect(whole.info).toMatchObject({ width: 4624, height: 3472 });
+      const data = await pixels(whole);
+      let total = 0;
+      for (let index = 0; index < data.length; index++) {
+        total += Math.abs(data[index] - expected.data[index]);
+      }
+      expect(total / data.length).toBeLessThan(0.5);
+      expect(readdirSync(dirname(whole.file!))).toEqual(['image.v']);
+      await sut.releaseImage(whole);
+      expect(existsSync(dirname(whole.file!))).toBe(false);
+    });
+
+    it('should shrink an edited photo kept in a file as sharp does, edited first', async () => {
+      const options = { colorspace: Colorspace.P3, processInvalidImages: false };
+      // as large as it is: 4624 x 3472, in a file
+      const whole = await sut.decodeImage(join(testAssets, 'motionphoto/pixel-8a.jpg'), options);
+      expect(whole.file).toBeDefined();
+      const crop = { x: 100, y: 50, width: 3000, height: 2000 };
+      const edited = await sharp(whole.file)
+        .extract({ left: crop.x, top: crop.y, width: crop.width, height: crop.height })
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+
+      const small = await sut.shrinkImage(whole, {
+        size: 1440,
+        colorspace: Colorspace.P3,
+        edits: [{ action: AssetEditAction.Crop, parameters: crop }] as AssetEditActionItem[],
+      });
+      const expected = await sut.shrinkImage(edited, { size: 1440, colorspace: Colorspace.P3 });
+
+      expect(small.info).toEqual({ width: 2160, height: 1440, channels: 3 });
+      expect(expected.info).toMatchObject({ width: 2160, height: 1440 });
+      const data = await pixels(small);
+      let total = 0;
+      let max = 0;
+      for (let index = 0; index < data.length; index++) {
+        const difference = Math.abs(data[index] - expected.data[index]);
+        total += difference;
+        max = Math.max(max, difference);
+      }
+      expect(total / data.length).toBeLessThan(0.5);
+      expect(max).toBeLessThanOrEqual(5);
+      await sut.releaseImage(small);
+      // and turned
+      const turned = await sut.shrinkImage(whole, {
+        size: 1440,
+        colorspace: Colorspace.P3,
+        edits: [
+          { action: AssetEditAction.Crop, parameters: crop },
+          { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+        ] as AssetEditActionItem[],
+      });
+      expect(turned.info).toEqual({ width: 1440, height: 2160, channels: 3 });
+      await sut.releaseImage(turned);
+      await sut.releaseImage(whole);
+    });
 
     it('should keep the pixels of a large image in a file, removed when released', async () => {
       const dir = mkdtempDisposableSync(join(tmpdir(), 'media-repository-'));
@@ -497,6 +568,27 @@ describe(MediaRepository.name, () => {
       await sut.generateThumbnail(smaller, { ...options, format: ImageFormat.Webp, size: 250 }, thumbnail);
       await expect(sharp(preview).metadata()).resolves.toMatchObject({ width: 885, height: 16_383 });
       await expect(sharp(thumbnail).metadata()).resolves.toMatchObject({ width: 221, height: 4096 });
+    });
+
+    it('should make the shorter side the size whatever the shape, with shortSide (the image a face is cut from)', async () => {
+      const dir = mkdtempDisposableSync(join(tmpdir(), 'media-repository-'));
+      const file = join(dir.path, 'screenshot.png');
+      await sharp({ create: { width: 1080, height: 20_000, channels: 3, background: '#336699' } })
+        .png()
+        .toFile(file);
+      const options = { colorspace: Colorspace.Srgb, processInvalidImages: false, size: 500, shortSide: true };
+
+      const smaller = await sut.decodeImage(file, options);
+      // from memory, sharp reads it
+      const expected = await sut.decodeImage(await readFile(file), options);
+
+      expect(smaller.info).toEqual({ width: 500, height: 9259, channels: 3 });
+      expect(expected.info).toMatchObject({ width: 500, height: 9259 });
+      await sut.releaseImage(smaller);
+      // and no larger than it is
+      await expect(sut.decodeImage(file, { ...options, size: 2000 })).resolves.toMatchObject({
+        info: { width: 1080, height: 20_000 },
+      });
     });
 
     it('should not make a photo larger than it is', async () => {

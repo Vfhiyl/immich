@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OutputInfo } from 'sharp';
-import type { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
+import type { AudioStreamInfo, Bitmap, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { Exif } from 'src/database.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
@@ -815,6 +815,25 @@ describe(MediaService.name, () => {
         },
       ]);
       expect(mocks.asset.update).toHaveBeenCalledWith({ id: asset.id, thumbhash: thumbhashBuffer });
+    });
+
+    it('should release the decoded preview of a video once its thumbhash is made', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStream2160p,
+      });
+      const preview = {
+        data: Buffer.alloc(0),
+        info: { width: 2560, height: 1440 } as OutputInfo,
+        file: '/tmp/x/image.v',
+      };
+      mocks.media.decodeImage.mockResolvedValue(preview);
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+
+      expect(mocks.media.generateThumbhash).toHaveBeenCalledWith(preview, expect.any(Object));
+      expect(mocks.media.releaseImage).toHaveBeenCalledWith(preview);
     });
 
     it('should generate a thumbnail for a video', async () => {
@@ -1763,6 +1782,39 @@ describe(MediaService.name, () => {
       );
     });
 
+    it('should make the files of an edited photo kept in a file from its edited preview-size image', async () => {
+      const crop = { action: AssetEditAction.Crop, parameters: { height: 1152, width: 1512, x: 216, y: 1512 } };
+      const asset = AssetFactory.from().exif().edit(crop).build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.person.getFaces.mockResolvedValue([]);
+      mocks.ocr.getByAssetId.mockResolvedValue([]);
+      const whole = { data: Buffer.alloc(0), info: { width: 8064, height: 6048, channels: 3 }, file: '/tmp/a/image.v' };
+      const small = { data: Buffer.alloc(16), info: { width: 1920, height: 1440, channels: 3 } };
+      mocks.media.decodeImage.mockResolvedValue(whole as Bitmap);
+      mocks.media.shrinkImage.mockResolvedValue(small as Bitmap);
+
+      await sut.handleAssetEditThumbnailGeneration({ id: asset.id });
+
+      expect(mocks.media.shrinkImage).toHaveBeenCalledWith(whole, {
+        size: 1440,
+        colorspace: Colorspace.Srgb,
+        edits: [expect.objectContaining(crop)],
+      });
+      const calls = mocks.media.generateThumbnail.mock.calls;
+      expect(calls).toHaveLength(3);
+      // the full-size file from the whole image, edited
+      expect(calls).toContainEqual([
+        whole,
+        expect.objectContaining({ edits: [expect.objectContaining(crop)] }),
+        expect.any(String),
+      ]);
+      // the preview and the thumbnail from the edited preview-size image
+      expect(calls.filter(([image, options]) => image === small && options.edits?.length === 0)).toHaveLength(2);
+      expect(mocks.media.generateThumbhash).toHaveBeenCalledWith(small, expect.objectContaining({ edits: [] }));
+      expect(mocks.media.releaseImage).toHaveBeenCalledWith(small);
+      expect(mocks.media.releaseImage).toHaveBeenCalledWith(whole);
+    });
+
     it('should clean up edited files if an asset has no edits', async () => {
       const asset = AssetFactory.from({ thumbhash: factory.buffer() })
         .exif()
@@ -1893,6 +1945,8 @@ describe(MediaService.name, () => {
         colorspace: Colorspace.P3,
         orientation: undefined,
         processInvalidImages: false,
+        size: 917,
+        shortSide: true,
       });
       expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
         { data, info },
@@ -1929,6 +1983,51 @@ describe(MediaService.name, () => {
           encryption: null,
         },
       });
+    });
+
+    it('should decode the image only as large as the face needs, and release it', async () => {
+      const person = PersonFactory.create();
+      mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue(personThumbnailStub.newThumbnailMiddle);
+      // the original of 4000 x 5000 made as small as asked: the face of the preview (400 x 500) is 100 x 100 there
+      mocks.media.decodeImage.mockImplementation((_, { size }) => {
+        const width = Math.min(size!, 4000);
+        return Promise.resolve({
+          data: Buffer.from(''),
+          info: { width, height: Math.round((width * 5) / 4), channels: 3 } as OutputInfo,
+          file: '/tmp/immich-thumbnail-1/image.v',
+        });
+      });
+
+      await sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId });
+
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ size: 917, shortSide: true }),
+      );
+      const crop = mocks.media.generateThumbnail.mock.calls[0][1].edits![0].parameters as { width: number };
+      expect(crop.width).toBeGreaterThanOrEqual(250);
+      expect(crop.width).toBeLessThan(260);
+      expect(mocks.media.releaseImage).toHaveBeenCalledWith(
+        expect.objectContaining({ file: '/tmp/immich-thumbnail-1/image.v' }),
+      );
+    });
+
+    it('should release the decoded image when making the thumbnail fails', async () => {
+      const person = PersonFactory.create();
+      mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue(personThumbnailStub.newThumbnailMiddle);
+      const decoded = {
+        data: Buffer.from(''),
+        info: { width: 917, height: 1146 } as OutputInfo,
+        file: '/tmp/x/image.v',
+      };
+      mocks.media.decodeImage.mockResolvedValue(decoded);
+      mocks.media.generateThumbnail.mockRejectedValue(new Error('disk full'));
+
+      await expect(
+        sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId }),
+      ).rejects.toThrow('disk full');
+
+      expect(mocks.media.releaseImage).toHaveBeenCalledWith(decoded);
     });
 
     it('should crop an image from a leased local copy of its original', async () => {
@@ -2090,6 +2189,8 @@ describe(MediaService.name, () => {
         colorspace: Colorspace.P3,
         orientation: undefined,
         processInvalidImages: false,
+        size: 917,
+        shortSide: true,
       });
       expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
         { data, info },
@@ -2145,6 +2246,8 @@ describe(MediaService.name, () => {
         colorspace: Colorspace.P3,
         orientation: undefined,
         processInvalidImages: false,
+        size: 1068,
+        shortSide: true,
       });
       expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
         { data, info },
@@ -2189,6 +2292,8 @@ describe(MediaService.name, () => {
         colorspace: Colorspace.P3,
         orientation: undefined,
         processInvalidImages: false,
+        size: 624,
+        shortSide: true,
       });
       expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
         { data, info },
@@ -2233,6 +2338,8 @@ describe(MediaService.name, () => {
         colorspace: Colorspace.P3,
         orientation: undefined,
         processInvalidImages: false,
+        size: 1871,
+        shortSide: true,
       });
       expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
         { data, info },
@@ -2277,6 +2384,8 @@ describe(MediaService.name, () => {
         colorspace: Colorspace.P3,
         orientation: undefined,
         processInvalidImages: false,
+        size: 5853,
+        shortSide: true,
       });
       expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
         { data, info },
@@ -2326,6 +2435,8 @@ describe(MediaService.name, () => {
         colorspace: Colorspace.P3,
         orientation: ExifOrientation.Horizontal,
         processInvalidImages: false,
+        size: 917,
+        shortSide: true,
       });
       expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
         { data, info },
@@ -2388,6 +2499,8 @@ describe(MediaService.name, () => {
         colorspace: Colorspace.P3,
         orientation: undefined,
         processInvalidImages: false,
+        size: 917,
+        shortSide: true,
       });
       expect(mocks.media.generateThumbnail).toHaveBeenCalled();
     });
@@ -2414,6 +2527,8 @@ describe(MediaService.name, () => {
         colorspace: Colorspace.P3,
         orientation: undefined,
         processInvalidImages: false,
+        size: 917,
+        shortSide: true,
       });
       expect(mocks.media.generateThumbnail).toHaveBeenCalled();
     });
