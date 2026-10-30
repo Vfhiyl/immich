@@ -712,6 +712,22 @@ describe(MediaService.name, () => {
       expect(mocks.storageBackend.lease).not.toHaveBeenCalled();
     });
 
+    it('should release the file of the decoded image, also when making a file fails', async () => {
+      const asset = AssetFactory.from().exif().files([AssetFileType.Preview, AssetFileType.Thumbnail]).build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      const decoded = { data: Buffer.alloc(0), info: rawInfo as OutputInfo, file: '/tmp/immich-thumbnail-1/image.v' };
+      mocks.media.decodeImage.mockResolvedValue(decoded);
+
+      await sut.handleGenerateThumbnails({ id: asset.id });
+      expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(decoded, expect.any(Object), expect.any(String));
+      expect(mocks.media.releaseImage).toHaveBeenCalledWith(decoded);
+
+      mocks.media.releaseImage.mockClear();
+      mocks.media.generateThumbnail.mockRejectedValue(new Error('disk full'));
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('disk full');
+      expect(mocks.media.releaseImage).toHaveBeenCalledWith(decoded);
+    });
+
     it('should generate P3 thumbnails for a wide gamut image', async () => {
       const asset = AssetFactory.from()
         .exif({ profileDescription: 'Adobe RGB', bitsPerSample: 14 })

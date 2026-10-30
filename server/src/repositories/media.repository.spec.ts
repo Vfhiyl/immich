@@ -1,12 +1,13 @@
-import { mkdtempDisposableSync, statSync } from 'node:fs';
+import { existsSync, mkdtempDisposableSync, statSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import sharp from 'sharp';
-import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
+import { AssetEditAction, AssetEditActionItem, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { Colorspace, ImageFormat } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
+import { Bitmap } from 'src/types.js';
 import { getDerivedDimensions } from 'src/utils/derived-size.js';
 import { automock } from 'test/utils.js';
 
@@ -63,6 +64,9 @@ const buildTestQuadImage = async () => {
 
   return image.png().toBuffer();
 };
+
+// the pixels of a decoded image, in its file (made smaller) or in memory
+const pixels = async ({ data, file }: Bitmap) => (file ? await sharp(file).raw().toBuffer() : data);
 
 describe(MediaRepository.name, () => {
   let sut: MediaRepository;
@@ -369,17 +373,105 @@ describe(MediaRepository.name, () => {
           height: expected.info.height,
           channels: expected.info.channels,
         });
+        const data = await pixels(smaller);
+        expect(data.length).toBe(expected.data.length);
         let total = 0;
         let max = 0;
-        for (let index = 0; index < smaller.data.length; index++) {
-          const difference = Math.abs(smaller.data[index] - expected.data[index]);
+        for (let index = 0; index < data.length; index++) {
+          const difference = Math.abs(data[index] - expected.data[index]);
           total += difference;
           max = Math.max(max, difference);
         }
-        expect(total / smaller.data.length).toBeLessThan(0.5);
+        expect(total / data.length).toBeLessThan(0.5);
         expect(max).toBeLessThanOrEqual(5);
+        await sut.releaseImage(smaller);
       });
     }
+
+    it('should keep the pixels of a large image in a file, removed when released', async () => {
+      const dir = mkdtempDisposableSync(join(tmpdir(), 'media-repository-'));
+      const screenshot = join(dir.path, 'screenshot.png');
+      await sharp({ create: { width: 1080, height: 20_000, channels: 3, background: '#336699' } })
+        .png()
+        .toFile(screenshot);
+
+      const smaller = await sut.decodeImage(screenshot, {
+        colorspace: Colorspace.Srgb,
+        processInvalidImages: false,
+        size: 1440,
+      });
+
+      expect(smaller.data.length).toBe(0);
+      expect(existsSync(smaller.file!)).toBe(true);
+      const data = await pixels(smaller);
+      expect(data.length).toBe(885 * 16_383 * 3);
+      // (through linear light and back: within a level)
+      for (const [index, value] of [0x33, 0x66, 0x99].entries()) {
+        expect(Math.abs(data[index] - value)).toBeLessThanOrEqual(1);
+      }
+      await sut.releaseImage(smaller);
+      expect(existsSync(dirname(smaller.file!))).toBe(false);
+    });
+
+    it('should read the pixels of a small image into memory', async () => {
+      const smaller = await sut.decodeImage(join(testAssets, 'heic/IMG_2682.heic'), {
+        colorspace: Colorspace.P3,
+        processInvalidImages: false,
+        size: 1440,
+      });
+
+      expect(smaller.file).toBeUndefined();
+      expect(smaller.data.length).toBe(smaller.info.width * smaller.info.height * smaller.info.channels);
+    });
+
+    it('should make the same files from the file as from the pixels in memory', async () => {
+      const dir0 = mkdtempDisposableSync(join(tmpdir(), 'media-repository-'));
+      const long = join(dir0.path, 'long.jpg');
+      // a long photo, of the colours of a photo (its preview is in a file)
+      await sharp(join(testAssets, 'motionphoto/pixel-8a.jpg')).resize(1200, 9000, { fit: 'fill' }).toFile(long);
+      const smaller = await sut.decodeImage(long, {
+        colorspace: Colorspace.P3,
+        processInvalidImages: false,
+        size: 1440,
+      });
+      expect(smaller.file).toBeDefined();
+      const inMemory = { data: await pixels(smaller), info: smaller.info };
+      const dir = mkdtempDisposableSync(join(tmpdir(), 'media-repository-'));
+      const options = { colorspace: Colorspace.P3, processInvalidImages: false, quality: 80 };
+      const edits = [
+        { action: AssetEditAction.Crop, parameters: { x: 100, y: 50, width: 800, height: 6000 } },
+        { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+      ] as AssetEditActionItem[];
+
+      for (const [name, generate] of [
+        [
+          'preview',
+          (image: Bitmap, path: string) =>
+            sut.generateThumbnail(image, { ...options, format: ImageFormat.Jpeg, size: 1440 }, path),
+        ],
+        [
+          'thumbnail',
+          (image: Bitmap, path: string) =>
+            sut.generateThumbnail(image, { ...options, format: ImageFormat.Webp, size: 250 }, path),
+        ],
+        [
+          'edited',
+          (image: Bitmap, path: string) =>
+            sut.generateThumbnail(image, { ...options, format: ImageFormat.Jpeg, size: 1440, edits }, path),
+        ],
+      ] as const) {
+        const fromFile = join(dir.path, `${name}-file`);
+        const fromMemory = join(dir.path, `${name}-memory`);
+        await generate(smaller, fromFile);
+        await generate(inMemory, fromMemory);
+        const [a, b] = await Promise.all([sharp(fromFile).raw().toBuffer(), sharp(fromMemory).raw().toBuffer()]);
+        expect(a.equals(b), name).toBe(true);
+      }
+      await expect(sut.generateThumbhash(smaller, options)).resolves.toEqual(
+        await sut.generateThumbhash(inMemory, options),
+      );
+      await sut.releaseImage(smaller);
+    });
 
     it('should make the preview of a long screenshot as getDerivedDimensions says', async () => {
       const dir = mkdtempDisposableSync(join(tmpdir(), 'media-repository-'));

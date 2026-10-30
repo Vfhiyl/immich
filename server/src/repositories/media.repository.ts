@@ -5,6 +5,7 @@ import { camelCase, upperFirst } from 'lodash-es';
 import { Duration } from 'luxon';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Writable } from 'node:stream';
 import sharp, { Sharp } from 'sharp';
@@ -54,6 +55,10 @@ const pascalCase = (str: string) => upperFirst(camelCase(str.toLowerCase()));
 
 /** Immich's program that makes the image the preview and the thumbnail are made from (native/thumbnail in the repository) */
 const THUMBNAIL_PROGRAM = join(dirname(import.meta.filename), '../../native/bin/immich-thumbnail');
+/** An image made smaller larger than this stays in its file, mapped into memory as it is read (a long screenshot) */
+const MAPPED_DECODE_BYTES = 16 * 1024 * 1024;
+/** https://www.libvips.org/API/current/file-format.html: the pixels follow a header of 64 bytes */
+const VIPS_FILE_HEADER_BYTES = 64;
 
 type ProgressEvent = {
   frames: number;
@@ -168,30 +173,60 @@ export class MediaRepository {
     return await this.transform(decoded, options);
   }
 
-  /** The photo with `size` as its shorter side (no larger than it is), made by immich-thumbnail in a process of its own */
-  private decodeSmaller(input: string, size: number, { colorspace, processInvalidImages }: DecodeToBufferOptions) {
-    const args = [input, String(size), colorspace === Colorspace.Srgb ? 'srgb' : 'p3'];
+  /**
+   * The photo with `size` as its shorter side (no larger than it is), made by immich-thumbnail in a process of its own,
+   * into a file of the system's temporary directory. A large one (the preview of a long screenshot is up to 16 MP)
+   * stays there, its pixels mapped into memory when read rather than copied, until `releaseImage` removes it
+   */
+  private async decodeSmaller(
+    input: string,
+    size: number,
+    { colorspace, processInvalidImages }: DecodeToBufferOptions,
+  ) {
+    const directory = await fs.mkdtemp(join(tmpdir(), 'immich-thumbnail-'));
+    const file = join(directory, 'image.v');
+    const args = [input, String(size), colorspace === Colorspace.Srgb ? 'srgb' : 'p3', '--output', file];
     if (processInvalidImages) {
       args.push('--process-invalid');
     }
-    return new Promise<Bitmap>((resolve, reject) => {
-      const child = spawn(THUMBNAIL_PROGRAM, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-      const chunks: Buffer[] = [];
-      const stderr = new OutputTail();
-      child.stdout.on('data', (chunk: Buffer) => void chunks.push(chunk));
-      child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
-      child.on('error', reject);
-      child.on('close', (code, signal) => {
-        if (code !== 0) {
-          return reject(new Error(`immich-thumbnail exited with ${code ?? signal}: ${stderr.toString().trim()}`));
-        }
-        // a line of JSON, then the pixels
-        const output = Buffer.concat(chunks);
-        const end = output.indexOf(10);
-        const info = JSON.parse(output.subarray(0, end).toString()) as RawImageInfo;
-        resolve({ data: output.subarray(end + 1), info });
+    try {
+      const info = await new Promise<RawImageInfo>((resolve, reject) => {
+        const child = spawn(THUMBNAIL_PROGRAM, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        const stdout: Buffer[] = [];
+        const stderr = new OutputTail();
+        child.stdout.on('data', (chunk: Buffer) => void stdout.push(chunk));
+        child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+        child.on('error', reject);
+        child.on('close', (code, signal) => {
+          if (code !== 0) {
+            return reject(new Error(`immich-thumbnail exited with ${code ?? signal}: ${stderr.toString().trim()}`));
+          }
+          // a line of JSON: the size of the image in the file
+          resolve(JSON.parse(Buffer.concat(stdout).toString()) as RawImageInfo);
+        });
       });
-    });
+      const length = info.width * info.height * info.channels;
+      if (length > MAPPED_DECODE_BYTES) {
+        return { data: Buffer.alloc(0), info, file } satisfies Bitmap;
+      }
+      // small: read into memory (each of the files made from it would open the file again, which takes more)
+      const data = Buffer.alloc(length);
+      await using handle = await fs.open(file);
+      // a file of libvips: a header of 64 bytes, then the pixels
+      await handle.read(data, 0, length, VIPS_FILE_HEADER_BYTES);
+      await fs.rm(directory, { recursive: true, force: true });
+      return { data, info } satisfies Bitmap;
+    } catch (error) {
+      await fs.rm(directory, { recursive: true, force: true });
+      throw error;
+    }
+  }
+
+  /** Frees what an image decoded by decodeImage holds beyond its memory: the file of its pixels */
+  async releaseImage(image: Bitmap): Promise<void> {
+    if (image.file) {
+      await fs.rm(dirname(image.file), { recursive: true, force: true });
+    }
   }
 
   private edit(pipeline: Sharp, edits: AssetEditActionItem[]): Sharp {
@@ -266,11 +301,14 @@ export class MediaRepository {
       const short = Math.min(edited.width, edited.height);
       const long = Math.max(edited.width, edited.height);
       const scale = getDerivedScale(edited, size);
-      if (scale >= size / short) {
+      if (scale >= size / short && short > size) {
         pipeline = pipeline.resize(size, size, { fit: 'outside', withoutEnlargement: true });
-      } else if (Math.round(long * scale) < long - 1) {
+      } else if (scale < size / short && Math.round(long * scale) < long - 1) {
         const target = Math.round(long * scale);
         pipeline = pipeline.resize(target, target, { fit: 'inside', withoutEnlargement: true });
+      } else if (edits.length === 0) {
+        // already that size (the preview made by immich-thumbnail): the same pixels, not a copy of them
+        return Promise.resolve(image);
       }
     } else if (size) {
       pipeline = pipeline.resize(size, size, { fit, withoutEnlargement: true });
@@ -278,7 +316,10 @@ export class MediaRepository {
     return pipeline.raw().toBuffer({ resolveWithObject: true });
   }
 
-  private raw({ data, info: raw }: Bitmap) {
+  private raw({ data, info: raw, file }: Bitmap) {
+    if (file) {
+      return sharp(file, { limitInputChannels: false, limitInputPixels: false, unlimited: true });
+    }
     return sharp(data, { raw, limitInputChannels: false, limitInputPixels: false, unlimited: true });
   }
 

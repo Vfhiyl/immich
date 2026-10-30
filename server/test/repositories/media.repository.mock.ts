@@ -9,6 +9,7 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     copyTagGroup: vitest.fn().mockImplementation(() => Promise.resolve()),
     generateThumbhash: vitest.fn().mockResolvedValue(Buffer.from('')),
     decodeImage: vitest.fn().mockResolvedValue({ data: Buffer.from(''), info: {} }),
+    releaseImage: vitest.fn().mockResolvedValue(undefined),
     extract: vitest.fn().mockResolvedValue(null),
     probe: vitest.fn(),
     probePackets: vitest.fn().mockResolvedValue({

@@ -3,7 +3,7 @@
 The server reads and writes images with libvips, through sharp. It does not use a libvips installed on the machine or one that comes with sharp's prebuilt packages: libvips and every library it uses are built from source with changes of our own, mostly to use less memory, and shipped as two files that depend on nothing but glibc (Linux x64 only):
 
 - sharp's native module, with libvips inside;
-- `immich-thumbnail`, a program that makes the image the preview, the thumbnail and the thumbhash of a photo are made from. It reads the photo once, from top to bottom, keeping only the lines it still needs, and runs in a process of its own, which gives all of its memory back when it is done.
+- `immich-thumbnail`, a program that makes the image the preview, the thumbnail and the thumbhash of a photo are made from. It reads the photo once, from top to bottom, keeping only the lines it still needs, and runs in a process of its own, which gives all of its memory back when it is done. It writes that image to a file in the system's temporary directory (`TMPDIR`, by default `/tmp`), removed once the files are made: a large one (the preview of a long screenshot, up to 16 MP, 48 MB) stays there while the server reads it, mapped into memory rather than copied into it. If `/tmp` is a `tmpfs`, those files are in memory after all; point `TMPDIR` to a disk then.
 
 A 48 MP photo takes about 80 MB to make its preview from, instead of about 250 to 500 MB; a 200 MP HEIC photo of a phone about 110 MB instead of about 900 MB. HEIC photos of phones are decoded a row of tiles at a time.
 

@@ -69,6 +69,9 @@ export type RawImageInfo = {
 export type Bitmap = {
   data: Buffer;
   info: RawImageInfo;
+  /** The pixels are in this file (libvips' format, mapped into memory when read) rather than in `data`; it is removed
+   * by MediaRepository.releaseImage */
+  file?: string;
 };
 
 type ImageColorOptions = {

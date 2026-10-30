@@ -1,13 +1,15 @@
 /* immich-thumbnail: makes the image from which the server makes the preview, the thumbnail and the thumbhash of a
  * photo, with the memory of a few hundred lines of it rather than of all its pixels.
  *
- * Usage: immich-thumbnail INPUT SIZE COLORSPACE [--process-invalid]
+ * Usage: immich-thumbnail INPUT SIZE COLORSPACE [--process-invalid] [--output FILE.v]
  *   SIZE        the size of the server's preview: the shorter side of the result, but for very long images (see
  *               derived_scale), and no larger than the photo
  *   COLORSPACE  srgb or p3: the colours of the result, and of the files made from it
  *
  * Writes to stdout one line of JSON ({"width":..,"height":..,"channels":..}) and then the pixels: 8 bits per channel,
- * RGB or RGBA, upright (as its orientation tag says), in COLORSPACE.
+ * RGB or RGBA, upright (as its orientation tag says), in COLORSPACE. With --output, the pixels go to FILE.v (libvips'
+ * format, which the server's sharp maps into memory rather than reading) instead, as they are made: a photo that need
+ * not be rotated is never in memory whole (the preview of a long screenshot is up to 16 MP).
  *
  * It does what the server did with sharp (src/repositories/media.repository.ts: decodeImage), in the same order, in
  * one pass over the photo instead of two: the colours are converted from the embedded profile to COLORSPACE (16 bits,
@@ -134,16 +136,24 @@ main(int argc, char **argv)
 	size_t length;
 	void *pixels;
 	char header[128];
+	const char *output = NULL;
 
-	if (argc < 4 || argc > 5 ||
-		(argc == 5 && strcmp(argv[4], "--process-invalid") != 0)) {
-		fprintf(stderr, "Usage: immich-thumbnail INPUT SIZE srgb|p3 [--process-invalid]\n");
+	process_invalid = FALSE;
+	for (int i = 4; i < argc; i++) {
+		if (strcmp(argv[i], "--process-invalid") == 0)
+			process_invalid = TRUE;
+		else if (strcmp(argv[i], "--output") == 0 && i + 1 < argc)
+			output = argv[++i];
+		else
+			argc = 0;
+	}
+	if (argc < 4) {
+		fprintf(stderr, "Usage: immich-thumbnail INPUT SIZE srgb|p3 [--process-invalid] [--output FILE.v]\n");
 		return 2;
 	}
 	input = argv[1];
 	size = atoi(argv[2]);
 	colorspace = argv[3];
-	process_invalid = argc == 5;
 	if (size <= 0 || (strcmp(colorspace, "srgb") != 0 && strcmp(colorspace, "p3") != 0)) {
 		fprintf(stderr, "immich-thumbnail: bad size or colorspace\n");
 		return 2;
@@ -231,24 +241,48 @@ main(int argc, char **argv)
 		return fail("cannot encode: ");
 	x = t[6];
 
-	/* the photo has been read: the small result can be rotated in memory */
-	if (!(t[7] = vips_image_copy_memory(x)))
-		return fail("cannot read the photo: ");
-	if (vips_autorot(t[7], &t[8], NULL))
-		return fail("cannot rotate: ");
-	x = t[8];
-
-	if (!(pixels = vips_image_write_to_memory(x, &length)))
-		return fail("cannot write the result: ");
-
-	snprintf(header, sizeof(header), "{\"width\":%d,\"height\":%d,\"channels\":%d}\n",
-		x->Xsize, x->Ysize, x->Bands);
-	if (write_all(header, strlen(header)) || write_all(pixels, length)) {
-		perror("immich-thumbnail: cannot write to stdout");
-		return 1;
+	/* rotated upright: the photo has been read, the small result is rotated in memory (rotating needs all of it) */
+	if (vips_image_get_orientation(x) != 1) {
+		if (!(t[7] = vips_image_copy_memory(x)))
+			return fail("cannot read the photo: ");
+		if (vips_autorot(t[7], &t[8], NULL))
+			return fail("cannot rotate: ");
+		x = t[8];
 	}
 
-	g_free(pixels);
+	if (output) {
+		/* only the pixels: no profile (they are in COLORSPACE, as the server takes them) nor orientation */
+		VipsImage *bare;
+		const char *meta[] = { VIPS_META_ICC_NAME, VIPS_META_EXIF_NAME, VIPS_META_XMP_NAME, VIPS_META_IPTC_NAME,
+			VIPS_META_PHOTOSHOP_NAME, VIPS_META_ORIENTATION };
+		if (vips_copy(x, &bare, NULL))
+			return fail("cannot write the result: ");
+		for (size_t i = 0; i < sizeof(meta) / sizeof(meta[0]); i++)
+			vips_image_remove(bare, meta[i]);
+		if (vips_image_write_to_file(bare, output, NULL)) {
+			g_object_unref(bare);
+			return fail("cannot write the result: ");
+		}
+		snprintf(header, sizeof(header), "{\"width\":%d,\"height\":%d,\"channels\":%d}\n",
+			bare->Xsize, bare->Ysize, bare->Bands);
+		g_object_unref(bare);
+		if (write_all(header, strlen(header))) {
+			perror("immich-thumbnail: cannot write to stdout");
+			return 1;
+		}
+	}
+	else {
+		if (!(pixels = vips_image_write_to_memory(x, &length)))
+			return fail("cannot write the result: ");
+		snprintf(header, sizeof(header), "{\"width\":%d,\"height\":%d,\"channels\":%d}\n",
+			x->Xsize, x->Ysize, x->Bands);
+		if (write_all(header, strlen(header)) || write_all(pixels, length)) {
+			perror("immich-thumbnail: cannot write to stdout");
+			return 1;
+		}
+		g_free(pixels);
+	}
+
 	for (int i = 0; i < 10; i++)
 		VIPS_UNREF(t[i]);
 	VIPS_UNREF(in);

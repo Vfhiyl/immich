@@ -213,12 +213,16 @@ export class MediaService extends BaseService {
     let thumbhash: Buffer | undefined = generated?.thumbhash;
     if (!thumbhash) {
       const extractedImage = await this.extractOriginalImage(asset, config.image);
-      const { info, data, colorspace } = extractedImage;
+      const { info, data, file, colorspace } = extractedImage;
 
-      thumbhash = await this.mediaRepository.generateThumbhash(
-        { data, info },
-        { colorspace, processInvalidImages: false, edits: [] },
-      );
+      try {
+        thumbhash = await this.mediaRepository.generateThumbhash(
+          { data, info, file },
+          { colorspace, processInvalidImages: false, edits: [] },
+        );
+      } finally {
+        await this.mediaRepository.releaseImage({ data, info, file });
+      }
     }
 
     if (!asset.thumbhash || Buffer.compare(asset.thumbhash, thumbhash) !== 0) {
@@ -312,8 +316,8 @@ export class MediaService extends BaseService {
       orientation: exifInfo.orientation ? Number(exifInfo.orientation) : undefined,
     };
 
-    const { info, data } = await this.mediaRepository.decodeImage(thumbSource, decodeOptions);
-    return { info, data, colorspace };
+    const { info, data, file } = await this.mediaRepository.decodeImage(thumbSource, decodeOptions);
+    return { info, data, file, colorspace };
   }
 
   private async extractOriginalImage(asset: ThumbnailAsset, image: SystemConfig['image'], useEdits = false) {
@@ -327,7 +331,7 @@ export class MediaService extends BaseService {
       isGenerateFullsize && (!extracted || !mimeTypes.isWebSupportedImage(` .${extracted.format}`));
 
     const thumbSource = extracted ? extracted.buffer : asset.originalPath;
-    const { data, info, colorspace } = await this.decodeImage(
+    const { data, info, file, colorspace } = await this.decodeImage(
       thumbSource,
       // only specify orientation to extracted images which don't have EXIF orientation data
       // or it can double rotate the image
@@ -344,6 +348,7 @@ export class MediaService extends BaseService {
       extracted,
       data,
       info,
+      file,
       colorspace,
       convertFullsize: isConvertFullsize,
       generateFullsize: isGenerateFullsize,
@@ -354,7 +359,9 @@ export class MediaService extends BaseService {
   private async generateImageThumbnails(asset: ThumbnailAsset, { image }: SystemConfig, useEdits: boolean = false) {
     // Handle embedded preview extraction for RAW files
     const extractedImage = await this.extractOriginalImage(asset, image, useEdits);
-    const { info, data, colorspace, generateFullsize, convertFullsize, extracted, isTransparent } = extractedImage;
+    const { info, data, file, colorspace, generateFullsize, convertFullsize, extracted, isTransparent } =
+      extractedImage;
+    await using _decodedFile = { [Symbol.asyncDispose]: () => this.mediaRepository.releaseImage({ data, info, file }) };
 
     const previewFormat = image.preview.format;
     this.warnOnTransparencyLoss(isTransparent, previewFormat, asset.id);
@@ -382,7 +389,7 @@ export class MediaService extends BaseService {
     const thumbnailOutput = staged.use(await this.createDerivedOutput(thumbnailFile.path));
 
     // generate final images
-    const decoded = { data, info };
+    const decoded = { data, info, file };
     const baseOptions = { colorspace, processInvalidImages: false, edits: useEdits ? asset.edits : [] };
     const thumbnailOptions = { ...image.thumbnail, ...baseOptions, format: thumbnailFormat };
     const previewOptions = { ...image.preview, ...baseOptions, format: previewFormat };
