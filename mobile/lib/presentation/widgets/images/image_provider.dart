@@ -294,6 +294,7 @@ RegionSource? getRegionSource(
         ? RegionSource(
             url: getOriginalUrlForRemoteId(assetId, edited: edited),
             basePixels: math.min(basePixels, previewPixels),
+            original: true,
           )
         : null;
   }

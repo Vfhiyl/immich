@@ -26,6 +26,9 @@ abstract class AssetViewerState with _$AssetViewerState {
 
     /// The remote assets shown from their originals on asking (view original, play original), while the viewer is open
     @Default(<String>{}) Set<String> originals,
+
+    /// Those of [originals] being downloaded to be shown
+    @Default(<String>{}) Set<String> loadingOriginals,
   }) = _AssetViewerState;
 }
 
@@ -114,6 +117,16 @@ class AssetViewerStateNotifier extends Notifier<AssetViewerState> {
 
   void toggleOcr() {
     state = state.copyWith(showingOcr: !state.showingOcr);
+  }
+
+  /// Whether the original of the remote asset [id], asked for, is being downloaded
+  void setLoadingOriginal(String id, bool loading) {
+    if (state.loadingOriginals.contains(id) == loading) {
+      return;
+    }
+    state = state.copyWith(
+      loadingOriginals: loading ? {...state.loadingOriginals, id} : ({...state.loadingOriginals}..remove(id)),
+    );
   }
 
   /// Shows the remote asset [id] from its original (its tiles from it for an image, it played for a video)

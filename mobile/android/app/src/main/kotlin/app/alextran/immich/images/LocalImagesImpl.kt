@@ -234,10 +234,11 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
           rotateToNativeBuffer(bitmap, orientation)
         }
       } catch (e: Exception) {
-        // The platform makes no thumbnail of some photos (HEICs of 100 MP and more, on some phones): the app's own
-        // decoders may (from the thumbnail inside a HEIC)
+        // The platform makes no thumbnail of some photos (HEICs of 100 MP and more on some phones, 10-bit AVIFs): the
+        // app's own decoders may (from the thumbnail inside a HEIC), else the platform's decoder, made smaller to the
+        // thumbnail as it decodes
         if (e is OperationCanceledException) throw e
-        decodeSmaller(id, size, signal, thumbnail = true) ?: throw e
+        decodeSmaller(id, size, signal, thumbnail = true) ?: decodeWithPlatform(id, size, signal) ?: throw e
       }
       // Don't re-check cancellation here: res owns a malloc'd buffer, and bailing to CANCELLED would
       // orphan it. Deliver it; Dart frees the buffer itself if the request was cancelled meanwhile.
@@ -336,6 +337,22 @@ class LocalImagesImpl(context: Context) : LocalImageApi {
     } else {
       signal.setOnCancelListener { Video.Thumbnails.cancelThumbnailRequest(resolver, id) }
       Video.Thumbnails.getThumbnail(resolver, id, Video.Thumbnails.MINI_KIND, OPTIONS)
+    }
+  }
+
+  // A thumbnail decoded by the platform's decoder (oriented as it decodes), or null if it cannot either
+  private fun decodeWithPlatform(id: Long, size: Size, signal: CancellationSignal): Map<String, Long>? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || size.width <= 0 || size.height <= 0) {
+      return null
+    }
+    return try {
+      val uri = ContentUris.withAppendedId(Images.Media.EXTERNAL_CONTENT_URI, id)
+      decodeSource(uri, size, signal).toNativeBuffer()
+    } catch (e: OperationCanceledException) {
+      throw e
+    } catch (e: Exception) {
+      Log.w(TAG, "No thumbnail of $id: ${e.message}")
+      null
     }
   }
 

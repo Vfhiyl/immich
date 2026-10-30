@@ -233,6 +233,19 @@ void main() {
       expect(api.opens, hasLength(1));
     });
 
+    test('opens an original asked for at once, before tiles are needed', () {
+      final original = RegionImage(
+        const RegionSource(url: 'https://server/original', basePixels: _basePixels, original: true),
+        api: api,
+      );
+      addTearDown(original.dispose);
+      original
+        ..active = true
+        ..show(const Size(43, 800), const Rect.fromLTWH(0, 0, 43, 800), 3);
+      expect(api.opens, hasLength(1));
+      expect(original.opening, isTrue);
+    });
+
     test('decodes the tiles on the screen, at its scale, the middle first', () async {
       await open();
 

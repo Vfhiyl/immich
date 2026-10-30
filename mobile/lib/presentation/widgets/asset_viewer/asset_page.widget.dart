@@ -75,8 +75,9 @@ class _AssetPageState extends ConsumerState<AssetPage> {
 
   BaseAsset? _asset;
 
-  // the image shown in tiles
+  // the image shown in tiles, and the asset's id on the server
   RegionImage? _region;
+  String? _regionRemoteId;
 
   @override
   void initState() {
@@ -102,9 +103,20 @@ class _AssetPageState extends ConsumerState<AssetPage> {
     }
   }
 
+  // (an original asked for is no longer being downloaded for this page)
+  void _disposeRegion() {
+    final region = _region;
+    final id = _regionRemoteId;
+    if (region != null && id != null && region.source.original && region.opening) {
+      final viewer = _viewer;
+      scheduleMicrotask(() => viewer.setLoadingOriginal(id, false));
+    }
+    region?.dispose();
+  }
+
   @override
   void dispose() {
-    _region?.dispose();
+    _disposeRegion();
     _scrollController.dispose();
     unawaited(_scaleBoundarySub?.cancel());
     unawaited(_eventSubscription?.cancel());
@@ -363,8 +375,9 @@ class _AssetPageState extends ConsumerState<AssetPage> {
   RegionImage? _regionImage(BaseAsset asset, Size size, {required bool isCurrent, required bool original}) {
     final source = getRegionSource(asset, size: size, original: original);
     if (_region?.source != source) {
-      _region?.dispose();
+      _disposeRegion();
       _region = source == null ? null : (RegionImage(source)..addListener(_onRegionChanged));
+      _regionRemoteId = remoteIdOf(asset);
     }
     final region = _region;
     if (region == null || region.failed) {
@@ -374,9 +387,17 @@ class _AssetPageState extends ConsumerState<AssetPage> {
     return region;
   }
 
-  // shown whole, as before, if it cannot be shown in tiles
+  // shown whole, as before, if it cannot be shown in tiles; an original asked for is being downloaded meanwhile
   void _onRegionChanged() {
-    if (_region?.failed == true && mounted) {
+    final region = _region;
+    if (region == null || !mounted) {
+      return;
+    }
+    final id = _regionRemoteId;
+    if (id != null && region.source.original) {
+      _viewer.setLoadingOriginal(id, region.opening);
+    }
+    if (region.failed) {
       setState(() {});
     }
   }

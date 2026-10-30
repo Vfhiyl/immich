@@ -40,6 +40,15 @@ void main() {
     expect(ref.read(assetViewerProvider).originals, {video.id});
     // asked once: gone
     expect(find.byKey(const Key('view_original')), findsNothing);
+
+    // while its original is downloaded
+    ref.read(assetViewerProvider.notifier).setLoadingOriginal(video.id, true);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Loading original…'), findsOneWidget);
+    ref.read(assetViewerProvider.notifier).setLoadingOriginal(video.id, false);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byKey(const Key('loading_original')), findsNothing);
   });
 
   testWidgets('not when originals are played anyway', (tester) async {

@@ -80,15 +80,22 @@ class RegionSource {
   /// The pixels of the base, which tiles are not needed to show at its scale or smaller
   final double basePixels;
 
-  const RegionSource({this.localAssetId, this.url, required this.basePixels})
+  /// The original of a remote image (else its preview, or a local image)
+  final bool original;
+
+  const RegionSource({this.localAssetId, this.url, required this.basePixels, this.original = false})
     : assert((localAssetId == null) != (url == null));
 
   @override
   bool operator ==(Object other) =>
-      other is RegionSource && other.localAssetId == localAssetId && other.url == url && other.basePixels == basePixels;
+      other is RegionSource &&
+      other.localAssetId == localAssetId &&
+      other.url == url &&
+      other.basePixels == basePixels &&
+      other.original == original;
 
   @override
-  int get hashCode => Object.hash(localAssetId, url, basePixels);
+  int get hashCode => Object.hash(localAssetId, url, basePixels, original);
 }
 
 /// An image shown in tiles. It opens when it is [active] and tiles are needed, and notifies its listeners when tiles
@@ -122,6 +129,9 @@ class RegionImage extends ChangeNotifier {
 
   /// It cannot be shown in tiles (its format, or an error): the viewer decodes it whole, as before
   bool get failed => _state == _State.failed;
+
+  /// Being opened (a remote image: being downloaded); listeners are told when it starts and ends
+  bool get opening => _state == _State.opening;
 
   /// Only the image on the screen opens and decodes; the others keep what they have
   set active(bool value) {
@@ -179,6 +189,10 @@ class RegionImage extends ChangeNotifier {
     }
     if (!_needsTiles(view)) {
       _cancelPending();
+      // an original the user asked for is downloaded at once, not when zoomed in
+      if (source.original && _state == _State.closed) {
+        unawaited(_open());
+      }
       return;
     }
     switch (_state) {
@@ -226,6 +240,12 @@ class RegionImage extends ChangeNotifier {
 
   Future<void> _open() async {
     _state = _State.opening;
+    // (told after the build that asked for it)
+    scheduleMicrotask(() {
+      if (_state != _State.disposed) {
+        notifyListeners();
+      }
+    });
     final requestId = _openRequest = _nextRequestId++;
     try {
       final result = await _api.open(localAssetId: localAssetId, url: url, requestId: requestId);
@@ -233,6 +253,7 @@ class RegionImage extends ChangeNotifier {
       if (result == null) {
         if (_state == _State.opening) {
           _state = _State.closed;
+          notifyListeners();
         }
         return;
       }
@@ -251,6 +272,7 @@ class RegionImage extends ChangeNotifier {
         return;
       }
       _state = _State.open;
+      notifyListeners();
       _update();
     } catch (error, stack) {
       _openRequest = null;

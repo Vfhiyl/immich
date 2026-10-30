@@ -26,6 +26,7 @@ class ViewOriginalButton extends ConsumerWidget {
 
     final id = remoteIdOf(shown);
     final originals = ref.watch(assetViewerProvider.select((s) => s.originals));
+    final loading = id != null && ref.watch(assetViewerProvider.select((s) => s.loadingOriginals.contains(id)));
     final loadOriginalVideo = ref.watch(appConfigProvider.select((c) => c.viewer.loadOriginalVideo));
     final available =
         id != null &&
@@ -39,7 +40,32 @@ class ViewOriginalButton extends ConsumerWidget {
 
     return AnimatedSwitcher(
       duration: Durations.short4,
-      child: !available
+      child: loading
+          ? Padding(
+              key: const Key('loading_original'),
+              padding: const EdgeInsets.only(bottom: 8),
+              child: DecoratedBox(
+                decoration: ShapeDecoration(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  shape: const StadiumBorder(side: BorderSide(color: Colors.white54)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox.square(
+                        dimension: 12,
+                        child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(context.t.loading_original, style: const TextStyle(color: Colors.white, fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          : !available
           ? const SizedBox.shrink()
           : Padding(
               padding: const EdgeInsets.only(bottom: 8),

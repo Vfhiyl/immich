@@ -1518,6 +1518,7 @@
   "live": "Live",
   "load_more": "Load More",
   "loading": "Loading",
+  "loading_original": "Loading original…",
   "loading_search_results_failed": "Loading search results failed",
   "local": "Local",
   "local_asset_cast_failed": "Unable to cast an asset that is not uploaded to the server",

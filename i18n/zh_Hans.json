@@ -1317,6 +1317,7 @@
   "live": "在线",
   "load_more": "加载更多",
   "loading": "加载中",
+  "loading_original": "正在加载原图…",
   "loading_search_results_failed": "加载搜索结果失败",
   "local": "本地",
   "local_asset_cast_failed": "无法处理尚未上传至服务器的照片/视频",
