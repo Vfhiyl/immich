@@ -70,4 +70,33 @@ void main() {
       verify(() => localAssetRepository.deleteAssets(any())).called(3);
     });
   });
+
+  group('CleanupService.getDefaultKeepAlbumIds', () {
+    test('keeps the albums of messaging apps, by the folders they save to on Android', () {
+      final albums = [
+        ('weixin', 'WeiXin'), // Pictures/WeiXin, WeChat
+        ('wechat', 'WeChat'),
+        ('weixin-zh', '微信'),
+        ('qq', 'QQ'), // Pictures/QQ
+        ('whatsapp', 'WhatsApp Images'), // Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images
+        ('telegram', 'Telegram'), // Pictures/Telegram
+        ('signal', 'Signal'), // Pictures/Signal
+        ('viber', 'Viber'), // Pictures/Viber
+        ('camera', 'Camera'),
+        ('screenshots', 'Screenshots'),
+        ('download', 'Download'),
+      ];
+
+      expect(sut.getDefaultKeepAlbumIds(albums), {
+        'weixin',
+        'wechat',
+        'weixin-zh',
+        'qq',
+        'whatsapp',
+        'telegram',
+        'signal',
+        'viber',
+      });
+    });
+  });
 }

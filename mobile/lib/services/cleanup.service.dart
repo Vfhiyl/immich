@@ -56,7 +56,20 @@ class CleanupService {
 
   /// Returns album IDs that should be kept by default (e.g., messaging app albums)
   Set<String> getDefaultKeepAlbumIds(List<(String id, String name)> albums) {
-    const messagingApps = ['whatsapp', 'telegram', 'signal', 'messenger', 'viber', 'wechat', 'line'];
+    // An album of Android is the folder of its files: WeChat saves to Pictures/WeiXin, QQ to Pictures/QQ (WhatsApp
+    // to "WhatsApp Images", Telegram and Signal to Pictures/Telegram and Pictures/Signal)
+    const messagingApps = [
+      'whatsapp',
+      'telegram',
+      'signal',
+      'messenger',
+      'viber',
+      'wechat',
+      'weixin',
+      '微信',
+      'qq',
+      'line',
+    ];
 
     final toKeep = <String>{};
     for (final (id, name) in albums) {
