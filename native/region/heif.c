@@ -139,7 +139,29 @@ static const tile *get_tile(ir_image *image, uint32_t column, uint32_t row)
 
 static const struct heif_reader reader;
 
-/* Opens a context of the file and its primary image */
+/* The image shown: the primary image if it is a top-level one, else the first top-level image (as libvips's heifload,
+ * which makes the server's previews: a file may mark a thumbnail as its primary item) */
+static struct heif_error main_image_handle(struct heif_context *context, struct heif_image_handle **handle)
+{
+	heif_item_id primary = 0;
+	const struct heif_error error = heif_context_get_primary_image_ID(context, &primary);
+	const int count = heif_context_get_number_of_top_level_images(context);
+	if (count > 0) {
+		heif_item_id *ids = malloc(sizeof(heif_item_id) * (size_t) count);
+		if (ids) {
+			heif_context_get_list_of_top_level_image_IDs(context, ids, count);
+			heif_item_id id = ids[0];
+			for (int i = 0; i < count; i++)
+				if (!error.code && ids[i] == primary)
+					id = primary;
+			free(ids);
+			return heif_context_get_image_handle(context, id, handle);
+		}
+	}
+	return heif_context_get_primary_image_handle(context, handle);
+}
+
+/* Opens a context of the file and its main image */
 static int open_context(reader_context *c, int fd, int64_t size)
 {
 	c->file = (file) { fd, 0, size, malloc(READ_BUFFER), 0, 0 };
@@ -147,7 +169,7 @@ static int open_context(reader_context *c, int fd, int64_t size)
 	heif_context_set_security_limits(c->context, heif_get_disabled_security_limits());
 	struct heif_error error = heif_context_read_from_reader(c->context, &reader, &c->file, NULL);
 	if (!error.code)
-		error = heif_context_get_primary_image_handle(c->context, &c->handle);
+		error = main_image_handle(c->context, &c->handle);
 	if (error.code) {
 		heif_context_free(c->context);
 		free(c->file.buffer);
@@ -424,7 +446,7 @@ int ir_open_heif(ir_image *image)
 	heif_context_set_security_limits(h->context, heif_get_disabled_security_limits());
 	struct heif_error error = heif_context_read_from_reader(h->context, &reader, &h->file, NULL);
 	if (!error.code)
-		error = heif_context_get_primary_image_handle(h->context, &h->handle);
+		error = main_image_handle(h->context, &h->handle);
 	if (error.code) {
 		ir_fail(image, "%s", error.message);
 		return -1;

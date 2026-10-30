@@ -36,6 +36,17 @@ assets="$REPO/e2e/test-assets/formats"
 "$out/region-test" --for "$assets/motionphoto/samsung-one-ui-6.heic" 600 600
 "$out/region-test" --for "$assets/heic/IMG_2682.heic" 200 200
 
+# colours and orientations of photos as libvips makes them (the server): the test assets, and samples of cameras and
+# phones in test-image/ when it is there (not in the repository: downloaded, see README.md)
+gcc -std=c11 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -Werror -o "$out/part" "$REGION"/*.c "$REGION/test/part.c" -I"$REGION" \
+  -I"$PREFIX/include" -L"$PREFIX/lib" -lheif -lavcodec -lavutil -ljpeg -llcms2 -lz -lstdc++ -lm -lpthread
+samples=("$assets"/heic/*.heic "$assets"/jpg/*.jpg "$assets"/motionphoto/*.heic "$assets"/motionphoto/*.jpg)
+if [[ -d "$REPO/test-image" ]]; then
+  mapfile -t -O "${#samples[@]}" samples < <(find "$REPO/test-image" -type f \( -iname '*.heic' -o -iname '*.heif' \
+    -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) | sort)
+fi
+node "$REGION/test/compare-libvips.mjs" "$out/part" "${samples[@]}"
+
 # the app's bridge, built as the app builds it (CMakeLists.txt) but for this machine
 java_home="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"
 gcc -std=c11 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -Werror -Wno-unused-parameter -shared -fPIC -fvisibility=hidden \

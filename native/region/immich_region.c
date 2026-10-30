@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -132,15 +133,47 @@ static void set_transform(ir_image *image, cmsHPROFILE profile)
 	cmsCloseProfile(profile);
 }
 
+/* The sRGB curve at `v` (0 to 1) */
+static double srgb_curve(double v)
+{
+	return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4);
+}
+
+/* Whether a profile is sRGB in fact: a matrix and curves profile with the primaries of sRGB (adapted to D50, as ICC
+ * profiles store them) and its curve. Not by its name: "DCI-P3 D65 Gamut with sRGB Transfer" is not sRGB. */
+static int is_srgb(cmsHPROFILE profile)
+{
+	static const cmsTagSignature colorants[3] = { cmsSigRedColorantTag, cmsSigGreenColorantTag,
+		cmsSigBlueColorantTag };
+	static const cmsTagSignature curves[3] = { cmsSigRedTRCTag, cmsSigGreenTRCTag, cmsSigBlueTRCTag };
+	static const double srgb[3][3] = { { 0.4361, 0.2225, 0.0139 }, { 0.3851, 0.7169, 0.0971 },
+		{ 0.1431, 0.0606, 0.7141 } };
+	if (cmsGetColorSpace(profile) != cmsSigRgbData || !cmsIsMatrixShaper(profile))
+		return 0;
+	for (int c = 0; c < 3; c++) {
+		const cmsCIEXYZ *xyz = cmsReadTag(profile, colorants[c]);
+		const cmsToneCurve *curve = cmsReadTag(profile, curves[c]);
+		if (!xyz || !curve)
+			return 0;
+		if (fabs(xyz->X - srgb[c][0]) > 0.002 || fabs(xyz->Y - srgb[c][1]) > 0.002 ||
+			fabs(xyz->Z - srgb[c][2]) > 0.002)
+			return 0;
+		for (int i = 1; i < 16; i++) {
+			const double v = i / 16.0;
+			if (fabs(cmsEvalToneCurveFloat(curve, (cmsFloat32Number) v) - srgb_curve(v)) > 0.002)
+				return 0;
+		}
+	}
+	return 1;
+}
+
 void ir_set_profile(ir_image *image, const void *icc, size_t size)
 {
 	cmsHPROFILE profile = cmsOpenProfileFromMem(icc, (cmsUInt32Number) size);
 	if (!profile)
 		return;
 	/* an sRGB profile changes nothing */
-	char description[64] = "";
-	cmsGetProfileInfoASCII(profile, cmsInfoDescription, "en", "US", description, sizeof(description));
-	if (strstr(description, "sRGB")) {
+	if (is_srgb(profile)) {
 		cmsCloseProfile(profile);
 		return;
 	}
