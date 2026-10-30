@@ -75,6 +75,47 @@ export type ExtractResult = {
   format: RawExtractedFormat;
 };
 
+type Matrix2 = [[number, number], [number, number]];
+
+const multiply = (m: Matrix2, n: Matrix2): Matrix2 => [
+  [m[0][0] * n[0][0] + m[0][1] * n[1][0], m[0][0] * n[0][1] + m[0][1] * n[1][1]],
+  [m[1][0] * n[0][0] + m[1][1] * n[1][0], m[1][0] * n[0][1] + m[1][1] * n[1][1]],
+];
+
+/**
+ * The turn (clockwise) and mirroring (left to right, done first) that make the matrix of edits, as sharp's affine takes
+ * it ([[a, b], [c, d]]: x' = a x + b y, y' = c x + d y). Edits turn by quarters and mirror only
+ */
+const toQuarterTurns = ({ a, b, c, d }: { a: number; b: number; c: number; d: number }) => {
+  const target: Matrix2 = [
+    [Math.round(a), Math.round(b)],
+    [Math.round(c), Math.round(d)],
+  ];
+  // sharp's rotate(90) is the affine [[0, -1], [1, 0]], its flop [[-1, 0], [0, 1]]
+  const quarter: Matrix2 = [
+    [0, -1],
+    [1, 0],
+  ];
+  const mirror: Matrix2 = [
+    [-1, 0],
+    [0, 1],
+  ];
+  let turn: Matrix2 = [
+    [1, 0],
+    [0, 1],
+  ];
+  for (const angle of [0, 90, 180, 270]) {
+    for (const flop of [false, true]) {
+      const matrix = flop ? multiply(turn, mirror) : turn;
+      if (matrix.flat().every((value, index) => value === target.flat()[index])) {
+        return { angle, flop };
+      }
+    }
+    turn = multiply(quarter, turn);
+  }
+  throw new Error(`Not a quarter turn: ${JSON.stringify(target)}`);
+};
+
 @Injectable()
 export class MediaRepository {
   constructor(private logger: LoggingRepository) {
@@ -271,11 +312,16 @@ export class MediaRepository {
 
     const affineEditOperations = edits.filter((edit) => edit.action !== 'crop');
     if (affineEditOperations.length > 0) {
-      const { a, b, c, d } = createAffineMatrix(affineEditOperations);
-      pipeline = pipeline.affine([
-        [a, b],
-        [c, d],
-      ]);
+      // quarter turns and mirroring, as sharp's exact operations: its affine moves the image by a pixel, losing a row
+      // or column of it and leaving a black one at the other edge
+      const { angle, flop } = toQuarterTurns(createAffineMatrix(affineEditOperations));
+      // (sharp mirrors before it turns, whatever the order of the calls)
+      if (flop) {
+        pipeline = pipeline.flop();
+      }
+      if (angle !== 0) {
+        pipeline = pipeline.rotate(angle);
+      }
     }
 
     return pipeline;

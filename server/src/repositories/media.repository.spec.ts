@@ -2,7 +2,7 @@ import { existsSync, mkdtempDisposableSync, readdirSync, statSync } from 'node:f
 import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import sharp from 'sharp';
+import sharp, { OutputInfo } from 'sharp';
 import { AssetEditAction, AssetEditActionItem, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { Colorspace, ImageFormat } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -175,6 +175,72 @@ describe(MediaRepository.name, () => {
   });
 
   describe('edit (multiple sequential edits)', () => {
+    it('should turn and mirror every pixel exactly, in the order of the edits, after the crop', async () => {
+      // 7 x 5 pixels, each of its own value
+      const width = 7;
+      const height = 5;
+      const source = Buffer.alloc(width * height * 3);
+      for (let index = 0; index < width * height; index++) {
+        source.fill(index + 1, index * 3, index * 3 + 3);
+      }
+      const raw = { raw: { width, height, channels: 3 as const } };
+      const crop = { action: AssetEditAction.Crop, parameters: { x: 1, y: 1, width: 5, height: 3 } };
+      // one sharp pipeline for each step: exactly in this order
+      const step = async (image: { data: Buffer; info: OutputInfo }, edit: AssetEditActionItem) => {
+        let pipeline = sharp(image.data, { raw: image.info });
+        switch (edit.action) {
+          case AssetEditAction.Crop: {
+            const { x, y, width, height } = edit.parameters;
+            pipeline = pipeline.extract({ left: x, top: y, width, height });
+            break;
+          }
+          case AssetEditAction.Rotate: {
+            pipeline = pipeline.rotate(edit.parameters.angle);
+            break;
+          }
+          case AssetEditAction.Mirror: {
+            pipeline = edit.parameters.axis === MirrorAxis.Horizontal ? pipeline.flop() : pipeline.flip();
+            break;
+          }
+          // No default
+        }
+        return pipeline.raw().toBuffer({ resolveWithObject: true });
+      };
+      const rotate = (angle: number) => ({ action: AssetEditAction.Rotate, parameters: { angle } });
+      const mirror = (axis: MirrorAxis) => ({ action: AssetEditAction.Mirror, parameters: { axis } });
+
+      for (const edits of [
+        [rotate(90)],
+        [rotate(180)],
+        [rotate(270)],
+        [mirror(MirrorAxis.Horizontal)],
+        [mirror(MirrorAxis.Vertical)],
+        [rotate(90), mirror(MirrorAxis.Horizontal)],
+        [mirror(MirrorAxis.Horizontal), rotate(90)],
+        [mirror(MirrorAxis.Vertical), rotate(270), mirror(MirrorAxis.Horizontal)],
+        [crop, rotate(90), mirror(MirrorAxis.Vertical)],
+        [rotate(270), crop],
+      ] as AssetEditActionItem[][]) {
+        // the crop first, wherever it is (its coordinates are those of the photo)
+        const ordered = [
+          ...edits.filter((edit) => edit.action === AssetEditAction.Crop),
+          ...edits.filter((edit) => edit.action !== AssetEditAction.Crop),
+        ];
+        let expected = { data: source, info: { width, height, channels: 3 } as OutputInfo };
+        for (const edit of ordered) {
+          expected = await step(expected, edit);
+        }
+
+        const actual = await sut['edit'](sharp(source, raw), edits).raw().toBuffer({ resolveWithObject: true });
+
+        expect([actual.info.width, actual.info.height], JSON.stringify(edits)).toEqual([
+          expected.info.width,
+          expected.info.height,
+        ]);
+        expect([...actual.data], JSON.stringify(edits)).toEqual([...expected.data]);
+      }
+    });
+
     it('should apply horizontal mirror then vertical mirror (equivalent to 180° rotation)', async () => {
       const imageBuffer = await buildTestQuadImage();
       const result = sut['edit'](sharp(imageBuffer), [
