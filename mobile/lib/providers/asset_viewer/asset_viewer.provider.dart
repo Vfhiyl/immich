@@ -23,6 +23,9 @@ abstract class AssetViewerState with _$AssetViewerState {
     /// Physical thumbnail size retained while paging through the viewer.
     Size? thumbnailSize,
     @Default(0) int stackIndex,
+
+    /// The remote assets shown from their originals on asking (view original, play original), while the viewer is open
+    @Default(<String>{}) Set<String> originals,
   }) = _AssetViewerState;
 }
 
@@ -111,6 +114,14 @@ class AssetViewerStateNotifier extends Notifier<AssetViewerState> {
 
   void toggleOcr() {
     state = state.copyWith(showingOcr: !state.showingOcr);
+  }
+
+  /// Shows the remote asset [id] from its original (its tiles from it for an image, it played for a video)
+  void showOriginal(String id) {
+    if (state.originals.contains(id)) {
+      return;
+    }
+    state = state.copyWith(originals: {...state.originals, id});
   }
 }
 

@@ -254,7 +254,7 @@ const _regionExtensions = {'.jpg', '.jpeg', '.png', '.heic', '.heif'};
 // the server's previews: 1440 pixels on their short side (its default)
 const _previewShortSide = 1440;
 
-/// What the viewer shows [asset] from in tiles, on a screen of [size] logical pixels, or null where it is
+/// What the viewer shows [asset] from in tiles (from its original if [original]: the user asked to view it), on a screen of [size] logical pixels, or null where it is
 /// decoded whole as before: on iOS (for now), for animated images and videos, formats the app's decoders do not read,
 /// and images no larger than the base (tiles would show nothing more). It is the original of a local asset; of a
 /// remote one, the preview (long images, whose previews are large), or the original if the settings load originals.
@@ -262,6 +262,7 @@ RegionSource? getRegionSource(
   BaseAsset asset, {
   required Size size,
   bool edited = true,
+  bool original = false,
   @visibleForTesting bool? android,
 }) {
   final (width, height) = (asset.width, asset.height);
@@ -287,7 +288,7 @@ RegionSource? getRegionSource(
   }
   final previewScale = math.min(1.0, _previewShortSide / math.min(width, height));
   final previewPixels = pixels * previewScale * previewScale;
-  if (SettingsRepository.instance.appConfig.image.loadOriginal) {
+  if (original || SettingsRepository.instance.appConfig.image.loadOriginal) {
     // the base is the preview, which may be smaller
     return readable && pixels > basePixels
         ? RegionSource(
@@ -304,6 +305,32 @@ RegionSource? getRegionSource(
         )
       : null;
 }
+
+/// Whether the viewer can show the original of [asset] on asking (view original): a remote image, not loaded as
+/// originals already, larger than its preview, in a format the app's decoders read in parts (others are not decoded
+/// whole on asking: their originals may take hundreds of MB).
+bool canViewOriginal(BaseAsset asset, {@visibleForTesting bool? android}) {
+  final (width, height) = (asset.width, asset.height);
+  if (!(android ?? Platform.isAndroid) || !asset.isImage || asset.isAnimatedImage || width == null || height == null) {
+    return false;
+  }
+  if (width <= 0 || height <= 0 || _shouldUseLocalAsset(asset) || remoteIdOf(asset) == null) {
+    return false;
+  }
+  if (SettingsRepository.instance.appConfig.image.loadOriginal) {
+    return false;
+  }
+  final previewScale = math.min(1.0, _previewShortSide / math.min(width, height));
+  return previewScale < 1 && _regionExtensions.contains(p.extension(asset.name).toLowerCase());
+}
+
+/// Whether the viewer can play the original of [asset] on asking (play original): a remote video, played from the
+/// server (not from the phone), transcoded (not played as original already)
+bool canPlayOriginal(BaseAsset asset, {required bool loadOriginalVideo}) =>
+    asset.isVideo && !asset.hasLocal && remoteIdOf(asset) != null && !loadOriginalVideo;
+
+/// The id of [asset] on the server, if it is there
+String? remoteIdOf(BaseAsset asset) => asset is RemoteAsset ? asset.id : (asset as LocalAsset).remoteId;
 
 bool _shouldUseLocalAsset(BaseAsset asset) =>
     asset.hasLocal &&

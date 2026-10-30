@@ -360,8 +360,8 @@ class _AssetPageState extends ConsumerState<AssetPage> {
     _listenForScaleBoundaries(controller);
   }
 
-  RegionImage? _regionImage(BaseAsset asset, Size size, {required bool isCurrent}) {
-    final source = getRegionSource(asset, size: size);
+  RegionImage? _regionImage(BaseAsset asset, Size size, {required bool isCurrent, required bool original}) {
+    final source = getRegionSource(asset, size: size, original: original);
     if (_region?.source != source) {
       _region?.dispose();
       _region = source == null ? null : (RegionImage(source)..addListener(_onRegionChanged));
@@ -400,10 +400,11 @@ class _AssetPageState extends ConsumerState<AssetPage> {
     required bool isCurrent,
     required bool isPlayingMotionVideo,
     required String? localFilePath,
+    required bool original,
     required Size? remoteThumbnailSize,
   }) {
     final size = context.sizeData;
-    final region = localFilePath == null ? _regionImage(asset, size, isCurrent: isCurrent) : null;
+    final region = localFilePath == null ? _regionImage(asset, size, isCurrent: isCurrent, original: original) : null;
     final imageProvider = getFullImageProvider(
       asset,
       size: size,
@@ -474,7 +475,9 @@ class _AssetPageState extends ConsumerState<AssetPage> {
       onPageBuild: _onPageBuild,
       enablePanAlways: true,
       child: NativeVideoViewer(
-        key: _NativeVideoViewerKey(asset.heroTag),
+        // (played again, from its original, when the user asks)
+        key: _NativeVideoViewerKey(original ? '${asset.heroTag}_original' : asset.heroTag),
+        original: original,
         asset: asset,
         localFilePath: localFilePath,
         isCurrent: isCurrent,
@@ -489,6 +492,7 @@ class _AssetPageState extends ConsumerState<AssetPage> {
       assetViewerProvider.select((s) => (s.currentAsset, s.thumbnailSize)),
     );
     _showingDetails = ref.watch(assetViewerProvider.select((s) => s.showingDetails));
+    final originals = ref.watch(assetViewerProvider.select((s) => s.originals));
     final stackIndex = ref.watch(assetViewerProvider.select((s) => s.stackIndex));
     final liveMotionPlaying = ref.watch(isPlayingMotionVideoProvider);
     // Preserve the playback status while dismissing to prevent switching views mid-animation.
@@ -549,6 +553,7 @@ class _AssetPageState extends ConsumerState<AssetPage> {
                     isPlayingMotionVideo: isPlayingMotionVideo,
                     localFilePath: viewIntentFilePath,
                     remoteThumbnailSize: thumbnailSize,
+                    original: originals.contains(remoteIdOf(displayAsset)),
                   ),
                 ),
                 if (showingOcr && displayAsset.width != null && displayAsset.height != null)

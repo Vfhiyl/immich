@@ -158,6 +158,36 @@ void main() {
       expect(region.url, contains('/assets/remote/thumbnail?size=preview'));
     });
 
+    test('shows a remote photo from its original when the user asks to view it', () {
+      final region = getRegionSource(remote('photo.jpg', 4032, 3024), size: screen, android: true, original: true)!;
+      expect(region.url, contains('/assets/remote/original'));
+    });
+
+    test('offers to view the original of remote photos larger than their previews, in formats read in parts', () {
+      expect(canViewOriginal(remote('photo.heic', 4032, 3024), android: true), isTrue);
+      // as large as its preview, a format decoded whole, a local photo (its original is shown), iOS (for now)
+      expect(canViewOriginal(remote('small.jpg', 1440, 1080), android: true), isFalse);
+      expect(canViewOriginal(remote('raw.dng', 6000, 4000), android: true), isFalse);
+      expect(canViewOriginal(local('photo.jpg', 4032, 3024), android: true), isFalse);
+      expect(canViewOriginal(remote('photo.heic', 4032, 3024), android: false), isFalse);
+    });
+
+    test('offers to play the original of remote videos played transcoded', () {
+      final video = RemoteAsset(
+        id: 'video',
+        name: 'clip.mov',
+        ownerId: 'owner',
+        checksum: 'checksum',
+        type: AssetType.video,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        isEdited: false,
+      );
+      expect(canPlayOriginal(video, loadOriginalVideo: false), isTrue);
+      expect(canPlayOriginal(video, loadOriginalVideo: true), isFalse);
+      expect(canPlayOriginal(video.copyWith(localId: 'on the phone'), loadOriginalVideo: false), isFalse);
+    });
+
     test('leaves a remote photo to its preview, which the base shows whole', () {
       expect(getRegionSource(remote('photo.jpg', 4032, 3024), size: screen, android: true), isNull);
     });

@@ -27,6 +27,9 @@ class NativeVideoViewer extends ConsumerStatefulWidget {
   /// Overrides the user's configured loop video setting
   final bool? loopOverride;
 
+  /// Plays the original of a remote video, whatever the settings (the user asked)
+  final bool original;
+
   const NativeVideoViewer({
     super.key,
     required this.asset,
@@ -34,6 +37,7 @@ class NativeVideoViewer extends ConsumerStatefulWidget {
     required this.image,
     this.isCurrent = false,
     this.loopOverride,
+    this.original = false,
   });
 
   @override
@@ -161,7 +165,7 @@ class NativeVideoViewerState extends ConsumerState<NativeVideoViewer> with Widge
         return null;
       }
 
-      final isOriginalVideo = ref.read(appConfigProvider).viewer.loadOriginalVideo;
+      final isOriginalVideo = widget.original || ref.read(appConfigProvider).viewer.loadOriginalVideo;
       final String postfixUrl = isOriginalVideo ? 'original' : 'video/playback';
       final String assetId = remoteAsset.livePhotoVideoId ?? remoteAsset.id;
       final String videoUrl = '$serverEndpoint/assets/$assetId/$postfixUrl';
