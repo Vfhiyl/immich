@@ -25,6 +25,7 @@ Every change to a library is a patch in `patches/<library>/`, applied in order, 
 | `libvips/0002` | The manual pages, translations, tests and fuzzers are not built. |
 | `libvips/0003` | **HEIF images made of tiles (the photos of phones) are decoded a row of tiles at a time**, instead of whole: a 48 MP photo takes the memory of one row of tiles (12 MB), not of all its pixels (150 MB). |
 | `libvips/0004` | **HEIF and AVIF are decoded with one thread of the codec**: libde265 (the HEVC decoder then) and dav1d took a thread per processor, each with frames of its own (a 20 MP AVIF took 540 MB on 32 processors, 380 MB now). |
+| `libvips/0005` | **Camera RAW files can be loaded at half their size** (`half_size`, LibRaw's: each 2x2 block of the sensor a pixel, without demosaicing). immich-thumbnail uses it when the image it makes is at most half as large: a preview of a 24 MP RAW in 130 MB and 0.5 s instead of 380 MB and 3 s (a Fujifilm X-Trans one in 1.9 s instead of 22). |
 | `heif/0001` | libheif gave the wrong position for the tiles of a rotated photo (the part of the last tile inside the image instead of the part beyond it); not fixed upstream. `libvips/0003` places the tiles by it. |
 | `heif/0002` | libheif's pkg-config file named no libraries of FFmpeg when its decoder is built in (it checked a variable nothing sets): the static link of libvips missed them. Not fixed upstream. |
 | `jpegli/0001`, `0002` | From Immich's base image: an empty DHT marker is written correctly; a broken ICC profile is a warning, not an error. |

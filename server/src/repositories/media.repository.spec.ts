@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import sharp, { OutputInfo } from 'sharp';
 import { AssetEditAction, AssetEditActionItem, MirrorAxis } from 'src/dtos/editing.dto.js';
-import { Colorspace, ImageFormat } from 'src/enum.js';
+import { Colorspace, ExifOrientation, ImageFormat } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { Bitmap } from 'src/types.js';
@@ -456,6 +456,28 @@ describe(MediaRepository.name, () => {
         await sut.releaseImage(smaller);
       });
     }
+
+    it('should make a camera RAW file smaller from half its size, as sharp makes it from all of it', async () => {
+      // 5472 x 3648: its preview is less than half of it
+      const path = join(testAssets, 'raw/Canon/EOS_70D.CR2');
+      const options = { colorspace: Colorspace.P3, processInvalidImages: false, size: 1440 };
+
+      const smaller = await sut.decodeImage(path, options);
+      // (sharp, from the file: LibRaw reads more of a file than of a buffer, the crop of the sensor too)
+      const expected = await sut.decodeImage(path, { ...options, orientation: ExifOrientation.Horizontal });
+
+      expect(smaller.info).toEqual({ width: 2156, height: 1440, channels: 3 });
+      expect(expected.info).toMatchObject({ width: 2156, height: 1440 });
+      // (each 2x2 block of the sensor a pixel, rather than demosaiced: the same picture, its fine detail sampled a
+      // little elsewhere, within 2 levels on average)
+      const data = await pixels(smaller);
+      let total = 0;
+      for (let index = 0; index < data.length; index++) {
+        total += Math.abs(data[index] - expected.data[index]);
+      }
+      expect(total / data.length).toBeLessThan(2);
+      await sut.releaseImage(smaller);
+    });
 
     it('should read a photo that must be rotated whole as sharp does, through a file removed when released', async () => {
       const dir = mkdtempDisposableSync(join(tmpdir(), 'media-repository-'));

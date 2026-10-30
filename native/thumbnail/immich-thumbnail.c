@@ -85,6 +85,17 @@ derived_scale(int width, int height, int size)
 		VIPS_MIN(16383.0 / long_side, VIPS_MAX(by_pixels, 4096.0 / long_side)));
 }
 
+/* The scale of the result for SIZE (see the usage) */
+static double
+target_scale(int width, int height, int size, gboolean short_side)
+{
+	if (size == 0)
+		return 1.0;
+	if (short_side)
+		return VIPS_MIN(1.0, (double) size / VIPS_MIN(width, height));
+	return derived_scale(width, height, size);
+}
+
 /* Whether the operation @nickname (a loader) takes the argument @name */
 static gboolean
 has_argument(const char *nickname, const char *name)
@@ -192,6 +203,18 @@ main(int argc, char **argv)
 			NULL);
 	if (!in)
 		return fail("cannot open the photo: ");
+	/* a camera RAW file made at most half as large: loaded at half its size (patches/libvips/0005), a quarter of
+	 * the memory and time of demosaicing all of it */
+	if (has_argument(loader, "half_size") && size > 0 &&
+		target_scale(in->Xsize, in->Ysize, size, short_side) <= 0.5) {
+		g_object_unref(in);
+		if (!(in = vips_image_new_from_file(input,
+			"access", VIPS_ACCESS_SEQUENTIAL,
+			"fail_on", process_invalid ? VIPS_FAIL_ON_NONE : VIPS_FAIL_ON_ERROR,
+			"half_size", TRUE,
+			NULL)))
+			return fail("cannot open the photo: ");
+	}
 	x = in;
 
 	/* the colours of COLORSPACE, in 16 bits, from the embedded profile; an image without a profile is taken to be in
@@ -230,12 +253,7 @@ main(int argc, char **argv)
 		x = t[2];
 	}
 
-	if (size == 0)
-		scale = 1.0;
-	else if (short_side)
-		scale = VIPS_MIN(1.0, (double) size / VIPS_MIN(x->Xsize, x->Ysize));
-	else
-		scale = derived_scale(x->Xsize, x->Ysize, size);
+	scale = target_scale(x->Xsize, x->Ysize, size, short_side);
 	if (scale < 1.0) {
 		if (vips_resize(x, &t[3], scale, "kernel", VIPS_KERNEL_LANCZOS3, NULL))
 			return fail("cannot resize: ");

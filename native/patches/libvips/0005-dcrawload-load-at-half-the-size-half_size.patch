@@ -1,0 +1,77 @@
+From 8769ebff6d5b1c4aa7c0870d4d1aefaa8e8d2f5d Mon Sep 17 00:00:00 2001
+From: Vfhiyl <VfhiyL@proton.me>
+Date: Fri, 30 Oct 2026 23:15:35 +0800
+Subject: [PATCH] dcrawload: load at half the size (half_size)
+
+A camera RAW file is demosaiced at its full size, in LibRaw's buffers of 8 bytes a pixel, then copied twice: a 24 MP photo takes about 390 MB, 61 MP about 1 GB, however small the image made of it. LibRaw makes each 2x2 block of the sensor a pixel instead, without demosaicing, with half_size (params.half_size, documented: "Outputs the image in 50% size"); libheif's and libjpeg's loaders have such an option too (shrink).
+
+immich-thumbnail loads RAW files with it when the image it makes is at most half their size (the previews, thumbnails and faces of photos): a quarter of the memory and time.
+---
+ libvips/foreign/dcrawload.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/libvips/foreign/dcrawload.c b/libvips/foreign/dcrawload.c
+index 6b2894f..fde3f62 100644
+--- a/libvips/foreign/dcrawload.c
++++ b/libvips/foreign/dcrawload.c
+@@ -67,6 +67,11 @@ typedef struct _VipsForeignLoadDcRaw {
+ 
+ 	int bitdepth;
+ 
++	/* Half the size: each 2x2 block of the sensor becomes a pixel, without
++	 * demosaicing (LibRaw's half_size). A quarter of the memory and time.
++	 */
++	gboolean half_size;
++
+ 	/* LibRaw processor.
+ 	 */
+ 	libraw_data_t *raw_processor;
+@@ -141,6 +146,7 @@ vips_foreign_load_dcraw_open(VipsForeignLoadDcRaw *raw)
+ 		return -1;
+ 	}
+ 	raw->raw_processor->params.output_bps = raw->bitdepth;
++	raw->raw_processor->params.half_size = raw->half_size;
+ 
+ 	/* Apply camera white balance.
+ 	 */
+@@ -478,6 +484,13 @@ vips_foreign_load_dcraw_class_init(VipsForeignLoadDcRawClass *class)
+ 		G_STRUCT_OFFSET(VipsForeignLoadDcRaw, bitdepth),
+ 		8, 16, 8);
+ 
++	VIPS_ARG_BOOL(class, "half_size", 13,
++		_("Half size"),
++		_("Load at half the size, without demosaicing"),
++		VIPS_ARGUMENT_OPTIONAL_INPUT,
++		G_STRUCT_OFFSET(VipsForeignLoadDcRaw, half_size),
++		FALSE);
++
+ }
+ 
+ static void
+@@ -704,6 +717,7 @@ vips_foreign_load_dcraw_buffer_init(VipsForeignLoadDcRawBuffer *buffer)
+  *
+  * ::: tip "Optional arguments"
+  *     * @bitdepth: `gint`, load as 8 or 16 bit data
++ *     * @half_size: `gboolean`, load at half the size, without demosaicing
+  *
+  * Returns: 0 on success, -1 on error.
+  */
+@@ -730,6 +744,7 @@ vips_dcrawload(const char *filename, VipsImage **out, ...)
+  *
+  * ::: tip "Optional arguments"
+  *     * @bitdepth: `gint`, load as 8 or 16 bit data
++ *     * @half_size: `gboolean`, load at half the size, without demosaicing
+  *
+  * ::: seealso
+  *     [ctor@Image.dcrawload].
+@@ -760,6 +775,7 @@ vips_dcrawload_source(VipsSource *source, VipsImage **out, ...)
+  *
+  * ::: tip "Optional arguments"
+  *     * @bitdepth: `gint`, load as 8 or 16 bit data
++ *     * @half_size: `gboolean`, load at half the size, without demosaicing
+  *
+  * ::: seealso
+  *     [ctor@Image.dcrawload].
+-- 
+2.43.0
+
