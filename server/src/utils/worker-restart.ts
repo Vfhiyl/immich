@@ -28,3 +28,20 @@ export const preferAsOomVictim = () => {
     return false;
   }
 };
+
+/**
+ * Ends this worker when the supervisor that forked it is gone (its IPC channel closed, the `'disconnect'` event of
+ * process): killed or crashed, it can no longer stop or restart the worker, which would otherwise go on alone, holding
+ * its port or taking jobs beside the workers of the next start. Not forked (no channel): nothing to watch
+ */
+export const exitWithSupervisor = (
+  current: { channel?: unknown; once(event: 'disconnect', listener: () => void): unknown } = process,
+  // eslint-disable-next-line unicorn/no-process-exit
+  exit: () => void = () => process.exit(1),
+) => {
+  if (!current.channel) {
+    return false;
+  }
+  current.once('disconnect', exit);
+  return true;
+};

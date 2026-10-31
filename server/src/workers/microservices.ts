@@ -7,11 +7,12 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { bootstrapTelemetry } from 'src/repositories/telemetry.repository.js';
 import { isStartUpError } from 'src/utils/misc.js';
-import { preferAsOomVictim } from 'src/utils/worker-restart.js';
+import { exitWithSupervisor, preferAsOomVictim } from 'src/utils/worker-restart.js';
 
 async function bootstrap() {
   process.title = 'immich-microservices';
   preferAsOomVictim();
+  exitWithSupervisor();
 
   const { telemetry } = new ConfigRepository().getEnv();
   if (telemetry.metrics.size > 0) {

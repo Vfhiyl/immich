@@ -1,5 +1,11 @@
+import { EventEmitter } from 'node:events';
 import { writeFileSync } from 'node:fs';
-import { BACKGROUND_OOM_SCORE_ADJ, getWorkerRestartDelay, preferAsOomVictim } from 'src/utils/worker-restart.js';
+import {
+  BACKGROUND_OOM_SCORE_ADJ,
+  exitWithSupervisor,
+  getWorkerRestartDelay,
+  preferAsOomVictim,
+} from 'src/utils/worker-restart.js';
 
 vi.mock('node:fs', () => ({ writeFileSync: vi.fn() }));
 
@@ -21,5 +27,24 @@ describe('restarting a background worker', () => {
       throw new Error('EACCES');
     });
     expect(preferAsOomVictim()).toBe(false);
+  });
+
+  it('should end a forked worker when its supervisor is gone', () => {
+    const forked = Object.assign(new EventEmitter(), { channel: {} });
+    const exit = vi.fn();
+
+    expect(exitWithSupervisor(forked, exit)).toBe(true);
+    expect(exit).not.toHaveBeenCalled();
+    forked.emit('disconnect');
+    expect(exit).toHaveBeenCalledOnce();
+  });
+
+  it('should watch nothing in a process that was not forked', () => {
+    const alone = Object.assign(new EventEmitter(), { channel: undefined });
+    const exit = vi.fn();
+
+    expect(exitWithSupervisor(alone, exit)).toBe(false);
+    alone.emit('disconnect');
+    expect(exit).not.toHaveBeenCalled();
   });
 });

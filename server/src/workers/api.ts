@@ -5,9 +5,11 @@ import { ApiModule } from 'src/app.module.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ApiService } from 'src/services/api.service.js';
 import { isStartUpError } from 'src/utils/misc.js';
+import { exitWithSupervisor } from 'src/utils/worker-restart.js';
 
 async function bootstrap() {
   process.title = 'immich-api';
+  exitWithSupervisor();
 
   configureTelemetry();
 
