@@ -11,6 +11,14 @@ The `immich-server` container contains multiple workers:
 
 Each worker runs in a process of its own. When the `microservices` worker crashes, for example because the server ran out of memory, the `api` worker goes on serving the web and mobile app, and the `microservices` worker starts again after a second, waiting twice as long after each crash in a row, up to a minute. On Linux the `microservices` worker raises its [OOM score](https://man7.org/linux/man-pages/man5/proc_pid_oom_score_adj.5.html) (`oom_score_adj` 500), which the programs it runs (ffmpeg, exiftool) inherit, so that when memory runs out the kernel stops background work rather than the `api` worker.
 
+When the supervisor process is gone (killed, or crashed), the `api` and `microservices` workers end too, rather than going on alone.
+
+### Memory of heavy work
+
+Each queue has its own concurrency, but the heavy work of all of them (decoding a photo to make its preview, thumbnail and full-size image, and running ffmpeg for videos) starts only when the memory it is estimated to take is available beside what already runs. The estimates are by format and size, measured for this version: a 48 MP photo of a phone takes some 70 MB, a 20 MP AVIF of 10 bits some 360 MB, a camera RAW file decoded at full size some 13 bytes a pixel, and a 4K video some 120 to 250 MB for each ffmpeg with one thread. When there is not enough memory the work waits, a thumbnail of a person (someone is looking at it) and the files of a new upload before the rest. Work too large for the memory there is runs when nothing else does. So several large files at once no longer run the server out of memory, whatever the concurrency set, and a larger machine runs more at once.
+
+With the _threads_ of video transcoding set to 0 (automatic), ffmpeg uses as many threads as there are cores and as fit in the memory there is, each of them taking some memory for the frames it works on. ffmpeg decodes with as many threads as it encodes with (before, it decoded with one thread for each core, whatever the setting: a 4K video took 930 MB on 32 cores with 1 thread set).
+
 ## Split workers
 
 If you prefer to throttle or distribute the workers, you can do this using the [environment variables](/install/environment-variables) to specify which container should pick up which tasks.

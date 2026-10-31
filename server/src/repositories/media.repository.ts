@@ -22,6 +22,7 @@ import type {
   TransformOptions,
   VideoInfo,
   VideoPacketInfo,
+  VideoStreamInfo,
 } from 'src/types.js';
 import { ORIENTATION_TO_SHARP_ROTATION } from 'src/constants.js';
 import { Exif } from 'src/database.js';
@@ -42,8 +43,16 @@ import {
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { getDerivedScale } from 'src/utils/derived-size.js';
+import { AdmissionPriority, MemoryAdmission } from 'src/utils/memory-admission.js';
+import {
+  estimateImageDecode,
+  estimateVideoPreview,
+  estimateVideoTranscode,
+  fitThreads,
+} from 'src/utils/memory-estimate.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 import { OutputTail } from 'src/utils/output-tail.js';
+import { readCpuLimit } from 'src/utils/server-resources.js';
 import { createAffineMatrix, getOutputDimensions } from 'src/utils/transform.js';
 
 const probe = (input: string, options: string[]): Promise<FfprobeData> =>
@@ -116,8 +125,18 @@ const toQuarterTurns = ({ a, b, c, d }: { a: number; b: number; c: number; d: nu
   throw new Error(`Not a quarter turn: ${JSON.stringify(target)}`);
 };
 
+/** The size of the frames of a video, in bits of a sample (10 for yuv420p10le) */
+const videoSize = ({ width, height, pixelFormat }: VideoStreamInfo) => ({
+  width,
+  height,
+  bitDepth: /(9|1\d)(le|be)$/.test(pixelFormat) ? 16 : 8,
+});
+
 @Injectable()
 export class MediaRepository {
+  /** The heavy operations of this process: decoding images, running ffmpeg (see admitImage) */
+  private admission = new MemoryAdmission();
+
   constructor(private logger: LoggingRepository) {
     this.logger.setContext(MediaRepository.name);
     // eslint-disable-next-line import-x/no-named-as-default-member
@@ -266,6 +285,53 @@ export class MediaRepository {
       await fs.rm(directory, { recursive: true, force: true });
       throw error;
     }
+  }
+
+  /**
+   * Waits until there is the memory of making the files of the photo `input` (decoding it, and encoding its files),
+   * estimated by its format and size (a header read only), beside the other heavy operations of this process; the
+   * memory is given back when the result is disposed. `wholeSize`: decoded as large as it is (a full-size image)
+   */
+  async admitImage(
+    input: string | Buffer,
+    { wholeSize = false, priority }: { wholeSize?: boolean; priority: AdmissionPriority },
+  ): Promise<AsyncDisposable> {
+    const metadata = await sharp(input, { limitInputPixels: false, unlimited: true })
+      .metadata()
+      .catch(() => null);
+    const bytes = estimateImageDecode({
+      format: metadata?.format,
+      compression: metadata?.compression,
+      width: metadata?.width,
+      height: metadata?.height,
+      bitsPerSample: metadata?.depth === 'uchar' || metadata?.depth === 'char' ? 8 : 16,
+      wholeSize,
+    });
+    return this.admit(bytes, priority);
+  }
+
+  /**
+   * Waits until there is the memory of ffmpeg decoding and encoding `video` with `threads` threads (see admitImage).
+   * With `threads` 0 (as many as there are cores), `fitThreads` first
+   */
+  admitVideo(video: VideoStreamInfo, threads: number, priority: AdmissionPriority): Promise<AsyncDisposable> {
+    return this.admit(estimateVideoTranscode({ ...videoSize(video), threads }), priority);
+  }
+
+  /** Waits until there is the memory of ffmpeg picking the frame of `video` its preview is made from (see admitImage) */
+  admitVideoPreview(video: VideoStreamInfo, priority: AdmissionPriority): Promise<AsyncDisposable> {
+    return this.admit(estimateVideoPreview(videoSize(video)), priority);
+  }
+
+  /** The threads ffmpeg may use for `video` within the memory there is now (its threads setting 0: automatic) */
+  async fitThreads(video: VideoStreamInfo): Promise<number> {
+    const [{ cores }, bytes] = await Promise.all([readCpuLimit(), this.admission.capacity()]);
+    return fitThreads(videoSize(video), Math.floor(cores), bytes);
+  }
+
+  private async admit(bytes: number, priority: AdmissionPriority): Promise<AsyncDisposable> {
+    const release = await this.admission.acquire(bytes, priority);
+    return { [Symbol.asyncDispose]: () => Promise.resolve(release()) };
   }
 
   /** Frees what an image decoded by decodeImage holds beyond its memory: the file of its pixels */

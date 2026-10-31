@@ -51,6 +51,7 @@ import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
 import { DERIVED_MAX_RATIO, DERIVED_SIZE_RULE_VERSION } from 'src/utils/derived-size.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { BaseConfig, ThumbnailConfig } from 'src/utils/media.js';
+import { AdmissionPriority } from 'src/utils/memory-admission.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
@@ -204,7 +205,7 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
-    const generated = await this.generateEditedThumbnails(asset, config);
+    const generated = await this.generateEditedThumbnails(asset, config, AdmissionPriority.Interactive);
     await this.syncFiles(
       asset.files.filter((file) => file.isEdited),
       generated?.files ?? [],
@@ -212,8 +213,9 @@ export class MediaService extends BaseService {
 
     let thumbhash: Buffer | undefined = generated?.thumbhash;
     if (!thumbhash) {
-      const extractedImage = await this.extractOriginalImage(asset, config.image);
+      const extractedImage = await this.extractOriginalImage(asset, config.image, AdmissionPriority.Interactive);
       const { info, data, file, colorspace } = extractedImage;
+      await using _admitted = extractedImage.admitted;
 
       try {
         thumbhash = await this.mediaRepository.generateThumbhash(
@@ -236,7 +238,7 @@ export class MediaService extends BaseService {
   }
 
   @OnJob({ name: JobName.AssetGenerateThumbnails, queue: QueueName.ThumbnailGeneration })
-  async handleGenerateThumbnails({ id }: JobOf<JobName.AssetGenerateThumbnails>): Promise<JobStatus> {
+  async handleGenerateThumbnails({ id, source }: JobOf<JobName.AssetGenerateThumbnails>): Promise<JobStatus> {
     const asset = await this.assetJobRepository.getForGenerateThumbnailJob(id);
     const config = await this.getConfig({ withCache: true });
 
@@ -257,7 +259,9 @@ export class MediaService extends BaseService {
     }
 
     try {
-      return await this.generateThumbnails(asset, isVideo, config);
+      // a new upload before the rest (thumbnails made again, missing ones)
+      const priority = source === 'upload' ? AdmissionPriority.Upload : AdmissionPriority.Background;
+      return await this.generateThumbnails(asset, isVideo, config, priority);
     } finally {
       // the last step that reads the original of an image; videos are transcoded next
       if (asset.type !== AssetType.Video) {
@@ -266,7 +270,12 @@ export class MediaService extends BaseService {
     }
   }
 
-  private async generateThumbnails(asset: ThumbnailAsset, isVideo: boolean, config: SystemConfig): Promise<JobStatus> {
+  private async generateThumbnails(
+    asset: ThumbnailAsset,
+    isVideo: boolean,
+    config: SystemConfig,
+    priority: AdmissionPriority,
+  ): Promise<JobStatus> {
     // read the original once from a local file, wherever it is stored
     await using original = await this.storageBackendRepository.lease(
       toRecordedFile(asset.originalPath, asset.originalFile),
@@ -276,13 +285,13 @@ export class MediaService extends BaseService {
     let generated: Awaited<ReturnType<MediaService['generateImageThumbnails']>>;
     if (isVideo) {
       this.logger.verbose(`Thumbnail generation for video ${asset.id} ${asset.originalPath}`);
-      generated = await this.generateVideoThumbnails(source, config);
+      generated = await this.generateVideoThumbnails(source, config, priority);
     } else {
       this.logger.verbose(`Thumbnail generation for image ${asset.id} ${asset.originalPath}`);
-      generated = await this.generateImageThumbnails(source, config);
+      generated = await this.generateImageThumbnails(source, config, priority);
     }
 
-    const editedGenerated = await this.generateEditedThumbnails(source, config);
+    const editedGenerated = await this.generateEditedThumbnails(source, config, priority);
     if (editedGenerated) {
       generated.files.push(...editedGenerated.files);
     }
@@ -320,7 +329,12 @@ export class MediaService extends BaseService {
     return { info, data, file, colorspace };
   }
 
-  private async extractOriginalImage(asset: ThumbnailAsset, image: SystemConfig['image'], useEdits = false) {
+  private async extractOriginalImage(
+    asset: ThumbnailAsset,
+    image: SystemConfig['image'],
+    priority: AdmissionPriority,
+    useEdits = false,
+  ) {
     const isExtractEmbedded = image.extractEmbedded && mimeTypes.isRaw(asset.originalFileName);
     const extracted = isExtractEmbedded ? await this.extractImage(asset.originalPath, image.preview.size) : null;
     const isGenerateFullsize =
@@ -331,13 +345,22 @@ export class MediaService extends BaseService {
       isGenerateFullsize && (!extracted || !mimeTypes.isWebSupportedImage(` .${extracted.format}`));
 
     const thumbSource = extracted ? extracted.buffer : asset.originalPath;
-    const { data, info, file, colorspace } = await this.decodeImage(
-      thumbSource,
-      // only specify orientation to extracted images which don't have EXIF orientation data
-      // or it can double rotate the image
-      extracted ? asset.exifInfo : { ...asset.exifInfo, orientation: null },
-      isConvertFullsize ? undefined : image.preview.size,
-    );
+    // only when the memory of decoding it and encoding its files is there, beside the other heavy operations
+    const admitted = await this.mediaRepository.admitImage(thumbSource, { wholeSize: isConvertFullsize, priority });
+    let decoded;
+    try {
+      decoded = await this.decodeImage(
+        thumbSource,
+        // only specify orientation to extracted images which don't have EXIF orientation data
+        // or it can double rotate the image
+        extracted ? asset.exifInfo : { ...asset.exifInfo, orientation: null },
+        isConvertFullsize ? undefined : image.preview.size,
+      );
+    } catch (error) {
+      await admitted[Symbol.asyncDispose]();
+      throw error;
+    }
+    const { data, info, file, colorspace } = decoded;
 
     let isTransparent = false;
     if (!extracted && mimeTypes.canBeTransparent(asset.originalPath)) {
@@ -345,6 +368,8 @@ export class MediaService extends BaseService {
     }
 
     return {
+      /** The memory admitted for the image and its files: dispose of it once they are made */
+      admitted,
       extracted,
       data,
       info,
@@ -356,11 +381,17 @@ export class MediaService extends BaseService {
     };
   }
 
-  private async generateImageThumbnails(asset: ThumbnailAsset, { image }: SystemConfig, useEdits: boolean = false) {
+  private async generateImageThumbnails(
+    asset: ThumbnailAsset,
+    { image }: SystemConfig,
+    priority: AdmissionPriority,
+    useEdits: boolean = false,
+  ) {
     // Handle embedded preview extraction for RAW files
-    const extractedImage = await this.extractOriginalImage(asset, image, useEdits);
+    const extractedImage = await this.extractOriginalImage(asset, image, priority, useEdits);
     const { info, data, file, colorspace, generateFullsize, convertFullsize, extracted, isTransparent } =
       extractedImage;
+    await using _admitted = extractedImage.admitted;
     await using _decodedFile = { [Symbol.asyncDispose]: () => this.mediaRepository.releaseImage({ data, info, file }) };
 
     const previewFormat = image.preview.format;
@@ -515,6 +546,10 @@ export class MediaService extends BaseService {
       inputImage = source.path;
     }
 
+    // a person waits for it
+    await using _admitted = await this.mediaRepository.admitImage(inputImage, {
+      priority: AdmissionPriority.Interactive,
+    });
     const decoded = await this.mediaRepository.decodeImage(inputImage, {
       colorspace: image.colorspace,
       processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
@@ -613,7 +648,11 @@ export class MediaService extends BaseService {
     };
   }
 
-  private async generateVideoThumbnails(asset: ThumbnailAsset, { ffmpeg, image }: SystemConfig) {
+  private async generateVideoThumbnails(
+    asset: ThumbnailAsset,
+    { ffmpeg, image }: SystemConfig,
+    priority: AdmissionPriority,
+  ) {
     const previewFile = this.getImageFile(asset, {
       fileType: AssetFileType.Preview,
       format: image.preview.format,
@@ -642,6 +681,7 @@ export class MediaService extends BaseService {
 
     await using previewOutput = await this.createDerivedOutput(previewFile.path);
     await using thumbnailOutput = await this.createDerivedOutput(thumbnailFile.path);
+    await using _admitted = await this.mediaRepository.admitVideoPreview(videoStream, priority);
     await this.mediaRepository.transcode(asset.originalPath, previewOutput.path, previewOptions);
     await this.mediaRepository.transcode(asset.originalPath, thumbnailOutput.path, thumbnailOptions);
 
@@ -731,6 +771,16 @@ export class MediaService extends BaseService {
     const input = original.path;
     // read in ranges while it is played, and too large for the cache
     await using encoded = await this.createDerivedOutput(output, { cache: false });
+
+    // threads set to 0 (automatic): as many as there are cores, and as fit in the memory there is (each takes some)
+    if (ffmpeg.threads <= 0 && ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
+      ffmpeg = { ...ffmpeg, threads: await this.mediaRepository.fitThreads(videoStream) };
+    }
+    await using _admitted = await this.mediaRepository.admitVideo(
+      videoStream,
+      Math.max(ffmpeg.threads, 1),
+      AdmissionPriority.Background,
+    );
 
     const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
     if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
@@ -984,12 +1034,13 @@ export class MediaService extends BaseService {
     return this.storageBackendRepository.createOutput(StorageBackendRole.Derived, path, { cache });
   }
 
-  private async generateEditedThumbnails(asset: ThumbnailAsset, config: SystemConfig) {
+  private async generateEditedThumbnails(asset: ThumbnailAsset, config: SystemConfig, priority: AdmissionPriority) {
     if (asset.type !== AssetType.Image || (asset.files.length === 0 && asset.edits.length === 0)) {
       return;
     }
 
-    const generated = asset.edits.length > 0 ? await this.generateImageThumbnails(asset, config, true) : undefined;
+    const generated =
+      asset.edits.length > 0 ? await this.generateImageThumbnails(asset, config, priority, true) : undefined;
 
     const crop = asset.edits.find((e) => e.action === AssetEditAction.Crop);
     const cropBox = crop

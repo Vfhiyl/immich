@@ -308,8 +308,15 @@ export class BaseConfig implements VideoCodecSWConfig {
     return [`-${this.useCQP() ? 'q:v' : 'crf'}`, String(this.config.crf)];
   }
 
+  /**
+   * The decoder's threads, as many as the encoder's: else it takes as many as there are cores, each with frames of its
+   * own (a 4K HEVC video of 10 bits took 931 MB on 32 cores with one thread to encode, 247 MB with one to decode)
+   */
   getInputThreadOptions(): Array<string> {
-    return [];
+    if (this.config.threads <= 0) {
+      return [];
+    }
+    return ['-threads', String(this.config.threads)];
   }
 
   getOutputThreadOptions(): Array<string> {
@@ -494,6 +501,8 @@ export class ThumbnailConfig extends BaseConfig {
       format?.formatName === 'mpegts'
         ? ['-sws_flags', 'accurate_rnd+full_chroma_int']
         : ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int'];
+    // decoded with one thread, as fast for the few frames looked at (a 4K HEVC video of 10 bits: 256 MB, not 326)
+    options.push('-threads', '1');
 
     const metadataOverrides = [];
     if (videoStream.colorPrimaries === ColorPrimaries.Reserved) {

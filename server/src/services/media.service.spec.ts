@@ -30,6 +30,7 @@ import {
   VideoCodec,
 } from 'src/enum.js';
 import { MediaService } from 'src/services/media.service.js';
+import { AdmissionPriority } from 'src/utils/memory-admission.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
@@ -712,6 +713,47 @@ describe(MediaService.name, () => {
       expect(mocks.storageBackend.lease).not.toHaveBeenCalled();
     });
 
+    it('should make the files of a photo only once their memory is admitted, and give it back after', async () => {
+      const asset = AssetFactory.from().exif().files([AssetFileType.Preview, AssetFileType.Thumbnail]).build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      const events: string[] = [];
+      mocks.media.admitImage.mockImplementation(() => {
+        events.push('admitted');
+        return Promise.resolve({ [Symbol.asyncDispose]: () => Promise.resolve(void events.push('given back')) });
+      });
+      mocks.media.decodeImage.mockImplementation(() => {
+        events.push('decoded');
+        return Promise.resolve({ data: Buffer.alloc(0), info: rawInfo as OutputInfo });
+      });
+      mocks.media.generateThumbnail.mockImplementation(() => Promise.resolve(void events.push('encoded')));
+
+      await sut.handleGenerateThumbnails({ id: asset.id, source: 'upload' });
+
+      expect(mocks.media.admitImage).toHaveBeenCalledWith(asset.originalPath, {
+        wholeSize: false,
+        priority: AdmissionPriority.Upload,
+      });
+      expect(events).toEqual(['admitted', 'decoded', 'encoded', 'encoded', 'given back']);
+
+      // made again (not a new upload): after the others
+      await sut.handleGenerateThumbnails({ id: asset.id });
+      expect(mocks.media.admitImage).toHaveBeenLastCalledWith(asset.originalPath, {
+        wholeSize: false,
+        priority: AdmissionPriority.Background,
+      });
+    });
+
+    it('should give the memory back when decoding fails', async () => {
+      const asset = AssetFactory.from().exif().files([AssetFileType.Preview, AssetFileType.Thumbnail]).build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      const dispose = vi.fn().mockResolvedValue(undefined);
+      mocks.media.admitImage.mockResolvedValue({ [Symbol.asyncDispose]: dispose });
+      mocks.media.decodeImage.mockRejectedValue(new Error('corrupt image'));
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('corrupt image');
+      expect(dispose).toHaveBeenCalledOnce();
+    });
+
     it('should release the file of the decoded image, also when making a file fails', async () => {
       const asset = AssetFactory.from().exif().files([AssetFileType.Preview, AssetFileType.Thumbnail]).build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
@@ -817,6 +859,22 @@ describe(MediaService.name, () => {
       expect(mocks.asset.update).toHaveBeenCalledWith({ id: asset.id, thumbhash: thumbhashBuffer });
     });
 
+    it('should pick the frame of a video once the memory of it is admitted', async () => {
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        ...probeStub.videoStream2160p,
+      });
+
+      await sut.handleGenerateThumbnails({ id: asset.id, source: 'upload' });
+
+      expect(mocks.media.admitVideoPreview).toHaveBeenCalledWith(
+        expect.objectContaining({ width: 3840, height: 2160 }),
+        AdmissionPriority.Upload,
+      );
+      expect(mocks.media.transcode).toHaveBeenCalled();
+    });
+
     it('should release the decoded preview of a video once its thumbhash is made', async () => {
       const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
@@ -849,7 +907,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          inputOptions: ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int'],
+          inputOptions: ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int', '-threads', '1'],
           outputOptions: expect.arrayContaining([
             '-fps_mode',
             'vfr',
@@ -908,7 +966,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          inputOptions: ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int'],
+          inputOptions: ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int', '-threads', '1'],
           outputOptions: expect.arrayContaining([
             '-fps_mode',
             'vfr',
@@ -969,7 +1027,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          inputOptions: ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int'],
+          inputOptions: ['-skip_frame', 'nointra', '-sws_flags', 'accurate_rnd+full_chroma_int', '-threads', '1'],
           outputOptions: expect.arrayContaining([
             '-fps_mode',
             'vfr',
@@ -999,7 +1057,7 @@ describe(MediaService.name, () => {
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          inputOptions: ['-sws_flags', 'accurate_rnd+full_chroma_int'],
+          inputOptions: ['-sws_flags', 'accurate_rnd+full_chroma_int', '-threads', '1'],
           outputOptions: expect.any(Array),
           progress: expect.any(Object),
           twoPass: false,
@@ -1982,6 +2040,21 @@ describe(MediaService.name, () => {
           checksum: null,
           encryption: null,
         },
+      });
+    });
+
+    it('should make a thumbnail of a person before the other heavy work, as a person waits for it', async () => {
+      const person = PersonFactory.create();
+      mocks.person.getDataForThumbnailGenerationJob.mockResolvedValue(personThumbnailStub.newThumbnailMiddle);
+      mocks.media.decodeImage.mockResolvedValue({
+        data: Buffer.from(''),
+        info: { width: 917, height: 1146 } as OutputInfo,
+      });
+
+      await sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId });
+
+      expect(mocks.media.admitImage).toHaveBeenCalledWith(personThumbnailStub.newThumbnailMiddle.originalPath, {
+        priority: AdmissionPriority.Interactive,
       });
     });
 
@@ -3325,19 +3398,34 @@ describe(MediaService.name, () => {
       );
     });
 
-    it('should omit thread flags for h264 if thread limit is at or below 0', async () => {
+    it('should decode and encode h264 with as many threads as fit in memory if the thread limit is 0', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.matroskaContainer });
       mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { threads: 0 } });
+      mocks.media.fitThreads.mockResolvedValue(6);
       await sut.handleVideoConversion({ id: 'video-id' });
       expect(mocks.media.transcode).toHaveBeenCalledWith(
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          inputOptions: expect.any(Array),
-          outputOptions: expect.not.arrayContaining([expect.stringContaining('-threads')]),
+          inputOptions: ['-threads', '6'],
+          outputOptions: expect.arrayContaining(['-threads', '6']),
           twoPass: false,
         }),
       );
+      expect(mocks.media.admitVideo).toHaveBeenCalledWith(expect.any(Object), 6, AdmissionPriority.Background);
+    });
+
+    it('should decode with the threads it encodes with', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.matroskaContainer });
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { threads: 2 } });
+      await sut.handleVideoConversion({ id: 'video-id' });
+      expect(mocks.media.fitThreads).not.toHaveBeenCalled();
+      expect(mocks.media.transcode).toHaveBeenCalledWith(
+        '/original/path.ext',
+        expect.any(String),
+        expect.objectContaining({ inputOptions: ['-threads', '2'] }),
+      );
+      expect(mocks.media.admitVideo).toHaveBeenCalledWith(expect.any(Object), 2, AdmissionPriority.Background);
     });
 
     it('should disable thread pooling for hevc if thread limit is 1', async () => {
@@ -3362,16 +3450,17 @@ describe(MediaService.name, () => {
       );
     });
 
-    it('should omit thread flags for hevc if thread limit is at or below 0', async () => {
+    it('should encode hevc with as many threads as fit in memory if the thread limit is 0', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.videoStreamVp9 });
       mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { threads: 0, targetVideoCodec: VideoCodec.Hevc } });
+      mocks.media.fitThreads.mockResolvedValue(4);
       await sut.handleVideoConversion({ id: 'video-id' });
       expect(mocks.media.transcode).toHaveBeenCalledWith(
         '/original/path.ext',
         expect.any(String),
         expect.objectContaining({
-          inputOptions: expect.any(Array),
-          outputOptions: expect.not.arrayContaining([expect.stringContaining('-threads')]),
+          inputOptions: ['-threads', '4'],
+          outputOptions: expect.arrayContaining(['-c:v', 'hevc', '-threads', '4']),
           twoPass: false,
         }),
       );
@@ -3435,7 +3524,8 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-svtav1-params', 'mbr=2M']),
+          // (threads 0: as many as fit in memory, one here)
+          outputOptions: expect.arrayContaining(['-svtav1-params', 'lp=1:mbr=2M']),
           twoPass: false,
         }),
       );
