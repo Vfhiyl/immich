@@ -1,0 +1,32 @@
+From baadd8dd97575c9281c4661b0a21cbd9b0c77e49 Mon Sep 17 00:00:00 2001
+From: Vfhiyl <VfhiyL@proton.me>
+Date: Sat, 31 Oct 2026 09:45:31 +0800
+Subject: [PATCH] dcrawload: free LibRaw's buffers before copying the image out
+
+LibRaw keeps the sensor data and the demosaiced image (about 10 bytes a pixel) until it is closed or recycled, which dcrawload did only when the loader was disposed: while the processed image (3 bytes a pixel) was copied into the loader's output, all of them were in memory, about 16 bytes a pixel (a 24 MP RAW file 390 MB, 61 MP 1 GB). It recycles the processor (libraw_recycle(), documented: "frees the allocated data") once the metadata are read, before the copy: the peak is that of making the processed image, about 13 bytes a pixel.
+
+immich-thumbnail loads RAW files whole for their full-size images.
+---
+ libvips/foreign/dcrawload.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/libvips/foreign/dcrawload.c b/libvips/foreign/dcrawload.c
+index fde3f62..97231b2 100644
+--- a/libvips/foreign/dcrawload.c
++++ b/libvips/foreign/dcrawload.c
+@@ -433,6 +433,12 @@ vips_foreign_load_dcraw_load(VipsForeignLoad *load)
+ 		return -1;
+ 	}
+ 
++	/* LibRaw's buffers (the sensor data and the demosaiced image, 10 bytes
++	 * a pixel) are not needed any more: freed before the image is copied
++	 * out, rather than when the loader is disposed.
++	 */
++	libraw_recycle(raw->raw_processor);
++
+ 	/* We must only free the memory when this image closes.
+ 	 */
+ 	g_signal_connect(image, "close",
+-- 
+2.43.0
+
