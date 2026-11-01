@@ -2,6 +2,7 @@
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { ResourceCheckLevel, type ResourceCheckResponseDto } from '@immich/sdk';
   import { Stack, Text } from '@immich/ui';
+  import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -39,6 +40,27 @@
       size(requirements.memoryRecommended),
     )}
   </Text>
+  <Text size="small" color={colors[check.swap.level]} data-testid="resource-swap">
+    {$t('admin.resource_check_swap', { values: { size: size(check.swap.bytes) } })}{#if check.swap.neededForMinimum > 0}
+      ({$t('admin.resource_check_swap_add', {
+        values: { size: size(check.swap.neededForMinimum), total: size(requirements.memoryMinimum) },
+      })}){:else if check.swap.neededForRecommended > 0 && check.memory.level !== ResourceCheckLevel.Ok}
+      ({$t('admin.resource_check_swap_add', {
+        values: { size: size(check.swap.neededForRecommended), total: size(requirements.memoryRecommended) },
+      })}){/if}
+  </Text>
+  {#if check.memoryKills.lastWeek > 0}
+    <Text size="small" color="danger" data-testid="resource-memory-kills">
+      {$t('admin.resource_check_memory_kills', {
+        values: {
+          count: check.memoryKills.lastWeek,
+          date: check.memoryKills.lastAt
+            ? DateTime.fromISO(check.memoryKills.lastAt).toLocaleString(DateTime.DATETIME_MED)
+            : '',
+        },
+      })}
+    </Text>
+  {/if}
   <Text size="small" color={colors[check.cpus.level]} data-testid="resource-cpus">
     {$t('admin.resource_check_cpus', { values: { count: check.cpus.cores } })}{below(
       check.cpus.level,

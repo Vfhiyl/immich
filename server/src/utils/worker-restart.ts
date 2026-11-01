@@ -45,3 +45,6 @@ export const exitWithSupervisor = (
   current.once('disconnect', exit);
   return true;
 };
+
+/** Set by the supervisor for the background worker it starts again: what ended the one before (SIGKILL, or a code) */
+export const WORKER_LAST_EXIT_ENV = 'IMMICH_WORKER_LAST_EXIT';

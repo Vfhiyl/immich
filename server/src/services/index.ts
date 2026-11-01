@@ -21,6 +21,7 @@ import { LibraryService } from 'src/services/library.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { MapService } from 'src/services/map.service.js';
 import { MediaService } from 'src/services/media.service.js';
+import { MemoryKillService } from 'src/services/memory-kill.service.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { MetadataService } from 'src/services/metadata.service.js';
 import { MachineLearningBackoffService } from 'src/services/ml-backoff.service.js';
@@ -112,6 +113,7 @@ export const services = [
   MachineLearningModelService,
   JobFailureService,
   MachineLearningBackoffService,
+  MemoryKillService,
   ResourceCheckService,
   StorageTemplateService,
   SyncService,

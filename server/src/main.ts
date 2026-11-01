@@ -9,7 +9,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { type DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
-import { WORKER_HEALTHY_AFTER_MS, getWorkerRestartDelay } from 'src/utils/worker-restart.js';
+import { WORKER_HEALTHY_AFTER_MS, WORKER_LAST_EXIT_ENV, getWorkerRestartDelay } from 'src/utils/worker-restart.js';
 
 /**
  * Manages worker lifecycle
@@ -29,6 +29,8 @@ class Workers {
    * Crashes in a row of the background worker, and when it last started
    */
   private crashes = 0;
+  /** What ended the background worker last (see WORKER_LAST_EXIT_ENV) */
+  private lastExit?: string;
   private startedAt = 0;
   private restartTimer?: NodeJS.Timeout;
 
@@ -118,6 +120,11 @@ class Workers {
       const port = name === ImmichWorker.Api ? 9231 : 9232;
       const worker = fork(workerFile, [], {
         execArgv: process.execArgv.map((arg) => (arg.startsWith('--inspect') ? `--inspect=0.0.0.0:${port}` : arg)),
+        // a background worker started again is told what ended the one before (see MemoryKillService)
+        env: {
+          ...process.env,
+          [WORKER_LAST_EXIT_ENV]: name === ImmichWorker.Microservices ? this.lastExit : undefined,
+        },
       });
 
       kill = (signal) => void worker.kill(signal);
@@ -131,7 +138,9 @@ class Workers {
     }
 
     anyWorker.on('error', (error) => this.onError(name, error));
-    anyWorker.on('exit', (exitCode) => this.onExit(name, exitCode));
+    anyWorker.on('exit', (exitCode: number | null, signal?: NodeJS.Signals | null) =>
+      this.onExit(name, exitCode, signal),
+    );
 
     this.workers[name] = { kill };
     if (name === ImmichWorker.Microservices) {
@@ -143,7 +152,7 @@ class Workers {
     console.error(`${name} worker error: ${error}, stack: ${error.stack}`);
   }
 
-  onExit(name: ImmichWorker, exitCode: number | null) {
+  onExit(name: ImmichWorker, exitCode: number | null, signal?: NodeJS.Signals | null) {
     // restart immich server
     if (exitCode === ExitCode.AppRestart || this.restarting) {
       this.restarting = true;
@@ -167,7 +176,10 @@ class Workers {
     if (exitCode !== 0 && name === ImmichWorker.Microservices && Object.hasOwn(this.workers, ImmichWorker.Api)) {
       this.crashes = Date.now() - this.startedAt >= WORKER_HEALTHY_AFTER_MS ? 1 : this.crashes + 1;
       const delay = getWorkerRestartDelay(this.crashes);
-      console.error(`${name} worker exited with code ${exitCode}, starting it again in ${delay / 1000}s`);
+      this.lastExit = signal ?? String(exitCode);
+      console.error(
+        `${name} worker exited with ${signal ?? `code ${exitCode}`}, starting it again in ${delay / 1000}s`,
+      );
       this.restartTimer = setTimeout(() => this.startWorker(name), delay);
       return;
     }

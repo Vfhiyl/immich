@@ -1,5 +1,6 @@
 import { ShallowDehydrateObject } from 'kysely';
 import { Mocked } from 'vitest';
+import type { MemoryKillState } from 'src/utils/memory-kills.js';
 import type { BackoffLevel, ResourceSample } from 'src/utils/ml-backoff.js';
 import type { MachineLearningModelsState } from 'src/utils/ml-models.js';
 import type { SyncDeleteRetentionState } from 'src/utils/sync-retention.js';
@@ -635,6 +636,7 @@ export interface StorageExportState {
 }
 
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
+  [SystemMetadataKey.MemoryKills]: MemoryKillState;
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
   [SystemMetadataKey.License]: { licenseKey: string; activationKey: string; activatedAt: Date };

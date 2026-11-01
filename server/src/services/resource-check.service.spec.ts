@@ -5,6 +5,7 @@ import { ServiceMocks, newTestService } from 'test/utils.js';
 vitest.mock('src/utils/server-resources.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/server-resources.js')>()),
   readMemoryLimit: () => Promise.resolve({ bytes: 4 * 1024 ** 3, source: 'cgroup' }),
+  readSwap: () => Promise.resolve({ bytes: 1024 ** 3, source: 'machine' }),
   readCpuLimit: () => Promise.resolve({ cores: 2, source: 'machine' }),
   readDisk: (path: string) => Promise.resolve({ path, free: 500 * 1024 ** 3, total: 1000 * 1024 ** 3 }),
 }));
@@ -42,6 +43,34 @@ describe(ResourceCheckService.name, () => {
       },
       requirements: { memoryMinimum: 6 * 1024 ** 3, cpusRecommended: 4 },
     });
+  });
+
+  it('should tell how much swap to add for memory and swap to reach what is needed', async () => {
+    const check = await sut.getResourceCheck();
+
+    // 4 GiB of memory and 1 GiB of swap: 1 GiB short of the minimum of 6, 3 of the recommended 8
+    expect(check.swap).toEqual({
+      bytes: 1024 ** 3,
+      source: 'machine',
+      level: ResourceCheckLevel.BelowMinimum,
+      neededForMinimum: 1024 ** 3,
+      neededForRecommended: 3 * 1024 ** 3,
+    });
+  });
+
+  it('should tell the times the background work ran out of memory in the last week', async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const at = (daysAgo: number) => new Date(now - daysAgo * day).toISOString();
+    mocks.systemMetadata.get.mockResolvedValue({
+      kills: [
+        { at: at(10), what: ['the background worker'], count: 1 },
+        { at: at(2), what: ['a process'], count: 2 },
+        { at: at(1), what: ['a program of AssetGenerateThumbnails'], count: 1 },
+      ],
+    });
+
+    await expect(sut.getResourceCheck()).resolves.toMatchObject({ memoryKills: { lastWeek: 2, lastAt: at(1) } });
   });
 
   it('should tell a machine learning service that does not answer', async () => {

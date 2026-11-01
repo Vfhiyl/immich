@@ -48,6 +48,17 @@ describe('a crash of the background work', () => {
     }
     expect(restarted).toBeDefined();
     expect(await server.workerPid('api')).toBe(apiPid);
-    expect(server.logs).toContain('microservices worker exited with code null, starting it again in 1s');
+    expect(server.logs).toContain('microservices worker exited with SIGKILL, starting it again in 1s');
+
+    // killed as the kernel kills it when memory runs out: the admin is told on the jobs page, and notified
+    let kills = 0;
+    for (let attempt = 0; attempt < 100 && kills === 0; attempt++) {
+      await sleep(200);
+      const { body } = await api.json<{ memoryKills: { lastWeek: number } }>('/admin/resources');
+      kills = body.memoryKills.lastWeek;
+    }
+    expect(kills).toBe(1);
+    const { body: notifications } = await api.json<Array<{ title: string }>>('/notifications');
+    expect(notifications.map(({ title }) => title)).toContain('The server ran out of memory');
   });
 });

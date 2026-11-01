@@ -764,12 +764,31 @@ export type ResourceCheckResponseDto = {
         /** cgroup when the container of the server has a limit below the machine, else machine */
         source: string;
     };
+    /** The background work killed as memory ran out (see the server log) */
+    memoryKills: {
+        /** When it last did */
+        lastAt: string | null;
+        /** The times the background work ran out of memory in the last 7 days */
+        lastWeek: number;
+    };
     requirements: {
         cpusMinimum: number;
         cpusRecommended: number;
         diskMinimum: number;
         memoryMinimum: number;
         memoryRecommended: number;
+    };
+    /** A machine of little memory runs with swap: the background work goes on, more slowly */
+    swap: {
+        bytes: number;
+        /** Of memory and swap together, against what upstream documents as memory needed */
+        level: ResourceCheckLevel;
+        /** The swap to add for memory and swap to reach the minimum (0: none) */
+        neededForMinimum: number;
+        /** The swap to add for memory and swap to reach the recommendation */
+        neededForRecommended: number;
+        /** cgroup when the container of the server has a swap limit below the machine */
+        source: string;
     };
 };
 export type StorageConfigurationResponseDto = {

@@ -411,6 +411,7 @@ export enum SystemMetadataKey {
   MachineLearningModels = 'machine-learning-models',
   MachineLearningBackoff = 'machine-learning-backoff',
   DerivedSizeRule = 'derived-size-rule',
+  MemoryKills = 'memory-kills',
 }
 
 export enum UserMetadataKey {

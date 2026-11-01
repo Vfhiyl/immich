@@ -8,6 +8,8 @@ import {
   readCpuLimit,
   readDisk,
   readMemoryLimit,
+  readOomKills,
+  readSwap,
 } from 'src/utils/server-resources.js';
 
 describe('resources of the server', () => {
@@ -61,5 +63,23 @@ describe('resources of the server', () => {
     expect(checkLevel(6 * 1024 ** 3, memory)).toBe(ResourceCheckLevel.BelowRecommended);
     expect(checkLevel(16 * 1024 ** 3, memory)).toBe(ResourceCheckLevel.Ok);
     expect(checkLevel(100 * 1024 ** 3, disk)).toBe(ResourceCheckLevel.Ok);
+  });
+
+  it('should read the swap of the machine, or the swap limit of the container below it', async () => {
+    await expect(readSwap(root)).resolves.toEqual({ bytes: 0, source: 'machine' });
+    await write({ 'proc/meminfo': 'MemTotal:  1000000 kB\nSwapTotal:  4194304 kB\nSwapFree:  4194304 kB\n' });
+    await expect(readSwap(root)).resolves.toEqual({ bytes: 4 * 1024 ** 3, source: 'machine' });
+    await write({ 'sys/fs/cgroup/memory.swap.max': 'max\n' });
+    await expect(readSwap(root)).resolves.toEqual({ bytes: 4 * 1024 ** 3, source: 'machine' });
+    await write({ 'sys/fs/cgroup/memory.swap.max': '0\n' });
+    await expect(readSwap(root)).resolves.toEqual({ bytes: 0, source: 'cgroup' });
+  });
+
+  it("should read the kernel's count of processes killed for memory, of the container, else of the machine", async () => {
+    await expect(readOomKills(root)).resolves.toBeNull();
+    await write({ 'proc/vmstat': 'nr_free_pages 1\noom_kill 7\n' });
+    await expect(readOomKills(root)).resolves.toBe(7);
+    await write({ 'sys/fs/cgroup/memory.events': 'low 0\nhigh 0\nmax 3\noom 2\noom_kill 2\noom_group_kill 0\n' });
+    await expect(readOomKills(root)).resolves.toBe(2);
   });
 });

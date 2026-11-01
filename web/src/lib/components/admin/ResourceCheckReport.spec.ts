@@ -9,6 +9,8 @@ import ResourceCheckReport from './ResourceCheckReport.svelte';
 const GiB = 1024 ** 3;
 const check = (overrides: Partial<ResourceCheckResponseDto> = {}): ResourceCheckResponseDto => ({
   memory: { bytes: 16 * GiB, source: 'machine', level: ResourceCheckLevel.Ok },
+  swap: { bytes: 0, source: 'machine', level: ResourceCheckLevel.Ok, neededForMinimum: 0, neededForRecommended: 0 },
+  memoryKills: { lastWeek: 0, lastAt: null },
   cpus: { cores: 8, source: 'machine', level: ResourceCheckLevel.Ok },
   disk: { path: '/data', free: 500 * GiB, total: 1000 * GiB, level: ResourceCheckLevel.Ok },
   machineLearning: { enabled: true, services: [] },
@@ -49,6 +51,40 @@ describe('ResourceCheckReport component', () => {
 
     expect(screen.getByText(/admin.resource_check_memory.*admin.resource_check_below_minimum/)).toBeInTheDocument();
     expect(screen.getByText(/admin.resource_check_cpus.*admin.resource_check_below_recommended/)).toBeInTheDocument();
+  });
+
+  test('tells how much swap to add on a machine of little memory', () => {
+    render(ResourceCheckReport, {
+      check: check({
+        memory: { bytes: GiB, source: 'machine', level: ResourceCheckLevel.BelowMinimum },
+        swap: {
+          bytes: 2 * GiB,
+          source: 'machine',
+          level: ResourceCheckLevel.BelowMinimum,
+          neededForMinimum: 3 * GiB,
+          neededForRecommended: 5 * GiB,
+        },
+      }),
+    });
+
+    expect(screen.getByTestId('resource-swap')).toHaveTextContent(
+      /admin.resource_check_swap.*admin.resource_check_swap_add/,
+    );
+    expect(screen.queryByTestId('resource-memory-kills')).not.toBeInTheDocument();
+  });
+
+  test('tells no swap to add with enough memory', () => {
+    render(ResourceCheckReport, { check: check() });
+
+    expect(screen.getByTestId('resource-swap')).not.toHaveTextContent(/swap_add/);
+  });
+
+  test('tells when the background work ran out of memory', () => {
+    render(ResourceCheckReport, {
+      check: check({ memoryKills: { lastWeek: 3, lastAt: '2026-11-01T10:00:00.000Z' } }),
+    });
+
+    expect(screen.getByTestId('resource-memory-kills')).toHaveTextContent('admin.resource_check_memory_kills');
   });
 
   test('tells whether machine learning answers', () => {

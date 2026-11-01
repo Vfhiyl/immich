@@ -29865,6 +29865,25 @@
             ],
             "type": "object"
           },
+          "memoryKills": {
+            "description": "The background work killed as memory ran out (see the server log)",
+            "properties": {
+              "lastAt": {
+                "description": "When it last did",
+                "nullable": true,
+                "type": "string"
+              },
+              "lastWeek": {
+                "description": "The times the background work ran out of memory in the last 7 days",
+                "type": "number"
+              }
+            },
+            "required": [
+              "lastWeek",
+              "lastAt"
+            ],
+            "type": "object"
+          },
           "requirements": {
             "properties": {
               "cpusMinimum": {
@@ -29891,6 +29910,38 @@
               "diskMinimum"
             ],
             "type": "object"
+          },
+          "swap": {
+            "description": "A machine of little memory runs with swap: the background work goes on, more slowly",
+            "properties": {
+              "bytes": {
+                "type": "number"
+              },
+              "level": {
+                "$ref": "#/components/schemas/ResourceCheckLevel",
+                "description": "Of memory and swap together, against what upstream documents as memory needed"
+              },
+              "neededForMinimum": {
+                "description": "The swap to add for memory and swap to reach the minimum (0: none)",
+                "type": "number"
+              },
+              "neededForRecommended": {
+                "description": "The swap to add for memory and swap to reach the recommendation",
+                "type": "number"
+              },
+              "source": {
+                "description": "cgroup when the container of the server has a swap limit below the machine",
+                "type": "string"
+              }
+            },
+            "required": [
+              "bytes",
+              "source",
+              "level",
+              "neededForMinimum",
+              "neededForRecommended"
+            ],
+            "type": "object"
           }
         },
         "required": [
@@ -29898,7 +29949,9 @@
           "disk",
           "machineLearning",
           "memory",
-          "requirements"
+          "memoryKills",
+          "requirements",
+          "swap"
         ],
         "type": "object"
       },
