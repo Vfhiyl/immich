@@ -43,7 +43,8 @@ import {
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { getDerivedScale } from 'src/utils/derived-size.js';
-import { AdmissionPriority, MemoryAdmission } from 'src/utils/memory-admission.js';
+import { JobRetryLater, getJobRetryData } from 'src/utils/job-retry.js';
+import { AdmissionPriority, AdmissionTimeout, MemoryAdmission } from 'src/utils/memory-admission.js';
 import {
   estimateImageDecode,
   estimateVideoPreview,
@@ -52,6 +53,7 @@ import {
 } from 'src/utils/memory-estimate.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 import { OutputTail } from 'src/utils/output-tail.js';
+import { STALL_MS, watchProgress } from 'src/utils/progress-watchdog.js';
 import { readCpuLimit } from 'src/utils/server-resources.js';
 import { createAffineMatrix, getOutputDimensions } from 'src/utils/transform.js';
 
@@ -124,6 +126,11 @@ const toQuarterTurns = ({ a, b, c, d }: { a: number; b: number; c: number; d: nu
   }
   throw new Error(`Not a quarter turn: ${JSON.stringify(target)}`);
 };
+
+/** How long a job waits for the memory of its heavy work before it lets the next job of its queue run (see admit) */
+const ADMISSION_WAIT_MS = 30 * 1000;
+/** When a job put back for memory is taken again */
+const ADMISSION_RETRY_DELAY_MS = 60 * 1000;
 
 /** The size of the frames of a video, in bits of a sample (10 for yuv420p10le) */
 const videoSize = ({ width, height, pixelFormat }: VideoStreamInfo) => ({
@@ -259,10 +266,25 @@ export class MediaRepository {
         const child = spawn(THUMBNAIL_PROGRAM, args, { stdio: ['ignore', 'pipe', 'pipe'] });
         const stdout: Buffer[] = [];
         const stderr = new OutputTail();
+        // stopped when it makes no progress for a while (see watchProgress)
+        let stalled = false;
+        const watch = watchProgress(child.pid, () => {
+          stalled = true;
+          child.kill('SIGKILL');
+        });
         child.stdout.on('data', (chunk: Buffer) => void stdout.push(chunk));
         child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
-        child.on('error', reject);
+        child.on('error', (error) => {
+          watch.stop();
+          reject(error);
+        });
         child.on('close', (code, signal) => {
+          watch.stop();
+          if (stalled) {
+            return reject(
+              new Error(`immich-thumbnail made no progress for ${STALL_MS / 60_000} minutes and was stopped`),
+            );
+          }
           if (code !== 0) {
             return reject(new Error(`immich-thumbnail exited with ${code ?? signal}: ${stderr.toString().trim()}`));
           }
@@ -329,8 +351,23 @@ export class MediaRepository {
     return fitThreads(videoSize(video), Math.floor(cores), bytes);
   }
 
+  /**
+   * In a job, waits for the memory up to ADMISSION_WAIT_MS, then puts the job back in its queue (JobRetryLater), so
+   * that the next job of its queue runs meanwhile; it keeps when it began to wait, and once it waited long enough, the
+   * memory is kept for it (see MemoryAdmission). Outside of a job (the api) it waits until admitted
+   */
   private async admit(bytes: number, priority: AdmissionPriority): Promise<AsyncDisposable> {
-    const release = await this.admission.acquire(bytes, priority);
+    const job = getJobRetryData();
+    const since = job?.admissionWaitingSince ?? Date.now();
+    let release: () => void;
+    try {
+      release = await this.admission.acquire(bytes, priority, job ? { since, waitLimitMs: ADMISSION_WAIT_MS } : {});
+    } catch (error) {
+      if (error instanceof AdmissionTimeout) {
+        throw new JobRetryLater('Waiting for memory', ADMISSION_RETRY_DELAY_MS, { admissionWaitingSince: since });
+      }
+      throw error;
+    }
     return { [Symbol.asyncDispose]: () => Promise.resolve(release()) };
   }
 
@@ -678,6 +715,23 @@ export class MediaRepository {
       .output(output)
       .on('start', (command: string) => this.logger.debug(command))
       .on('error', (error, _, stderr) => this.logger.error(stderr || error));
+
+    // stopped when it makes no progress (reads, writes, reports) for a while, however long it takes (see watchProgress)
+    let watch: ReturnType<typeof watchProgress> | undefined;
+    ffmpegCall
+      .on('start', () => {
+        const { pid } = (ffmpegCall as unknown as { ffmpegProc?: { pid?: number } }).ffmpegProc ?? {};
+        watch = watchProgress(pid, () => {
+          ffmpegCall.emit(
+            'error',
+            new Error(`ffmpeg made no progress for ${STALL_MS / 60_000} minutes and was stopped`),
+          );
+          ffmpegCall.kill('SIGKILL');
+        });
+      })
+      .on('progress', () => watch?.beat())
+      .on('end', () => watch?.stop())
+      .on('error', () => watch?.stop());
 
     const { frameCount, percentInterval } = options.progress;
     const frameInterval = Math.ceil(frameCount / (100 / percentInterval));

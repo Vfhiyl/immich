@@ -1,7 +1,7 @@
 import { getQueueToken } from '@nestjs/bullmq';
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
-import { JobsOptions, Queue, Worker } from 'bullmq';
+import { DelayedError, Job, JobsOptions, Queue, Worker } from 'bullmq';
 import { setTimeout } from 'node:timers/promises';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { serverVersion } from 'src/constants.js';
@@ -14,6 +14,7 @@ import { JobBacklogRepository } from 'src/repositories/job-backlog.repository.js
 import { JobFailureRepository } from 'src/repositories/job-failure.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { getTrackedAssetId } from 'src/utils/job-failure.js';
+import { JobRetryLater, withJobRetryData } from 'src/utils/job-retry.js';
 import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
 import { withStoragePurpose } from 'src/utils/storage-metering.js';
 
@@ -50,6 +51,8 @@ export class JobRepository {
   private refillTimer?: ReturnType<typeof setInterval>;
   private refilledAt: Partial<Record<QueueName, number>> = {};
   private refilling = new Set<QueueName>();
+  private pauseReasons: Partial<Record<QueueName, Set<string>>> = {};
+  private holdTimers: Partial<Record<QueueName, ReturnType<typeof globalThis.setTimeout>>> = {};
 
   constructor(
     private moduleRef: ModuleRef,
@@ -116,7 +119,7 @@ export class JobRepository {
     const { bull } = this.configRepository.getEnv();
     for (const queueName of Object.values(QueueName)) {
       this.logger.debug(`Starting worker for queue: ${queueName}`);
-      const worker = new Worker(queueName, (job) => this.eventRepository.emit('JobRun', queueName, job as JobItem), {
+      const worker = new Worker(queueName, (job, token) => this.process(queueName, job, token), {
         ...bull.config,
         concurrency: 1,
         name: ImmichWorker.Microservices,
@@ -127,6 +130,24 @@ export class JobRepository {
       this.workers[queueName] = worker;
     }
     this.refillTimer ??= setInterval(() => void this.refillAll(), REFILL_INTERVAL_MS);
+  }
+
+  /**
+   * Runs a job; one put back for later (JobRetryLater) is moved to the delayed jobs of its queue, with what it keeps
+   * for when it runs again, so that the next job takes its place meanwhile (BullMQ's "process step jobs": the job's
+   * attempts are not counted)
+   */
+  private async process(queueName: QueueName, job: Job, token?: string) {
+    try {
+      return await this.eventRepository.emit('JobRun', queueName, job as JobItem);
+    } catch (error) {
+      if (!(error instanceof JobRetryLater)) {
+        throw error;
+      }
+      await job.updateData({ ...job.data, ...error.data });
+      await job.moveToDelayed(Date.now() + error.delayMs, token);
+      throw new DelayedError();
+    }
   }
 
   watchWorkers() {
@@ -173,8 +194,8 @@ export class JobRepository {
       return JobStatus.Skipped;
     }
 
-    // storage requests are counted for the job that makes them
-    return withStoragePurpose(name, () => item.handler(data));
+    // storage requests are counted for the job that makes them; what it kept from the times it was put back is there
+    return withStoragePurpose(name, () => withJobRetryData(data, () => item.handler(data)));
   }
 
   setConcurrency(queueName: QueueName, concurrency: number) {
@@ -193,8 +214,14 @@ export class JobRepository {
     return count > 0;
   }
 
-  /** Stops this process taking jobs of a queue (the queue itself, and other processes, go on) */
-  async pauseWorker(queueName: QueueName) {
+  /**
+   * Stops this process taking jobs of a queue (the queue itself, and other processes, go on), for a `reason`: it takes
+   * them again once no reason is left (see resumeWorker)
+   */
+  async pauseWorker(queueName: QueueName, reason = 'backoff') {
+    const reasons = this.pauseReasons[queueName] ?? new Set<string>();
+    reasons.add(reason);
+    this.pauseReasons[queueName] = reasons;
     const worker = this.workers[queueName];
     if (worker && !worker.isPaused()) {
       // the jobs that run finish on their own
@@ -202,11 +229,23 @@ export class JobRepository {
     }
   }
 
-  resumeWorker(queueName: QueueName) {
+  resumeWorker(queueName: QueueName, reason = 'backoff') {
+    const reasons = this.pauseReasons[queueName];
+    reasons?.delete(reason);
+    if (reasons && reasons.size > 0) {
+      return;
+    }
     const worker = this.workers[queueName];
     if (worker?.isPaused()) {
       worker.resume();
     }
+  }
+
+  /** Stops this process taking jobs of a queue for `ms` (its jobs fail because of the environment) */
+  holdWorker(queueName: QueueName, ms: number) {
+    clearTimeout(this.holdTimers[queueName]);
+    void this.pauseWorker(queueName, 'environment');
+    this.holdTimers[queueName] = globalThis.setTimeout(() => this.resumeWorker(queueName, 'environment'), ms);
   }
 
   async isPaused(name: QueueName): Promise<boolean> {

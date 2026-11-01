@@ -1,5 +1,6 @@
 import { getQueueToken } from '@nestjs/bullmq';
 import { ModuleRef } from '@nestjs/core';
+import { DelayedError, Job } from 'bullmq';
 import { JobName, QueueName } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -8,6 +9,7 @@ import { JobFailureRepository } from 'src/repositories/job-failure.repository.js
 import { JOB_WINDOW, JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { JobItem } from 'src/types.js';
+import { JobRetryLater } from 'src/utils/job-retry.js';
 import { newJobFailureRepositoryMock } from 'test/repositories/job-failure.repository.mock.js';
 import { automock } from 'test/utils.js';
 
@@ -18,7 +20,7 @@ const newQueue = (waiting = 0) => ({
   getJobCounts: vi.fn().mockResolvedValue({ waiting, prioritized: 0, paused: 0, active: 0 }),
 });
 
-const setup = ({ waiting = 0, backlog = [] as BacklogJob[] } = {}) => {
+const setup = ({ waiting = 0, backlog = [] as BacklogJob[], events = {} as EventRepository } = {}) => {
   const queues = new Map<string, ReturnType<typeof newQueue>>();
   const queueOf = (name: QueueName) => {
     const token = getQueueToken(name);
@@ -43,7 +45,7 @@ const setup = ({ waiting = 0, backlog = [] as BacklogJob[] } = {}) => {
   const sut = new JobRepository(
     moduleRef,
     {} as ConfigRepository,
-    {} as EventRepository,
+    events,
     LoggingRepository.create(),
     newJobFailureRepositoryMock() as unknown as JobFailureRepository,
     jobBacklog as unknown as JobBacklogRepository,
@@ -66,7 +68,58 @@ const thumbnails = (count: number) =>
     data: { id: `asset-${index}` },
   })) as JobItem[];
 
+// a job of the queue of videos whose run fails with `error`
+const runFailing = (error: Error) => {
+  const events = { emit: vi.fn().mockRejectedValue(error) } as unknown as EventRepository;
+  const { sut } = setup({ events });
+  const job = {
+    data: { id: 'asset-1' },
+    updateData: vi.fn().mockResolvedValue(undefined),
+    moveToDelayed: vi.fn().mockResolvedValue(undefined),
+  };
+  return { job, result: sut['process'](QueueName.VideoConversion, job as unknown as Job, 'token') };
+};
+
 describe(JobRepository.name, () => {
+  describe('process', () => {
+    it('should put a job back for later, with what it keeps, so that the next job takes its place', async () => {
+      const now = Date.now();
+      const { job, result } = runFailing(
+        new JobRetryLater('Waiting for memory', 60_000, { admissionWaitingSince: now }),
+      );
+
+      await expect(result).rejects.toBeInstanceOf(DelayedError);
+      expect(job.updateData).toHaveBeenCalledWith({ id: 'asset-1', admissionWaitingSince: now });
+      expect(job.moveToDelayed).toHaveBeenCalledWith(expect.any(Number), 'token');
+      expect(job.moveToDelayed.mock.calls[0][0]).toBeGreaterThanOrEqual(now + 60_000);
+    });
+
+    it('should let a job that fails fail', async () => {
+      const error = new Error('cannot decode');
+      const { job, result } = runFailing(error);
+
+      await expect(result).rejects.toBe(error);
+      expect(job.moveToDelayed).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('pausing a worker', () => {
+    it('should take jobs again only once no reason to pause is left', async () => {
+      const { sut } = setup();
+      const worker = { isPaused: vi.fn().mockReturnValue(false), pause: vi.fn(), resume: vi.fn() };
+      Object.assign(sut, { workers: { [QueueName.SmartSearch]: worker } });
+
+      await sut.pauseWorker(QueueName.SmartSearch, 'backoff');
+      await sut.pauseWorker(QueueName.SmartSearch, 'environment');
+      worker.isPaused.mockReturnValue(true);
+      sut.resumeWorker(QueueName.SmartSearch, 'backoff');
+      expect(worker.resume).not.toHaveBeenCalled();
+
+      sut.resumeWorker(QueueName.SmartSearch, 'environment');
+      expect(worker.resume).toHaveBeenCalledOnce();
+    });
+  });
+
   describe('queueAll', () => {
     it('should give jobs queued in bulk their priority and delay', async () => {
       const { sut, queueOf } = setup();

@@ -56,6 +56,28 @@ describe(JobFailureRepository.name, () => {
     ]);
   });
 
+  it('should take back an attempt that did not run, as the job was put back for later', async () => {
+    const { sut, newAsset, attempt } = await setup();
+    const [once, fresh] = [await newAsset(), await newAsset()];
+    await attempt(once, 1);
+    await sut.fail(job, once, 'cannot decode');
+
+    // put back twice, for memory, then failed once more: two attempts, not four
+    for (let index = 0; index < 2; index++) {
+      await attempt(once, 1);
+      await sut.withdraw(job, once);
+    }
+    await attempt(once, 1);
+    await attempt(fresh, 1);
+    await sut.withdraw(job, fresh);
+
+    await expect(sut.getHeldBackAssets(job, '3.3.5', 50)).resolves.toEqual([]);
+    await attempt(once, 1);
+    await expect(sut.getHeldBack(job, [once, fresh], '3.3.5')).resolves.toEqual([once]);
+    // nothing kept of an asset whose only attempt was taken back
+    await expect(sut.getHeldBack(job, [fresh], '3.3.5')).resolves.toEqual([]);
+  });
+
   it('should try again with another version of the server', async () => {
     const { sut, newAsset, attempt } = await setup();
     const assetId = await newAsset();

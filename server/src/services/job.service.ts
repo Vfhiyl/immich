@@ -4,11 +4,19 @@ import { serverVersion } from 'src/constants.js';
 import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
-import { AssetType, AssetVisibility, IntegrityReport, JobName, JobStatus, ManualJobName } from 'src/enum.js';
+import { AssetType, AssetVisibility, IntegrityReport, JobName, JobStatus, ManualJobName, QueueName } from 'src/enum.js';
 import { ArgsOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { getTrackedAssetId } from 'src/utils/job-failure.js';
+import {
+  ENVIRONMENT_RETRIES,
+  EnvironmentFailure,
+  JobRetryLater,
+  getEnvironmentRetryDelay,
+  getJobRetryData,
+  isEnvironmentFailure,
+} from 'src/utils/job-retry.js';
 
 const asJobItem = (dto: JobCreateDto): JobItem => {
   switch (dto.name) {
@@ -109,7 +117,12 @@ export class JobService extends BaseService {
       }
     } catch (error: Error | any) {
       failure = error instanceof Error ? error : new Error(String(error));
-      await this.eventRepository.emit('JobError', { job, error });
+      if (!(failure instanceof JobRetryLater)) {
+        failure = this.retryLaterIfEnvironment(queueName, job, failure);
+      }
+      if (!(failure instanceof JobRetryLater)) {
+        await this.eventRepository.emit('JobError', { job, error });
+      }
     } finally {
       await this.eventRepository.emit('JobComplete', queueName, job);
     }
@@ -118,10 +131,39 @@ export class JobService extends BaseService {
       return;
     }
 
+    if (failure instanceof JobRetryLater || failure instanceof EnvironmentFailure) {
+      // not an attempt on its file
+      if (assetId) {
+        await this.jobFailureRepository.withdraw(job.name, assetId);
+      }
+      throw failure;
+    }
+
     if (assetId) {
       await this.jobFailureRepository.fail(job.name, assetId, failure.message);
     }
     throw failure;
+  }
+
+  /**
+   * A job that failed because of where it ran (see isEnvironmentFailure) is put back for later, a while longer each
+   * time in a row, and its queue waits that long in this process too, for its other jobs would fail the same; after
+   * ENVIRONMENT_RETRIES it fails, but not on its file
+   */
+  private retryLaterIfEnvironment(queueName: QueueName, job: JobItem, error: Error): Error {
+    if (!isEnvironmentFailure(error)) {
+      return error;
+    }
+    const retries = getJobRetryData()?.environmentRetries ?? 0;
+    if (retries >= ENVIRONMENT_RETRIES) {
+      return new EnvironmentFailure(error);
+    }
+    const delay = getEnvironmentRetryDelay(retries);
+    this.logger.warn(
+      `${job.name} could not run (${error.message}), trying again in ${Math.round(delay / 60_000)} minutes`,
+    );
+    this.jobRepository.holdWorker(queueName, delay);
+    return new JobRetryLater(error.message, delay, { environmentRetries: retries + 1 });
   }
 
   /**

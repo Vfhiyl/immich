@@ -50,6 +50,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
 import { DERIVED_MAX_RATIO, DERIVED_SIZE_RULE_VERSION } from 'src/utils/derived-size.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
+import { JobRetryLater } from 'src/utils/job-retry.js';
 import { BaseConfig, ThumbnailConfig } from 'src/utils/media.js';
 import { AdmissionPriority } from 'src/utils/memory-admission.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -258,13 +259,17 @@ export class MediaService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    let retryLater = false;
     try {
       // a new upload before the rest (thumbnails made again, missing ones)
       const priority = source === 'upload' ? AdmissionPriority.Upload : AdmissionPriority.Background;
       return await this.generateThumbnails(asset, isVideo, config, priority);
+    } catch (error) {
+      retryLater = error instanceof JobRetryLater;
+      throw error;
     } finally {
-      // the last step that reads the original of an image; videos are transcoded next
-      if (asset.type !== AssetType.Video) {
+      // the last step that reads the original of an image (videos are transcoded next), unless it runs again later
+      if (asset.type !== AssetType.Video && !retryLater) {
         await this.storageBackendRepository.dropLocalCopy(asset.originalFile);
       }
     }
@@ -726,11 +731,17 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
+    let retryLater = false;
     try {
       return await this.convertVideo(asset);
+    } catch (error) {
+      retryLater = error instanceof JobRetryLater;
+      throw error;
     } finally {
-      // the last step that reads the original of a video
-      await this.storageBackendRepository.dropLocalCopy(asset.originalFile);
+      // the last step that reads the original of a video, unless it runs again later
+      if (!retryLater) {
+        await this.storageBackendRepository.dropLocalCopy(asset.originalFile);
+      }
     }
   }
 
@@ -764,6 +775,17 @@ export class MediaService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    // threads set to 0 (automatic): as many as there are cores, and as fit in the memory there is (each takes some)
+    if (ffmpeg.threads <= 0 && ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
+      ffmpeg = { ...ffmpeg, threads: await this.mediaRepository.fitThreads(videoStream) };
+    }
+    // (before the original is fetched: a job that waits too long is put back for later)
+    await using _admitted = await this.mediaRepository.admitVideo(
+      videoStream,
+      Math.max(ffmpeg.threads, 1),
+      AdmissionPriority.Background,
+    );
+
     // only fetch the original once it is certain to be transcoded
     await using original = await this.storageBackendRepository.lease(
       toRecordedFile(asset.originalPath, asset.originalFile),
@@ -771,16 +793,6 @@ export class MediaService extends BaseService {
     const input = original.path;
     // read in ranges while it is played, and too large for the cache
     await using encoded = await this.createDerivedOutput(output, { cache: false });
-
-    // threads set to 0 (automatic): as many as there are cores, and as fit in the memory there is (each takes some)
-    if (ffmpeg.threads <= 0 && ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
-      ffmpeg = { ...ffmpeg, threads: await this.mediaRepository.fitThreads(videoStream) };
-    }
-    await using _admitted = await this.mediaRepository.admitVideo(
-      videoStream,
-      Math.max(ffmpeg.threads, 1),
-      AdmissionPriority.Background,
-    );
 
     const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
     if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {

@@ -5,6 +5,7 @@ import type { ResourceSample } from 'src/utils/ml-backoff.js';
 import type { ReportedModel } from 'src/utils/ml-models.js';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MachineLearningUnavailableError } from 'src/utils/job-retry.js';
 
 export interface BoundingBox {
   x1: number;
@@ -232,7 +233,9 @@ export class MachineLearningRepository {
       this.setHealthy(url, false);
     }
 
-    throw new Error(`Machine learning request '${JSON.stringify(config)}' failed for all URLs`);
+    throw new MachineLearningUnavailableError(
+      `Machine learning request '${JSON.stringify(config)}' failed for all URLs`,
+    );
   }
 
   async ping(url: string): Promise<boolean> {

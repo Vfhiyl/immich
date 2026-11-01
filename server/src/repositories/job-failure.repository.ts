@@ -56,6 +56,26 @@ export class JobFailureRepository {
       .execute();
   }
 
+  /**
+   * The job did not run on the asset after all (put back in its queue, or kept from running by its environment): the
+   * attempt `start` counted is taken back
+   */
+  @GenerateSql({ params: [JobName.AssetGenerateThumbnails, DummyValue.UUID] })
+  async withdraw(jobName: JobName, assetId: string): Promise<void> {
+    await this.db
+      .updateTable('asset_job_failure')
+      .set((eb) => ({ attempts: eb('attempts', '-', 1) }))
+      .where('jobName', '=', jobName)
+      .where('assetId', '=', assetId)
+      .execute();
+    await this.db
+      .deleteFrom('asset_job_failure')
+      .where('jobName', '=', jobName)
+      .where('assetId', '=', assetId)
+      .where('attempts', '<=', 0)
+      .execute();
+  }
+
   /** The job failed on the asset */
   @GenerateSql({ params: [JobName.AssetGenerateThumbnails, DummyValue.UUID, DummyValue.STRING] })
   async fail(jobName: JobName, assetId: string, error: string): Promise<void> {

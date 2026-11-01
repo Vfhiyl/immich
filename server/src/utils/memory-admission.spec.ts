@@ -1,7 +1,12 @@
 import { mkdirSync, mkdtempDisposableSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AdmissionPriority, MemoryAdmission, readAvailableMemory } from 'src/utils/memory-admission.js';
+import {
+  AdmissionPriority,
+  AdmissionTimeout,
+  MemoryAdmission,
+  readAvailableMemory,
+} from 'src/utils/memory-admission.js';
 
 const MiB = 1024 * 1024;
 
@@ -74,7 +79,7 @@ describe(MemoryAdmission.name, () => {
     expect(started).toEqual(['interactive', 'upload', 'background 1', 'background 2']);
   });
 
-  it('should not let a small operation pass the first that waits', async () => {
+  it('should start a smaller operation after one that does not fit, rather than wait behind it', async () => {
     const sut = new MemoryAdmission(machine(1024 * MiB).read);
     const started: string[] = [];
     const running = await sut.acquire(600 * MiB);
@@ -82,10 +87,59 @@ describe(MemoryAdmission.name, () => {
     void sut.acquire(10 * MiB).then(() => void started.push('small'));
     await flush();
 
-    expect(started).toEqual([]);
+    expect(started).toEqual(['small']);
     running();
     await flush();
-    expect(started).toEqual(['large', 'small']);
+    expect(started).toEqual(['small', 'large']);
+  });
+
+  it('should keep the memory for one that waited 10 minutes: no other passes it any more', async () => {
+    vi.useFakeTimers();
+    try {
+      const sut = new MemoryAdmission(machine(1024 * MiB).read);
+      const started: string[] = [];
+      const running = await sut.acquire(600 * MiB);
+      // it began to wait 10 minutes ago (before it was put back in its queue and taken again)
+      void sut
+        .acquire(500 * MiB, AdmissionPriority.Background, { since: Date.now() - 10 * 60_000 })
+        .then(() => void started.push('large'));
+      void sut.acquire(10 * MiB, AdmissionPriority.Interactive).then(() => void started.push('small'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(started).toEqual([]);
+
+      running();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(started).toEqual(['large', 'small']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('should give up after its wait limit, unless the memory is kept for it', async () => {
+    vi.useFakeTimers();
+    try {
+      const sut = new MemoryAdmission(machine(1024 * MiB).read);
+      const running = await sut.acquire(900 * MiB);
+      const since = Date.now();
+      const waiting = sut.acquire(500 * MiB, AdmissionPriority.Background, { waitLimitMs: 30_000 });
+      const outcome = waiting.then(() => 'admitted').catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      await expect(outcome).resolves.toEqual(new AdmissionTimeout(since));
+      expect(sut.state.waiting).toBe(0);
+
+      // waited 10 minutes in all: waits on
+      const reserved = sut.acquire(500 * MiB, AdmissionPriority.Background, {
+        since: Date.now() - 10 * 60_000,
+        waitLimitMs: 30_000,
+      });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(sut.state.waiting).toBe(1);
+      running();
+      await expect(reserved).resolves.toBeTypeOf('function');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('should fit fewer while others take memory meanwhile', async () => {

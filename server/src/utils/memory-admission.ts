@@ -52,7 +52,21 @@ interface Waiter {
   bytes: number;
   priority: AdmissionPriority;
   order: number;
+  /** When it began to wait, the times before included (a job put back and taken again) */
+  since: number;
   grant: (release: () => void) => void;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+/** An operation that waited this long is not passed by others any more: the memory is kept for it (see acquire) */
+export const ADMISSION_RESERVE_AFTER_MS = 10 * 60 * 1000;
+
+/** It waited for memory longer than it was to (`waitLimitMs`), and was not admitted */
+export class AdmissionTimeout extends Error {
+  constructor(public since: number) {
+    super('No memory for it yet');
+    this.name = 'AdmissionTimeout';
+  }
 }
 
 /** The memory left free whatever runs: 64 MiB, or a twentieth of what was available when nothing ran, if more */
@@ -61,8 +75,12 @@ const marginOf = (available: number) => Math.max(64 * MiB, available / 20);
 /**
  * Lets heavy operations (decoding an image, running ffmpeg) of this process start only when the memory they are
  * estimated to take is there, so that several of them do not run the machine out of memory together, whatever the
- * concurrency of the queues they come from: the first of the waiting operations (by priority, then in order) starts
- * when it fits beside those that run; one that never fits starts when none runs.
+ * concurrency of the queues they come from.
+ *
+ * The waiting operations start by priority, then in order, each when it fits beside those that run; one that does not
+ * fit does not hold back those after it that do (as backfilling schedulers do). One that waited for
+ * ADMISSION_RESERVE_AFTER_MS is not passed any more: no other starts until it does, when it fits or when nothing else
+ * runs. An operation larger than all the memory starts when nothing else runs.
  *
  * What fits is measured when nothing runs (the memory available then, less a margin), and lowered while some run if
  * others (the api, machine learning) take memory meanwhile; the operations that run are counted by their estimates.
@@ -78,10 +96,30 @@ export class MemoryAdmission {
 
   constructor(private readAvailable: () => Promise<number> = readAvailableMemory) {}
 
-  /** Waits until an operation of an estimated `bytes` may start; call the release when it is done */
-  acquire(bytes: number, priority = AdmissionPriority.Background): Promise<() => void> {
-    return new Promise((grant) => {
-      this.waiting.push({ bytes, priority, order: this.order++, grant });
+  /**
+   * Waits until an operation of an estimated `bytes` may start; call the release when it is done. With `waitLimitMs`,
+   * gives up after waiting so long (AdmissionTimeout), unless it waited ADMISSION_RESERVE_AFTER_MS since `since`
+   */
+  acquire(
+    bytes: number,
+    priority = AdmissionPriority.Background,
+    { since = Date.now(), waitLimitMs }: { since?: number; waitLimitMs?: number } = {},
+  ): Promise<() => void> {
+    return new Promise((grant, reject) => {
+      const waiter: Waiter = { bytes, priority, order: this.order++, since, grant };
+      if (waitLimitMs !== undefined) {
+        waiter.timer = setTimeout(() => {
+          const index = this.waiting.indexOf(waiter);
+          if (index === -1 || this.isReserved(waiter)) {
+            return;
+          }
+          this.waiting.splice(index, 1);
+          reject(new AdmissionTimeout(since));
+          // it may have held back the others
+          void this.pump();
+        }, waitLimitMs);
+      }
+      this.waiting.push(waiter);
       void this.pump();
     });
   }
@@ -106,15 +144,30 @@ export class MemoryAdmission {
     return { running: this.running, granted: this.granted, budget: this.budget, waiting: this.waiting.length };
   }
 
-  /** The waiting operation to start next: by priority, then in order */
-  private first() {
-    let next = this.waiting[0];
-    for (const waiter of this.waiting) {
-      if (waiter.priority < next.priority || (waiter.priority === next.priority && waiter.order < next.order)) {
-        next = waiter;
+  private isReserved(waiter: Waiter) {
+    return Date.now() - waiter.since >= ADMISSION_RESERVE_AFTER_MS;
+  }
+
+  /** The waiting operations in the order they start: by priority, then in order */
+  private ordered() {
+    return this.waiting.toSorted((a, b) => a.priority - b.priority || a.order - b.order);
+  }
+
+  private start(waiter: Waiter) {
+    clearTimeout(waiter.timer);
+    this.waiting.splice(this.waiting.indexOf(waiter), 1);
+    this.running++;
+    this.granted += waiter.bytes;
+    let released = false;
+    waiter.grant(() => {
+      if (released) {
+        return;
       }
-    }
-    return next;
+      released = true;
+      this.running--;
+      this.granted -= waiter.bytes;
+      void this.pump();
+    });
   }
 
   private async pump() {
@@ -127,30 +180,23 @@ export class MemoryAdmission {
       do {
         this.again = false;
         while (this.waiting.length > 0) {
-          const next = this.first();
           const available = await this.readAvailable().catch(() => 0);
+          const ordered = this.ordered();
+          // one that waited long enough goes first, before the others
+          const reserved = ordered.find((waiter) => this.isReserved(waiter));
           if (this.running === 0) {
             this.budget = Math.max(0, available - marginOf(available));
-          } else {
-            // others took memory meanwhile: what this process may have is less
-            this.budget = Math.min(this.budget, this.granted + Math.max(0, available - marginOf(available)));
-            if (this.granted + next.bytes > this.budget) {
-              break;
-            }
+            this.start(reserved ?? ordered[0]);
+            continue;
           }
-          this.waiting.splice(this.waiting.indexOf(next), 1);
-          this.running++;
-          this.granted += next.bytes;
-          let released = false;
-          next.grant(() => {
-            if (released) {
-              return;
-            }
-            released = true;
-            this.running--;
-            this.granted -= next.bytes;
-            void this.pump();
-          });
+          // others took memory meanwhile: what this process may have is less
+          this.budget = Math.min(this.budget, this.granted + Math.max(0, available - marginOf(available)));
+          const fits = (waiter: Waiter) => this.granted + waiter.bytes <= this.budget;
+          const next = reserved ? (fits(reserved) ? reserved : undefined) : ordered.find((waiter) => fits(waiter));
+          if (!next) {
+            break;
+          }
+          this.start(next);
         }
       } while (this.again);
     } finally {

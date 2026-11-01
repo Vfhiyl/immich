@@ -27,6 +27,19 @@ where
   "jobName" = $1
   and "assetId" = $2
 
+-- JobFailureRepository.withdraw
+update "asset_job_failure"
+set
+  "attempts" = "attempts" - $1
+where
+  "jobName" = $2
+  and "assetId" = $3
+delete from "asset_job_failure"
+where
+  "jobName" = $1
+  and "assetId" = $2
+  and "attempts" <= $3
+
 -- JobFailureRepository.fail
 update "asset_job_failure"
 set

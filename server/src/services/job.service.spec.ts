@@ -1,6 +1,12 @@
 import type { JobItem } from 'src/types.js';
 import { AssetType, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { JobService } from 'src/services/job.service.js';
+import {
+  EnvironmentFailure,
+  JobRetryLater,
+  MachineLearningUnavailableError,
+  withJobRetryData,
+} from 'src/utils/job-retry.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -92,6 +98,47 @@ describe(JobService.name, () => {
 
       expect(mocks.jobFailure.fail).toHaveBeenCalledWith(JobName.SmartSearch, 'asset-1', expect.any(String));
       expect(mocks.event.emit).not.toHaveBeenCalledWith('JobError', expect.anything());
+    });
+
+    it('should put a job back for later without counting it as an attempt on its file', async () => {
+      const retry = new JobRetryLater('Waiting for memory', 60_000, { admissionWaitingSince: 1 });
+      mocks.job.run.mockRejectedValue(retry);
+      const job: JobItem = { name: JobName.AssetEncodeVideo, data: { id: 'asset-1' } };
+
+      await expect(sut.onJobRun(QueueName.VideoConversion, job)).rejects.toBe(retry);
+
+      expect(mocks.jobFailure.withdraw).toHaveBeenCalledWith(JobName.AssetEncodeVideo, 'asset-1');
+      expect(mocks.jobFailure.fail).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('JobError', expect.anything());
+    });
+
+    it('should put a job that failed because of the environment back for later, and hold its queue', async () => {
+      mocks.job.run.mockRejectedValue(new MachineLearningUnavailableError('failed for all URLs'));
+      const job: JobItem = { name: JobName.SmartSearch, data: { id: 'asset-1' } };
+
+      const error = await sut.onJobRun(QueueName.SmartSearch, job).catch((error: unknown) => error);
+
+      expect(error).toBeInstanceOf(JobRetryLater);
+      expect(error).toMatchObject({ delayMs: 60_000, data: { environmentRetries: 1 } });
+      expect(mocks.job.holdWorker).toHaveBeenCalledWith(QueueName.SmartSearch, 60_000);
+      expect(mocks.jobFailure.withdraw).toHaveBeenCalledWith(JobName.SmartSearch, 'asset-1');
+      expect(mocks.jobFailure.fail).not.toHaveBeenCalled();
+    });
+
+    it('should wait longer each time the environment fails in a row, then fail, not on the file', async () => {
+      const job: JobItem = { name: JobName.SmartSearch, data: { id: 'asset-1' } };
+      const run = (environmentRetries: number) => {
+        mocks.job.run.mockRejectedValue(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }));
+        return withJobRetryData({ environmentRetries }, () => sut.onJobRun(QueueName.SmartSearch, job)).catch(
+          (error: unknown) => error,
+        );
+      };
+
+      await expect(run(3)).resolves.toMatchObject({ delayMs: 8 * 60_000, data: { environmentRetries: 4 } });
+      await expect(run(6)).resolves.toMatchObject({ delayMs: 30 * 60_000 });
+      const last = await run(8);
+      expect(last).toBeInstanceOf(EnvironmentFailure);
+      expect(mocks.jobFailure.fail).not.toHaveBeenCalled();
     });
 
     it('should store a new database backup on the storage backend for backups', async () => {
