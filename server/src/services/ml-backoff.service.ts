@@ -1,16 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { OnEvent } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { ImmichWorker, SystemMetadataKey } from 'src/enum.js';
+import { ImmichWorker, QueueName, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { handlePromiseError, isMachineLearningEnabled } from 'src/utils/misc.js';
 import {
   BACKOFF_QUEUES,
   BackoffLevel,
   BackoffState,
+  NO_WINDOW,
   ResourceSample,
+  WindowState,
   assessSample,
   nextBackoff,
+  nextWindow,
 } from 'src/utils/ml-backoff.js';
 
 /** How often the memory of the machine learning service is looked at */
@@ -29,6 +32,7 @@ const SEVERITY = { calm: 0, hold: 1, [BackoffLevel.Normal]: 0, [BackoffLevel.Red
 export class MachineLearningBackoffService extends BaseService {
   private interval?: ReturnType<typeof setInterval>;
   private state: BackoffState = { level: BackoffLevel.Normal, calm: 0 };
+  private window: WindowState = NO_WINDOW;
   private written = 0;
 
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
@@ -57,6 +61,8 @@ export class MachineLearningBackoffService extends BaseService {
         .filter((sample): sample is ResourceSample => !!sample)
         .toSorted((a, b) => SEVERITY[assessSample(b)] - SEVERITY[assessSample(a)])[0] ?? null;
 
+    await this.applyWindow(samples);
+
     const previous = this.state.level;
     this.state = nextBackoff(this.state, sample);
     if (this.state.level !== previous || this.state.level !== BackoffLevel.Normal) {
@@ -76,6 +82,36 @@ export class MachineLearningBackoffService extends BaseService {
       memory: sample?.memory ?? null,
       pressure: sample?.pressure ?? null,
     });
+  }
+
+  /** With too little memory for all models, one task of machine learning at a time (see nextWindow) */
+  private async applyWindow(samples: Array<ResourceSample | null>) {
+    const evictions = samples.reduce((sum, sample) => sum + (sample?.models?.evictions ?? 0), 0);
+    if (evictions === 0 && this.window.active === null) {
+      return;
+    }
+    const waiting: Partial<Record<QueueName, number>> = {};
+    for (const queue of BACKOFF_QUEUES) {
+      const counts = await this.jobRepository.getJobCounts(queue);
+      waiting[queue] = counts.waiting + counts.active;
+    }
+    const previous = this.window.active;
+    this.window = nextWindow(this.window, { evictions, waiting, now: Date.now() });
+    if (this.window.active === previous) {
+      return;
+    }
+    for (const queue of BACKOFF_QUEUES) {
+      if (this.window.active === null || queue === this.window.active) {
+        this.jobRepository.resumeWorker(queue, 'window');
+      } else {
+        await this.jobRepository.pauseWorker(queue, 'window');
+      }
+    }
+    this.logger.log(
+      this.window.active === null
+        ? 'Jobs of machine learning: all tasks at once again'
+        : `Jobs of machine learning: one task at a time, as the service unloads models for others; now ${this.window.active}`,
+    );
   }
 
   private async apply(level: BackoffLevel, config: SystemConfig) {

@@ -7,10 +7,11 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from random import randint
 from types import SimpleNamespace
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, TypeVar, cast
 from unittest import mock
 
 import numpy as np
@@ -49,7 +50,7 @@ from immich_ml.models.facial_recognition.recognition import FaceRecognizer
 from immich_ml.models.ocr.ctc import logits, probabilities
 from immich_ml.models.ocr.detection import TextDetector
 from immich_ml.models.ocr.recognition import TextRecognizer
-from immich_ml.resources import read_resources
+from immich_ml.resources import Memory, read_resources
 from immich_ml.schemas import (
     FaceDetectionOptions,
     FaceRecognitionOptions,
@@ -1850,6 +1851,26 @@ def stub_model() -> mock.MagicMock:
     return model
 
 
+MiB = 1024**2
+GiB = 1024**3
+
+
+def loaded_entry(model_cache: ModelCache, name: str) -> InferenceEntry[Any]:
+    """An entry of the cache whose model is loaded, with no files"""
+    model = stub_model()
+    model.create.side_effect = lambda *_: mock.MagicMock(loaded=True, cache_dir=Path("/nonexistent"))
+    entry = InferenceEntry(model, "buffalo_l", FaceRecognitionOptions())
+    # (each stub is a model of its own, keyed by its class)
+    model_cache.get(entry)
+    del name
+    return entry
+
+
+def unload(model: mock.MagicMock, memory: Memory) -> None:
+    model.loaded = False
+    memory["used"] -= 150 * MiB
+
+
 @pytest.mark.asyncio
 class TestCache:
     async def test_caches(self) -> None:
@@ -1924,6 +1945,47 @@ class TestCache:
         model_cache.get(entry, ttl=100)
 
         loop.call_later.assert_not_called()
+
+    async def test_keeps_every_model_with_enough_memory(self) -> None:
+        memory: Memory = {"used": 1 * GiB, "limit": 16 * GiB, "source": "meminfo"}
+        model_cache = ModelCache(read_memory=lambda: memory)
+        first, second = loaded_entry(model_cache, "a"), loaded_entry(model_cache, "b")
+        model_cache.get(second)
+
+        model_cache.make_room(second)
+
+        assert model_cache._models[ModelCache.key(first)].loaded
+        assert model_cache.recent_evictions() == 0
+
+    async def test_unloads_the_least_recently_used_idle_models_until_one_to_load_fits(self) -> None:
+        memory: Memory = {"used": 900 * MiB, "limit": 1024 * MiB, "source": "cgroup2"}
+        model_cache = ModelCache(read_memory=lambda: memory)
+        older, newer, busy = (loaded_entry(model_cache, name) for name in ("older", "newer", "busy"))
+        for entry in (older, newer, busy):
+            model_cache.get(entry)
+            model = cast(mock.MagicMock, model_cache._models[ModelCache.key(entry)])
+            model.loaded, model.unload.side_effect = True, partial(unload, model, memory)
+        to_load = InferenceEntry(stub_model(), "buffalo_l", FaceRecognitionOptions())
+        model_cache.get(to_load)
+        model_cache._models[ModelCache.key(to_load)].loaded = False
+
+        # each unload gives back 150 MiB: two of them leave 424 MiB, enough for 300 and a reserve of 102
+        with model_cache.using(busy):
+            model_cache.make_room(to_load)
+
+        assert not model_cache._models[ModelCache.key(older)].loaded
+        assert not model_cache._models[ModelCache.key(newer)].loaded
+        assert model_cache._models[ModelCache.key(busy)].loaded
+        assert model_cache.recent_evictions() == 2
+
+    async def test_does_nothing_without_telling_its_memory(self) -> None:
+        model_cache = ModelCache(read_memory=lambda: None)
+        idle, to_load = loaded_entry(model_cache, "idle"), loaded_entry(model_cache, "to_load")
+        model_cache._models[ModelCache.key(to_load)].loaded = False
+
+        model_cache.make_room(to_load)
+
+        assert model_cache._models[ModelCache.key(idle)].loaded
 
     async def test_loads_mclip(self) -> None:
         request = PIPELINE_REQUEST.validate_python(
@@ -2537,4 +2599,4 @@ class TestResources:
         response = TestClient(app).get("/resources")
 
         assert response.status_code == 200
-        assert response.json() == {"memory": None, "pressure": None}
+        assert response.json() == {"memory": None, "pressure": None, "models": {"evictions": 0}}

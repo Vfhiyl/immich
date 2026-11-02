@@ -4,6 +4,8 @@ import { QueueName } from 'src/enum.js';
 export interface ResourceSample {
   memory: { used: number; limit: number; source: string } | null;
   pressure: { some: number; full: number } | null;
+  /** The models it unloaded in the last minute to load others (as it has too little memory for all of them) */
+  models?: { evictions: number } | null;
 }
 
 export enum BackoffLevel {
@@ -75,4 +77,47 @@ export const nextBackoff = (state: BackoffState, sample: ResourceSample | null):
     return { level: ORDER[ORDER.indexOf(state.level) - 1], calm: 0 };
   }
   return { level: ORDER[Math.max(ORDER.indexOf(state.level), ORDER.indexOf(wanted))], calm: 0 };
+};
+
+/**
+ * With too little memory for all of its models, the machine learning service unloads one to load another: the server
+ * then runs one task of machine learning at a time (smart search, faces, text recognition), each for WINDOW_MS while
+ * it has jobs, so that a model is loaded once for many photos rather than once for each. It does so until the service
+ * unloaded none for WINDOW_CALM_MS
+ */
+export const WINDOW_MS = 2 * 60 * 1000;
+export const WINDOW_CALM_MS = 10 * 60 * 1000;
+
+export interface WindowState {
+  /** The queue that runs, the others waiting; null: all run */
+  active: QueueName | null;
+  /** Since when it runs */
+  since: number;
+  /** When the service last unloaded a model for another */
+  evictedAt: number;
+}
+
+export const NO_WINDOW: WindowState = { active: null, since: 0, evictedAt: 0 };
+
+/** The next state after a check: `evictions` the service told, `waiting` the jobs waiting in each queue */
+export const nextWindow = (
+  state: WindowState,
+  { evictions, waiting, now }: { evictions: number; waiting: Partial<Record<QueueName, number>>; now: number },
+): WindowState => {
+  const evictedAt = evictions > 0 ? now : state.evictedAt;
+  if (now - evictedAt >= WINDOW_CALM_MS) {
+    return NO_WINDOW;
+  }
+  const busy = new Set(BACKOFF_QUEUES.filter((queue) => (waiting[queue] ?? 0) > 0));
+  const current = state.active;
+  const stays = current !== null && (waiting[current] ?? 0) > 0 && now - state.since < WINDOW_MS;
+  if (stays) {
+    return { ...state, evictedAt };
+  }
+  // the next queue with jobs, in turn; or the current one if no other has any
+  const queues: QueueName[] = [...BACKOFF_QUEUES];
+  const start = current === null ? 0 : queues.indexOf(current) + 1;
+  const order = [...queues.slice(start), ...queues.slice(0, start)];
+  const next = order.find((queue) => busy.has(queue as (typeof BACKOFF_QUEUES)[number])) ?? current ?? queues[0];
+  return { active: next, since: next === current ? state.since : now, evictedAt };
 };

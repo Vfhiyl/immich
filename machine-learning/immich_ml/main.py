@@ -4,7 +4,7 @@ import os
 import signal
 import time
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 from functools import partial
 from typing import Any, AsyncGenerator, Callable
 from zipfile import BadZipFile
@@ -117,7 +117,9 @@ async def preload_models(preload: PreloadModelData) -> None:
 
 async def _preload[O: Options](entry: InferenceEntry[O]) -> None:
     log.info(f"Preloading: {entry}")
-    model = await load(model_cache.get(entry))
+    model = model_cache.get(entry)
+    model_cache.make_room(entry)
+    model = await load(model)
     await attempt(model, model.build, MODEL_FILE_ERRORS)
 
 
@@ -166,8 +168,11 @@ def ping() -> PlainTextResponse:
 
 @app.get("/resources")
 def resources() -> ORJSONResponse:
-    """The memory this service has and uses, for the server to hold back its jobs before it runs out"""
-    return ORJSONResponse(read_resources())
+    """
+    The memory this service has and uses, for the server to hold back its jobs before it runs out, and the models it
+    unloaded in the last minute to load others: the server then sends the tasks one at a time
+    """
+    return ORJSONResponse({**read_resources(), "models": {"evictions": model_cache.recent_evictions()}})
 
 
 @app.post("/predict", dependencies=[Depends(update_state)])
@@ -199,13 +204,18 @@ async def run_inference(payload: Image | str, entries: list[InferenceEntry[Any]]
         if missing := [dep for dep in model.depends if dep not in runs]:
             raise HTTPException(400, f"{entry.model.__name__} depends on output of {missing[0]}")
         inputs = [payload, *[await runs[dep] for dep in model.depends]]
+        # with little memory, the models unused at the moment make room for it (not those of this request)
+        model_cache.make_room(entry)
         model = await load(model)
         output = await attempt(model, partial(model.predict, *inputs, options=entry.options), MODEL_FILE_ERRORS)
         used[entry.model.identity] = model.describe(entry.name)  # after the run, which may fall back to ONNX
         return output
 
-    runs = {entry.model.identity: asyncio.create_task(_run_inference(entry)) for entry in entries}
-    outputs = await asyncio.gather(*runs.values(), return_exceptions=True)
+    with ExitStack() as using:
+        for entry in entries:
+            using.enter_context(model_cache.using(entry))
+        runs = {entry.model.identity: asyncio.create_task(_run_inference(entry)) for entry in entries}
+        outputs = await asyncio.gather(*runs.values(), return_exceptions=True)
     for output in outputs:
         if isinstance(output, BaseException):
             raise output

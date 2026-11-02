@@ -1,4 +1,15 @@
-import { BackoffLevel, BackoffState, ResourceSample, assessSample, nextBackoff } from 'src/utils/ml-backoff.js';
+import { QueueName } from 'src/enum.js';
+import {
+  BackoffLevel,
+  BackoffState,
+  NO_WINDOW,
+  ResourceSample,
+  WINDOW_CALM_MS,
+  WINDOW_MS,
+  assessSample,
+  nextBackoff,
+  nextWindow,
+} from 'src/utils/ml-backoff.js';
 
 const GiB = 1024 ** 3;
 const sample = (share: number, pressure: ResourceSample['pressure'] = null): ResourceSample => ({
@@ -61,5 +72,39 @@ describe('backoff of machine learning jobs', () => {
       expect(run(paused, null, null, null, null)).toEqual(paused);
       expect(run(normal, null)).toEqual(normal);
     });
+  });
+});
+
+describe(nextWindow.name, () => {
+  const all = { [QueueName.SmartSearch]: 5, [QueueName.FaceDetection]: 5, [QueueName.Ocr]: 5 };
+
+  it('should run one task at a time once the service unloads a model for another, each for a while in turn', () => {
+    let state = nextWindow(NO_WINDOW, { evictions: 1, waiting: all, now: 0 });
+    expect(state.active).toBe(QueueName.SmartSearch);
+
+    state = nextWindow(state, { evictions: 0, waiting: all, now: WINDOW_MS - 1 });
+    expect(state.active).toBe(QueueName.SmartSearch);
+    state = nextWindow(state, { evictions: 0, waiting: all, now: WINDOW_MS });
+    expect(state).toMatchObject({ active: QueueName.FaceDetection, since: WINDOW_MS });
+  });
+
+  it('should go on to the next task with jobs as soon as the one that runs has none', () => {
+    const state = nextWindow(
+      { active: QueueName.SmartSearch, since: 0, evictedAt: 0 },
+      {
+        evictions: 0,
+        waiting: { [QueueName.SmartSearch]: 0, [QueueName.FaceDetection]: 0, [QueueName.Ocr]: 3 },
+        now: 1000,
+      },
+    );
+    expect(state.active).toBe(QueueName.Ocr);
+  });
+
+  it('should run all tasks again once the service unloaded no model for a while', () => {
+    const state = nextWindow(
+      { active: QueueName.Ocr, since: 0, evictedAt: 0 },
+      { evictions: 0, waiting: all, now: WINDOW_CALM_MS },
+    );
+    expect(state).toEqual(NO_WINDOW);
   });
 });

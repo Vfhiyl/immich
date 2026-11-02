@@ -92,4 +92,25 @@ describe(MachineLearningBackoffService.name, () => {
 
     expect(mocks.machineLearning.getResources).not.toHaveBeenCalled();
   });
+
+  it('should run one task of machine learning at a time while the service unloads models for others', async () => {
+    const counts = { waiting: 10, active: 0, completed: 0, failed: 0, delayed: 0, paused: 0 };
+    mocks.job.getJobCounts.mockResolvedValue(counts);
+    mocks.machineLearning.getResources.mockResolvedValue({ ...sample(0.5), models: { evictions: 2 } });
+
+    await sut.check();
+
+    expect(mocks.job.resumeWorker).toHaveBeenCalledWith(QueueName.SmartSearch, 'window');
+    expect(mocks.job.pauseWorker).toHaveBeenCalledWith(QueueName.FaceDetection, 'window');
+    expect(mocks.job.pauseWorker).toHaveBeenCalledWith(QueueName.Ocr, 'window');
+  });
+
+  it('should not look at the queues while the service keeps all its models', async () => {
+    mocks.machineLearning.getResources.mockResolvedValue({ ...sample(0.5), models: { evictions: 0 } });
+
+    await sut.check();
+
+    expect(mocks.job.getJobCounts).not.toHaveBeenCalled();
+    expect(mocks.job.pauseWorker).not.toHaveBeenCalled();
+  });
 });
