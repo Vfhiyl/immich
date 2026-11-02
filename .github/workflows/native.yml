@@ -33,7 +33,7 @@ jobs:
           dnf config-manager --set-enabled powertools
           dnf install -y --setopt=tsflags=nodocs gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ gcc-toolset-14-binutils \
             make cmake nasm autoconf automake libtool gperf gettext-devel pkgconf-pkg-config python3.12 python3.12-pip \
-            xz bzip2 patch git jq tar openssl-devel perl findutils diffutils
+            xz bzip2 patch git jq tar openssl-devel perl perl-IPC-Cmd findutils diffutils
           python3.12 -m pip install --quiet "meson==$MESON_VERSION" ninja
           curl --fail --silent --show-error --location -o /tmp/node.tar.xz \
             "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz"
@@ -44,9 +44,11 @@ jobs:
           echo "$RUST_SHA256  /tmp/rust.tar.xz" | sha256sum --check
           mkdir -p /tmp/rust && tar -xJf /tmp/rust.tar.xz -C /tmp/rust --strip-components=1
           /tmp/rust/install.sh --prefix=/opt/rust --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu
-          # cargo runs rustc, and links with cc, by PATH: the Rust just installed, and the compilers of the toolset
+          # cargo runs rustc, and links with cc, by PATH: the Rust just installed, and the compilers of the toolset;
+          # with an OpenSSL of its own (3, from source), as the curl in cargo needs one newer than this system's 1.1
           PATH="/opt/rh/gcc-toolset-14/root/usr/bin:/opt/rust/bin:$PATH" CARGO_HOME=/opt/cargo \
-            /opt/rust/bin/cargo install cargo-c --version "$CARGO_C_VERSION" --locked --root /opt/rust
+            /opt/rust/bin/cargo install cargo-c --version "$CARGO_C_VERSION" --locked --root /opt/rust \
+            --features vendored-openssl
 
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
