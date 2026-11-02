@@ -9,6 +9,7 @@ import { ArgsOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { getTrackedAssetId } from 'src/utils/job-failure.js';
+import { classifyJobFailure } from 'src/utils/job-history.js';
 import {
   ENVIRONMENT_RETRIES,
   EnvironmentFailure,
@@ -86,6 +87,8 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
   }
 };
 
+const UUID_PATTERN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+
 @Injectable()
 export class JobService extends BaseService {
   async create(dto: JobCreateDto): Promise<void> {
@@ -127,6 +130,8 @@ export class JobService extends BaseService {
       await this.eventRepository.emit('JobComplete', queueName, job);
     }
 
+    this.recordHistory(queueName, job, failure);
+
     if (!failure) {
       return;
     }
@@ -143,6 +148,27 @@ export class JobService extends BaseService {
       await this.jobFailureRepository.fail(job.name, assetId, failure.message);
     }
     throw failure;
+  }
+
+  /** Counts how the job ended, for the history of jobs of the admin (put back to wait for memory: not counted) */
+  private recordHistory(queueName: QueueName, job: JobItem, failure?: Error) {
+    if (!failure) {
+      this.jobHistoryRepository.record(queueName, job.name, 'succeeded');
+      return;
+    }
+    if (failure instanceof JobRetryLater) {
+      if (failure.data.environmentRetries !== undefined) {
+        this.jobHistoryRepository.record(queueName, job.name, 'retried');
+      }
+      return;
+    }
+    // the asset (most jobs are for one), or what else the job is for
+    const id = (job as { data?: { id?: unknown } }).data?.id;
+    this.jobHistoryRepository.record(queueName, job.name, 'failed', {
+      error: failure,
+      category: classifyJobFailure(failure, failure instanceof EnvironmentFailure),
+      assetId: typeof id === 'string' && UUID_PATTERN.test(id) ? id : undefined,
+    });
   }
 
   /**

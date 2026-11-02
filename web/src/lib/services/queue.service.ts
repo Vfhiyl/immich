@@ -18,6 +18,7 @@ import {
   mdiFileJpgBox,
   mdiFileXmlBox,
   mdiFolderMove,
+  mdiHistory,
   mdiImageSearch,
   mdiLibraryShelves,
   mdiOcr,
@@ -76,7 +77,13 @@ export const getQueuesActions = ($t: MessageFormatter, queues: QueueResponseDto[
     onAction: () => goto(Route.systemSettings({ isOpen: OpenQueryParam.JOB })),
   };
 
-  return { ResumePaused, ManageConcurrency, CreateJob };
+  const JobHistory: ActionItem = {
+    icon: mdiHistory,
+    title: $t('admin.job_history_view'),
+    onAction: () => goto(Route.jobHistory()),
+  };
+
+  return { ResumePaused, ManageConcurrency, CreateJob, JobHistory };
 };
 
 export const getQueueActions = ($t: MessageFormatter, queue: QueueResponseDto) => {

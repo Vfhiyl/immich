@@ -1109,6 +1109,171 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/job-history": {
+      "get": {
+        "description": "How many jobs ran, failed and were put back for later since a time, in all and per job, over time; why they failed; and the jobs that failed far more often than usual in the last 24 hours",
+        "operationId": "getJobHistory",
+        "parameters": [
+          {
+            "name": "since",
+            "required": false,
+            "in": "query",
+            "description": "From when (ISO 8601); all that is kept without",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobHistoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the history of jobs",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queueJob.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/job-history/failures": {
+      "get": {
+        "description": "The jobs that failed since a time, the last first, by job, kind and reason, a page at a time",
+        "operationId": "getJobFailureLog",
+        "parameters": [
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/JobFailureCategory"
+            }
+          },
+          {
+            "name": "jobName",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 9007199254740991,
+              "exclusiveMinimum": true,
+              "default": 1,
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "reason",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 200,
+              "exclusiveMinimum": true,
+              "default": 50,
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobFailureListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the jobs that failed",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.3.5",
+            "state": "Added"
+          },
+          {
+            "version": "v3.3.5",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queueJob.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/machine-learning/faces/regroup/undo": {
       "post": {
         "description": "Puts the faces back with the people they had before the people were regrouped for a new face model, but for what users changed since",
@@ -24935,6 +25100,108 @@
         ],
         "type": "object"
       },
+      "JobFailureCategory": {
+        "description": "What kind of failure: the file's, a program stopped as it made no progress, killed as memory ran out, or the environment's (the machine learning service, the disk, a storage service)",
+        "enum": [
+          "file",
+          "stuck",
+          "out_of_memory",
+          "environment"
+        ],
+        "type": "string"
+      },
+      "JobFailureListResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JobFailureLogDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "JobFailureLogDto": {
+        "properties": {
+          "assetId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "category": {
+            "$ref": "#/components/schemas/JobFailureCategory"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "jobName": {
+            "type": "string"
+          },
+          "originalFileName": {
+            "description": "Of the asset, if the job was for one that is still there",
+            "nullable": true,
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "category",
+          "createdAt",
+          "error",
+          "id",
+          "jobName",
+          "originalFileName",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "JobFailureReasonDto": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/JobFailureCategory"
+          },
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "jobName": {
+            "type": "string"
+          },
+          "lastAt": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "The error, ids, paths and numbers left out",
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "count",
+          "jobName",
+          "lastAt",
+          "reason"
+        ],
+        "type": "object"
+      },
       "JobFailureRetryDto": {
         "properties": {
           "jobName": {
@@ -25004,6 +25271,178 @@
         "required": [
           "attempts",
           "jobs"
+        ],
+        "type": "object"
+      },
+      "JobHistoryAlertDto": {
+        "properties": {
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "jobName": {
+            "type": "string"
+          },
+          "runs": {
+            "description": "In the last 24 hours",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "usualRate": {
+            "description": "The share that failed in the 30 days before; null without runs",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "failed",
+          "jobName",
+          "runs",
+          "usualRate"
+        ],
+        "type": "object"
+      },
+      "JobHistoryBucketDto": {
+        "properties": {
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "retried": {
+            "description": "Put back for later as their environment failed (not failed)",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "start": {
+            "type": "string"
+          },
+          "succeeded": {
+            "description": "Succeeded, or had nothing to do",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "failed",
+          "retried",
+          "start",
+          "succeeded"
+        ],
+        "type": "object"
+      },
+      "JobHistoryJobDto": {
+        "properties": {
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "jobName": {
+            "type": "string"
+          },
+          "queueName": {
+            "type": "string"
+          },
+          "retried": {
+            "description": "Put back for later as their environment failed (not failed)",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "succeeded": {
+            "description": "Succeeded, or had nothing to do",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "failed",
+          "jobName",
+          "queueName",
+          "retried",
+          "succeeded"
+        ],
+        "type": "object"
+      },
+      "JobHistoryResponseDto": {
+        "properties": {
+          "alerts": {
+            "description": "Jobs that failed far more often than usual in the last 24 hours",
+            "items": {
+              "$ref": "#/components/schemas/JobHistoryAlertDto"
+            },
+            "type": "array"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobHistoryJobDto"
+            },
+            "type": "array"
+          },
+          "reasons": {
+            "description": "Why jobs failed, the most frequent first, at most 50",
+            "items": {
+              "$ref": "#/components/schemas/JobFailureReasonDto"
+            },
+            "type": "array"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/JobHistoryBucketDto"
+            },
+            "type": "array"
+          },
+          "totals": {
+            "properties": {
+              "failed": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "retried": {
+                "description": "Put back for later as their environment failed (not failed)",
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "succeeded": {
+                "description": "Succeeded, or had nothing to do",
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "succeeded",
+              "failed",
+              "retried"
+            ],
+            "type": "object"
+          },
+          "unit": {
+            "description": "Of the series: UTC hours, days or months",
+            "enum": [
+              "hour",
+              "day",
+              "month"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "alerts",
+          "jobs",
+          "reasons",
+          "series",
+          "totals",
+          "unit"
         ],
         "type": "object"
       },

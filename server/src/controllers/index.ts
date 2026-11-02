@@ -17,6 +17,7 @@ import { DuplicateController } from 'src/controllers/duplicate.controller.js';
 import { FaceController } from 'src/controllers/face.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { JobFailureController } from 'src/controllers/job-failure.controller.js';
+import { JobHistoryController } from 'src/controllers/job-history.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
 import { LibraryController } from 'src/controllers/library.controller.js';
 import { MaintenanceController } from 'src/controllers/maintenance.controller.js';
@@ -96,6 +97,7 @@ export const controllers = [
   StorageAdminController,
   MachineLearningModelAdminController,
   JobFailureController,
+  JobHistoryController,
   ResourceCheckAdminController,
   StorageBackupAdminController,
   StorageExportAdminController,

@@ -155,6 +155,8 @@ export const Route = {
   // queues
   queues: () => '/admin/queues',
   viewQueue: ({ name }: { name: QueueName }) => `/admin/queues/${asQueueSlug(name)}`,
+  jobHistory: (params?: { range?: string; jobName?: string; category?: string; reason?: string; page?: number }) =>
+    '/admin/job-history' + asQueryString(params),
 
   // integrity checks
   integrityReportFile: (reportId: string) => `${getBaseUrl()}/admin/integrity/report/${reportId}/file`,

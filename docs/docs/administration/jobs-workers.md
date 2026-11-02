@@ -84,6 +84,12 @@ A job that fails because of where it runs rather than of its file, when the mach
 
 Jobs for a single file (metadata extraction, thumbnail generation, video transcoding, smart search, face detection and text recognition) are also tracked per file in the database, from before they start, so that a file that makes the server crash or run out of memory is noticed too. When such a job fails on a file 3 times in a row, or the server stops 3 times while working on it, the job is no longer queued for that file, not even by the nightly tasks or the buttons of the Jobs page. The Jobs page then lists these files with why their job failed last, and _Retry_ queues the job again for them, for example after the server got more memory. A new version of the server tries them again by itself.
 
+## Job history
+
+_Job history_ on the Jobs page shows how many jobs ran, failed and were put back for later, today, over the last 3, 7, 30 or 365 days, or all: in all and over time on a chart, and per job with the share of them that failed. Below, why jobs failed, grouped by reason (the error without what differs from one file to another), with the kind of failure: the file's, a program stopped as stuck, killed as memory ran out, or the environment's (the machine learning service, the disk, a storage service). A reason, a job or a kind shows the failures of it, the last first, each with its error and its file.
+
+When a job fails far more often than usual, at least 20 times in the last 24 hours, a fifth or more of the times it ran and three times its share in the 30 days before, the Jobs page and Job history say so, and the admin is notified, at most once a day for each job. Failures are kept for a year (at most the last 200,000), the counts of jobs for good.
+
 ## Job processing order
 
 The below diagram shows the job run order for newly uploaded files

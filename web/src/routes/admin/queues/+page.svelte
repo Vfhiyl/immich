@@ -8,7 +8,8 @@
   import { queueManager } from '$lib/managers/queue-manager.svelte';
   import { getQueuesActions } from '$lib/services/queue.service';
   import { getJobFailures, getMachineLearningModels, type QueueResponseDto } from '@immich/sdk';
-  import { CommandPaletteDefaultProvider, Container, type ActionItem } from '@immich/ui';
+  import { Alert, CommandPaletteDefaultProvider, Container, Link, type ActionItem } from '@immich/ui';
+  import { Route } from '$lib/route';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
@@ -36,8 +37,10 @@
 
   let queues = $derived<QueueResponseDto[]>(queueManager.queues);
 
-  const { ResumePaused, CreateJob, ManageConcurrency } = $derived(getQueuesActions($t, queueManager.queues));
-  const commands: ActionItem[] = $derived([CreateJob, ManageConcurrency]);
+  const { ResumePaused, CreateJob, ManageConcurrency, JobHistory } = $derived(
+    getQueuesActions($t, queueManager.queues),
+  );
+  const commands: ActionItem[] = $derived([CreateJob, ManageConcurrency, JobHistory]);
 
   const onQueueUpdate = (update: QueueResponseDto) => {
     queues = queues.map((queue) => {
@@ -53,13 +56,34 @@
 
 <OnEvents {onQueueUpdate} />
 
-<AdminPageLayout breadcrumbs={[{ title: data.meta.title }]} actions={[ResumePaused, CreateJob, ManageConcurrency]}>
+<AdminPageLayout
+  breadcrumbs={[{ title: data.meta.title }]}
+  actions={[ResumePaused, JobHistory, CreateJob, ManageConcurrency]}
+>
   <Container size="medium" center>
     {#if models.tasks.some(({ enabled }) => enabled)}
       <div class="mb-8">
         <MachineLearningModels tasks={models.tasks} backoff={models.backoff} onChange={() => void refresh()} />
       </div>
     {/if}
+    {#each data.alerts as alert (alert.jobName)}
+      <div class="mb-4" data-testid="job-history-alert">
+        <Alert
+          color="danger"
+          title={$t('admin.job_history_alert', {
+            values: {
+              job: alert.jobName,
+              failed: alert.failed,
+              runs: alert.runs,
+              usual: alert.usualRate === null ? '–' : `${Math.round(alert.usualRate * 1000) / 10}%`,
+            },
+          })}
+        >
+          <Link href={Route.jobHistory({ range: 'today', jobName: alert.jobName })}>{$t('admin.job_history_view')}</Link
+          >
+        </Alert>
+      </div>
+    {/each}
     {#if data.resources}
       <div class="mb-8">
         <ResourceCheckReport check={data.resources} />

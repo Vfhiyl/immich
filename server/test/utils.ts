@@ -41,6 +41,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { FaceDecisionRepository } from 'src/repositories/face-decision.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobFailureRepository } from 'src/repositories/job-failure.repository.js';
+import { JobHistoryRepository } from 'src/repositories/job-history.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -303,6 +304,7 @@ export type ServiceOverrides = {
   machineLearningModel: MachineLearningModelRepository;
   faceDecision: FaceDecisionRepository;
   jobFailure: JobFailureRepository;
+  jobHistory: JobHistoryRepository;
   storage: StorageRepository;
   sync: SyncRepository;
   syncCheckpoint: SyncCheckpointRepository;
@@ -400,6 +402,7 @@ export const getMocks = () => {
     machineLearningModel: newMachineLearningModelRepositoryMock(),
     faceDecision: newFaceDecisionRepositoryMock(),
     jobFailure: newJobFailureRepositoryMock(),
+    jobHistory: automock(JobHistoryRepository, { strict: false }),
     storage: newStorageRepositoryMock(),
     sync: automock(SyncRepository),
     syncCheckpoint: automock(SyncCheckpointRepository),
@@ -483,6 +486,7 @@ export const newTestService = <T extends BaseService>(
     overrides.machineLearningModel || (mocks.machineLearningModel as As<MachineLearningModelRepository>),
     overrides.faceDecision || (mocks.faceDecision as As<FaceDecisionRepository>),
     overrides.jobFailure || (mocks.jobFailure as As<JobFailureRepository>),
+    overrides.jobHistory || (mocks.jobHistory as As<JobHistoryRepository>),
     overrides.storage || (mocks.storage as As<StorageRepository>),
     overrides.sync || (mocks.sync as As<SyncRepository>),
     overrides.syncCheckpoint || (mocks.syncCheckpoint as As<SyncCheckpointRepository>),

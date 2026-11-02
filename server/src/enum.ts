@@ -412,6 +412,7 @@ export enum SystemMetadataKey {
   MachineLearningBackoff = 'machine-learning-backoff',
   DerivedSizeRule = 'derived-size-rule',
   MemoryKills = 'memory-kills',
+  JobHistoryAlerts = 'job-history-alerts',
 }
 
 export enum UserMetadataKey {

@@ -141,6 +141,34 @@ describe(JobService.name, () => {
       expect(mocks.jobFailure.fail).not.toHaveBeenCalled();
     });
 
+    it('should count how jobs end for the history of jobs, not those put back to wait for memory', async () => {
+      const job: JobItem = {
+        name: JobName.AssetGenerateThumbnails,
+        data: { id: '0d3c5e8e-1f2a-4b3c-9d4e-5f6a7b8c9d0e' },
+      };
+      mocks.job.run.mockResolvedValueOnce(JobStatus.Success);
+      await sut.onJobRun(QueueName.ThumbnailGeneration, job);
+      mocks.job.run.mockRejectedValueOnce(new Error('immich-thumbnail exited with SIGKILL: '));
+      await sut.onJobRun(QueueName.ThumbnailGeneration, job).catch(() => {});
+      mocks.job.run.mockRejectedValueOnce(
+        new JobRetryLater('Waiting for memory', 60_000, { admissionWaitingSince: 1 }),
+      );
+      await sut.onJobRun(QueueName.ThumbnailGeneration, job).catch(() => {});
+      mocks.job.run.mockRejectedValueOnce(new MachineLearningUnavailableError('failed for all URLs'));
+      await sut.onJobRun(QueueName.ThumbnailGeneration, job).catch(() => {});
+
+      expect(mocks.jobHistory.record.mock.calls).toEqual([
+        [QueueName.ThumbnailGeneration, JobName.AssetGenerateThumbnails, 'succeeded'],
+        [
+          QueueName.ThumbnailGeneration,
+          JobName.AssetGenerateThumbnails,
+          'failed',
+          { error: expect.any(Error), category: 'out_of_memory', assetId: '0d3c5e8e-1f2a-4b3c-9d4e-5f6a7b8c9d0e' },
+        ],
+        [QueueName.ThumbnailGeneration, JobName.AssetGenerateThumbnails, 'retried'],
+      ]);
+    });
+
     it('should store a new database backup on the storage backend for backups', async () => {
       mocks.job.run.mockResolvedValue(JobStatus.Success);
 

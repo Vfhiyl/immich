@@ -637,6 +637,8 @@ export interface StorageExportState {
 
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
   [SystemMetadataKey.MemoryKills]: MemoryKillState;
+  /** When the admin was last told of each job that failed far more often than usual */
+  [SystemMetadataKey.JobHistoryAlerts]: Record<string, string>;
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
   [SystemMetadataKey.License]: { licenseKey: string; activationKey: string; activatedAt: Date };

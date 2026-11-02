@@ -30,6 +30,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { FaceDecisionRepository } from 'src/repositories/face-decision.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobFailureRepository } from 'src/repositories/job-failure.repository.js';
+import { JobHistoryRepository } from 'src/repositories/job-history.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -137,6 +138,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   MachineLearningModelRepository,
   FaceDecisionRepository,
   JobFailureRepository,
+  JobHistoryRepository,
   StorageRepository,
   SyncRepository,
   SyncCheckpointRepository,
@@ -209,6 +211,7 @@ export class BaseService {
     protected machineLearningModelRepository: MachineLearningModelRepository,
     protected faceDecisionRepository: FaceDecisionRepository,
     protected jobFailureRepository: JobFailureRepository,
+    protected jobHistoryRepository: JobHistoryRepository,
     protected storageRepository: StorageRepository,
     protected syncRepository: SyncRepository,
     protected syncCheckpointRepository: SyncCheckpointRepository,
@@ -290,6 +293,7 @@ export class BaseService {
       ctx.machineLearningModelRepository,
       ctx.faceDecisionRepository,
       ctx.jobFailureRepository,
+      ctx.jobHistoryRepository,
       ctx.storageRepository,
       ctx.syncRepository,
       ctx.syncCheckpointRepository,

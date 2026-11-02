@@ -515,6 +515,71 @@ export type JobFailureRetryResponseDto = {
     /** The files the job was queued for again */
     count: number;
 };
+export type JobHistoryAlertDto = {
+    failed: number;
+    jobName: string;
+    /** In the last 24 hours */
+    runs: number;
+    /** The share that failed in the 30 days before; null without runs */
+    usualRate: number | null;
+};
+export type JobHistoryJobDto = {
+    failed: number;
+    jobName: string;
+    queueName: string;
+    /** Put back for later as their environment failed (not failed) */
+    retried: number;
+    /** Succeeded, or had nothing to do */
+    succeeded: number;
+};
+export type JobFailureReasonDto = {
+    category: JobFailureCategory;
+    count: number;
+    jobName: string;
+    lastAt: string;
+    /** The error, ids, paths and numbers left out */
+    reason: string;
+};
+export type JobHistoryBucketDto = {
+    failed: number;
+    /** Put back for later as their environment failed (not failed) */
+    retried: number;
+    start: string;
+    /** Succeeded, or had nothing to do */
+    succeeded: number;
+};
+export type JobHistoryResponseDto = {
+    /** Jobs that failed far more often than usual in the last 24 hours */
+    alerts: JobHistoryAlertDto[];
+    jobs: JobHistoryJobDto[];
+    /** Why jobs failed, the most frequent first, at most 50 */
+    reasons: JobFailureReasonDto[];
+    series: JobHistoryBucketDto[];
+    totals: {
+        failed: number;
+        /** Put back for later as their environment failed (not failed) */
+        retried: number;
+        /** Succeeded, or had nothing to do */
+        succeeded: number;
+    };
+    /** Of the series: UTC hours, days or months */
+    unit: Unit;
+};
+export type JobFailureLogDto = {
+    assetId: string | null;
+    category: JobFailureCategory;
+    createdAt: string;
+    error: string;
+    id: string;
+    jobName: string;
+    /** Of the asset, if the job was for one that is still there */
+    originalFileName: string | null;
+    reason: string;
+};
+export type JobFailureListResponseDto = {
+    items: JobFailureLogDto[];
+    total: number;
+};
 export type MachineLearningBackoffDto = {
     checkedAt: string;
     level: MachineLearningBackoffLevel;
@@ -4670,6 +4735,46 @@ export function retryJobFailures({ jobFailureRetryDto }: {
         method: "POST",
         body: jobFailureRetryDto
     })));
+}
+/**
+ * Get the history of jobs
+ */
+export function getJobHistory({ since }: {
+    since?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: JobHistoryResponseDto;
+    }>(`/admin/job-history${QS.query(QS.explode({
+        since
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get the jobs that failed
+ */
+export function getJobFailureLog({ category, jobName, page, reason, since, size }: {
+    category?: JobFailureCategory;
+    jobName?: string;
+    page?: number;
+    reason?: string;
+    since?: string;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: JobFailureListResponseDto;
+    }>(`/admin/job-history/failures${QS.query(QS.explode({
+        category,
+        jobName,
+        page,
+        reason,
+        since,
+        size
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Undo the regroup of people
@@ -9101,6 +9206,17 @@ export enum TrackedJobName {
     SmartSearch = "SmartSearch",
     AssetDetectFaces = "AssetDetectFaces",
     Ocr = "Ocr"
+}
+export enum JobFailureCategory {
+    File = "file",
+    Stuck = "stuck",
+    OutOfMemory = "out_of_memory",
+    Environment = "environment"
+}
+export enum Unit {
+    Hour = "hour",
+    Day = "day",
+    Month = "month"
 }
 export enum MachineLearningBackoffLevel {
     Normal = "normal",
