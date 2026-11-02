@@ -200,6 +200,10 @@ static int jpeg_decode(ir_image *image, int x, int y, int width, int height, int
 	}
 	while ((int) info.output_scanline < sy1) {
 		const int line = (int) info.output_scanline;
+		if (ir_cancelled(image)) {
+			snprintf(error.message, sizeof(error.message), "cancelled");
+			longjmp(error.jump, 1);
+		}
 		JSAMPROW rows[1] = { row };
 		jpeg_read_scanlines(&info, rows, 1);
 		const uint8_t *pixels = row;

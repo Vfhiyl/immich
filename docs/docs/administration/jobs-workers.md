@@ -72,7 +72,7 @@ Some jobs ([External Libraries](/features/libraries) scanning, Database Dump) ar
 
 ## Queues
 
-Jobs wait in queues in Redis, but each queue keeps only 200 jobs waiting there. The rest of a large batch, such as a job for every file of the library after _All_ was pressed or the model of smart search changed, waits in the database, and comes into the queue as it runs low: Redis holds a window of each queue rather than the whole library in memory. The Jobs page counts the jobs waiting in the database as waiting too, and emptying a queue empties them as well.
+Jobs wait in queues in Redis, but each queue keeps only 200 jobs waiting there. The rest of a large batch, such as a job for every file of the library after _All_ was pressed or the model of smart search changed, waits in the database, and comes into the queue as it runs low: Redis holds a window of each queue rather than the whole library in memory. The Jobs page counts the jobs waiting in the database as waiting too, and emptying a queue empties them as well. The jobs waiting in the database come out with the users taking turns (the user of their photo or video): one who uploads 50,000 photos at once does not hold back the photos of others behind them.
 
 ## Failed jobs
 

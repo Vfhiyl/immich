@@ -42,6 +42,23 @@ object RegionDecoder {
   @JvmStatic
   external fun decode(handle: Long, x: Int, y: Int, width: Int, height: Int, sample: Int, info: IntArray): Long
 
+  /** A flag to cancel a decode with ([decodeCancellable]); free it with [freeCancel]. 0 out of memory. */
+  @JvmStatic
+  external fun newCancel(): Long
+
+  /** Sets the flag, from any thread: the decode that watches it stops between rows or tiles */
+  @JvmStatic
+  external fun cancel(flag: Long)
+
+  @JvmStatic
+  external fun freeCancel(flag: Long)
+
+  /** As [decode], stopping (IOException "cancelled") once [flag] is set with [cancel] */
+  @JvmStatic
+  external fun decodeCancellable(
+    handle: Long, x: Int, y: Int, width: Int, height: Int, sample: Int, flag: Long, info: IntArray
+  ): Long
+
   @JvmStatic
   external fun close(handle: Long)
 }
@@ -219,8 +236,18 @@ class RegionImagesImpl(context: Context) : RegionImageApi {
           } else {
             val info = IntArray(3)
             val start = SystemClock.elapsedRealtime()
-            val pointer =
-              RegionDecoder.decode(image.handle, x.toInt(), y.toInt(), width.toInt(), height.toInt(), sample.toInt(), info)
+            // stopped as soon as the tile is no longer wanted (scrolled away), rather than decoded to the end
+            val flag = RegionDecoder.newCancel()
+            signal.setOnCancelListener { if (flag != 0L) RegionDecoder.cancel(flag) }
+            val pointer = try {
+              RegionDecoder.decodeCancellable(
+                image.handle, x.toInt(), y.toInt(), width.toInt(), height.toInt(), sample.toInt(), flag, info
+              )
+            } finally {
+              // (documented: the listener is not called once it is removed)
+              signal.setOnCancelListener(null)
+              if (flag != 0L) RegionDecoder.freeCancel(flag)
+            }
             Log.d(TAG, "decode $imageId $x,$y ${width}x$height by $sample: ${SystemClock.elapsedRealtime() - start} ms")
             mapOf(
               "pointer" to pointer,

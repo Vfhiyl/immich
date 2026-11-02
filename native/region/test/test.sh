@@ -30,6 +30,10 @@ assets="$REPO/e2e/test-assets/formats"
   "$assets/png/density_plot.png" "$out/long-photo.png" "$out/long-text.png" "$out/palette.png" "$out/restart-420.jpg" \
   "$out/restart-444.jpg" "$out/plain-422.jpg"
 
+# a part cancelled before and while it is decoded stops (the formats look between rows and tiles), and decodes the
+# same after
+"$out/region-test" --cancel "$assets/heic/IMG_2682.heic" "$assets/motionphoto/pixel-8a.jpg" "$out/long-photo.png"
+
 # opened for a size: the thumbnail of a phone's HEIC when it is large enough (384 x 512 here), else the image
 "$out/region-test" --for "$assets/motionphoto/samsung-one-ui-6.heic" 256 256
 "$out/region-test" --for "$assets/motionphoto/samsung-one-ui-6.heic" 512 384

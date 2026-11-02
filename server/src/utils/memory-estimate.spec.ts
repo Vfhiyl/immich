@@ -28,6 +28,8 @@ describe('estimating the memory of making the files of a photo', () => {
     );
     within(estimateImageDecode({ format: 'jxl', width: 5667, height: 3685, bitsPerSample: 16 }), 241);
     within(estimateImageDecode({ format: 'dcraw', width: 6240, height: 4160 }), 145);
+    // made more than half as large: as large as it is (an 8 MP RAW for a preview of 1440)
+    within(estimateImageDecode({ format: 'dcraw', width: 3504, height: 2336 }), 108);
   });
 
   it('should cover the full-size image of a RAW file, decoded whole', () => {

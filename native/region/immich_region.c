@@ -347,8 +347,15 @@ static void to_stored(int orientation, int stored_width, int stored_height, int 
 int ir_decode(ir_image *image, int x, int y, int width, int height, int sample, uint8_t *rgba, size_t stride,
 	char *error, size_t error_size)
 {
+	return ir_decode_cancellable(image, x, y, width, height, sample, rgba, stride, NULL, error, error_size);
+}
+
+int ir_decode_cancellable(ir_image *image, int x, int y, int width, int height, int sample, uint8_t *rgba,
+	size_t stride, const volatile int *cancel, char *error, size_t error_size)
+{
 	image->error = error;
 	image->error_size = error_size;
+	image->cancel = cancel;
 	if (sample < 1 || width < 1 || height < 1 || x < 0 || y < 0 || x + width > ir_width(image) ||
 		y + height > ir_height(image)) {
 		ir_fail(image, "the part %d,%d %dx%d (by %d) is not within the image", x, y, width, height, sample);
@@ -381,7 +388,10 @@ int ir_decode(ir_image *image, int x, int y, int width, int height, int sample, 
 				cmsDoTransform(image->transform, rgba + stride * v, rgba + stride * v, (cmsUInt32Number) out_width);
 	}
 	ir_box_free(&box);
+	if (status != 0 && ir_cancelled(image))
+		ir_fail(image, "cancelled");
 	image->error = NULL;
+	image->cancel = NULL;
 	return status;
 }
 

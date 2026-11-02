@@ -48,11 +48,43 @@ Java_app_alextran_immich_images_RegionDecoder_openFd(
   return (jlong) (intptr_t) image;
 }
 
+// A flag to cancel a decode with (see decodeCancellable), cleared; free it with freeCancel. Returns 0 out of memory.
+JNIEXPORT jlong JNICALL
+Java_app_alextran_immich_images_RegionDecoder_newCancel(JNIEnv *env, jclass clazz) {
+  return (jlong) (intptr_t) calloc(1, sizeof(int));
+}
+
+// Sets the flag, from any thread: the decode that watches it stops between rows or tiles
+JNIEXPORT void JNICALL
+Java_app_alextran_immich_images_RegionDecoder_cancel(JNIEnv *env, jclass clazz, jlong flag) {
+  *(volatile int *) (intptr_t) flag = 1;
+}
+
+JNIEXPORT void JNICALL
+Java_app_alextran_immich_images_RegionDecoder_freeCancel(JNIEnv *env, jclass clazz, jlong flag) {
+  free((void *) (intptr_t) flag);
+}
+
+static jlong decode(JNIEnv *env, jlong handle, jint x, jint y, jint width, jint height, jint sample,
+    const volatile int *cancel, jintArray info);
+
 // Decodes a part, `sample` times smaller, into a malloc'd RGBA buffer (freed by Dart, like NativeBuffer's), writing
 // {width, height, rowBytes} into `info`. Returns the buffer, or throws IOException.
 JNIEXPORT jlong JNICALL
 Java_app_alextran_immich_images_RegionDecoder_decode(
     JNIEnv *env, jclass clazz, jlong handle, jint x, jint y, jint width, jint height, jint sample, jintArray info) {
+  return decode(env, handle, x, y, width, height, sample, NULL, info);
+}
+
+// As decode, stopping (IOException "cancelled") once the flag of newCancel is set
+JNIEXPORT jlong JNICALL
+Java_app_alextran_immich_images_RegionDecoder_decodeCancellable(JNIEnv *env, jclass clazz, jlong handle, jint x,
+    jint y, jint width, jint height, jint sample, jlong flag, jintArray info) {
+  return decode(env, handle, x, y, width, height, sample, (const volatile int *) (intptr_t) flag, info);
+}
+
+static jlong decode(JNIEnv *env, jlong handle, jint x, jint y, jint width, jint height, jint sample,
+    const volatile int *cancel, jintArray info) {
   ir_image *image = (ir_image *) (intptr_t) handle;
   if (sample < 1 || width < 1 || height < 1) {
     throw_io(env, "invalid part");
@@ -67,7 +99,7 @@ Java_app_alextran_immich_images_RegionDecoder_decode(
     return 0;
   }
   char error[256] = "";
-  if (ir_decode(image, x, y, width, height, sample, rgba, stride, error, sizeof(error)) != 0) {
+  if (ir_decode_cancellable(image, x, y, width, height, sample, rgba, stride, cancel, error, sizeof(error)) != 0) {
     free(rgba);
     throw_io(env, error);
     return 0;

@@ -14,6 +14,7 @@ export const estimateImageDecode = ({
   bitsPerSample = 8,
   compression,
   wholeSize = false,
+  size,
 }: {
   format?: string;
   /** Of a HEIF: hevc or av1 */
@@ -23,6 +24,8 @@ export const estimateImageDecode = ({
   bitsPerSample?: number;
   /** Not made smaller: a full-size image */
   wholeSize?: boolean;
+  /** The shorter side it is made at about (the size of a preview, 1440 by default) */
+  size?: number;
 }) => {
   if (!width || !height) {
     return 576 * MiB;
@@ -51,8 +54,10 @@ export const estimateImageDecode = ({
       break;
     }
     case 'dcraw': {
-      // half its size (patches/libvips/0005) unless as large as it is (patches/libvips/0006: 13 bytes a pixel)
-      decode = 48 * MiB + pixels * (wholeSize ? 14 : 4);
+      // half its size (patches/libvips/0005) when made half as large or less, else as large as it is
+      // (patches/libvips/0006: 13 bytes a pixel)
+      const half = !wholeSize && (size ?? 1440) / Math.min(width, height) <= 0.5;
+      decode = 48 * MiB + pixels * (half ? 4 : 14);
       break;
     }
     case 'jxl':

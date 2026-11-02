@@ -2,7 +2,10 @@ import { Kysely } from 'kysely';
 import { setTimeout } from 'node:timers/promises';
 import { JobName, QueueName } from 'src/enum.js';
 import { BacklogJob, JobBacklogRepository } from 'src/repositories/job-backlog.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
+import { BaseService } from 'src/services/base.service.js';
+import { newMediumService } from 'test/medium.factory.js';
 import { getTestKyselyDB } from 'test/utils.js';
 
 const job = (id: string, priority = 0): BacklogJob => ({ name: JobName.SmartSearch, data: { id }, priority });
@@ -31,6 +34,51 @@ describe(JobBacklogRepository.name, () => {
     expect(taken[2]).toEqual(job('missing', 10));
     await expect(sut.count(QueueName.SmartSearch)).resolves.toBe(1);
     await expect(sut.has(QueueName.ThumbnailGeneration)).resolves.toBe(true);
+  });
+
+  it('should let users take turns: one who uploads many photos does not hold back those of others', async () => {
+    const { db, sut } = await setup();
+    const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+    const [{ user: many }, { user: few }] = [await ctx.newUser(), await ctx.newUser()];
+    const assetsOf = async (ownerId: string, count: number) => {
+      const ids: string[] = [];
+      for (let index = 0; index < count; index++) {
+        const { asset } = await ctx.newAsset({ ownerId });
+        ids.push(asset.id);
+      }
+      return ids;
+    };
+    const [manyIds, fewIds] = [await assetsOf(many.id, 6), await assetsOf(few.id, 2)];
+    const label = new Map([
+      ...manyIds.map((id, index) => [id, `many-${index}`] as const),
+      ...fewIds.map((id, index) => [id, `few-${index}`] as const),
+    ]);
+
+    await sut.add(
+      QueueName.SmartSearch,
+      manyIds.map((id) => job(id)),
+    );
+    // two come out, then the other user uploads
+    await sut.take(QueueName.SmartSearch, 2, () => Promise.resolve());
+    await sut.add(
+      QueueName.SmartSearch,
+      fewIds.map((id) => job(id)),
+    );
+    // and a job of no user (a person's thumbnail is for its owner)
+    await sut.add(QueueName.SmartSearch, [
+      { name: JobName.PersonGenerateThumbnail, data: { ownerId: few.id }, priority: 0 },
+    ]);
+
+    const taken: string[] = [];
+    await sut.take(QueueName.SmartSearch, 10, (jobs) => {
+      for (const { data } of jobs) {
+        const { id } = data as { id?: string };
+        taken.push(id ? label.get(id)! : 'person');
+      }
+      return Promise.resolve();
+    });
+
+    expect(taken).toEqual(['many-2', 'few-0', 'many-3', 'few-1', 'many-4', 'person', 'many-5']);
   });
 
   it('should keep the jobs when they could not be queued', async () => {

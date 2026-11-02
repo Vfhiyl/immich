@@ -7,8 +7,12 @@
  *        region-test --make-jpeg FILE WIDTH HEIGHT 420|422|444 RESTART  (JPEGs with restart markers every RESTART
  *                                                                        MCUs, 0 for none)
  *        region-test --for FILE WIDTH HEIGHT                            (opened for that size: a HEIF's thumbnail,
- *                                                                        compared with libheif's decode of it) */
+ *                                                                        compared with libheif's decode of it)
+ *        region-test --cancel FILE...                                   (decoding stops when cancelled, before or
+ *                                                                        while it runs, and decodes the same after) */
 #include <fcntl.h>
+#include <pthread.h>
+#include <time.h>
 #include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -257,8 +261,88 @@ static int open_for(const char *path, int want_width, int want_height)
 	return status;
 }
 
+static double now(void)
+{
+	struct timespec t;
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	return (double) t.tv_sec + (double) t.tv_nsec / 1e9;
+}
+
+static volatile int cancel_flag;
+
+static void *cancel_soon(void *data)
+{
+	(void) data;
+	const struct timespec wait = { 0, 5 * 1000 * 1000 };
+	nanosleep(&wait, NULL);
+	cancel_flag = 1;
+	return NULL;
+}
+
+/* The whole image at full size, cancelled before it starts, then while it runs; then decoded the same as without */
+static int cancel(const char *path)
+{
+	char error[256];
+	ir_image *image = ir_open(path, error, sizeof(error));
+	if (!image) {
+		printf("FAIL %s: %s\n", path, error);
+		return 1;
+	}
+	const int w = ir_width(image), h = ir_height(image);
+	const size_t size = (size_t) w * h * 4;
+	uint8_t *a = malloc(size), *b = malloc(size);
+	int failed = 0;
+
+	double start = now();
+	if (ir_decode(image, 0, 0, w, h, 1, a, (size_t) w * 4, error, sizeof(error))) {
+		printf("FAIL %s: %s\n", path, error);
+		failed = 1;
+	}
+	const double whole = now() - start;
+
+	cancel_flag = 1;
+	if (!failed && (!ir_decode_cancellable(image, 0, 0, w, h, 1, b, (size_t) w * 4, &cancel_flag, error,
+		sizeof(error)) || strcmp(error, "cancelled"))) {
+		printf("FAIL %s: not cancelled before it starts\n", path);
+		failed = 1;
+	}
+
+	cancel_flag = 0;
+	pthread_t thread;
+	pthread_create(&thread, NULL, cancel_soon, NULL);
+	start = now();
+	const int status = ir_decode_cancellable(image, 0, 0, w, h, 1, b, (size_t) w * 4, &cancel_flag, error,
+		sizeof(error));
+	const double cancelled = now() - start;
+	pthread_join(thread, NULL);
+	if (!failed && (!status || strcmp(error, "cancelled"))) {
+		printf("FAIL %s: not cancelled while it runs (%.0f ms, the whole %.0f ms)\n", path, cancelled * 1000,
+			whole * 1000);
+		failed = 1;
+	}
+
+	cancel_flag = 0;
+	if (!failed && (ir_decode_cancellable(image, 0, 0, w, h, 1, b, (size_t) w * 4, &cancel_flag, error,
+		sizeof(error)) || memcmp(a, b, size))) {
+		printf("FAIL %s: not the same after it was cancelled\n", path);
+		failed = 1;
+	}
+	if (!failed)
+		printf("ok   %s cancelled after %.0f ms, the whole in %.0f ms\n", path, cancelled * 1000, whole * 1000);
+	free(a);
+	free(b);
+	ir_close(image);
+	return failed;
+}
+
 int main(int argc, char **argv)
 {
+	if (argc >= 3 && !strcmp(argv[1], "--cancel")) {
+		int failed = 0;
+		for (int a = 2; a < argc; a++)
+			failed += cancel(argv[a]);
+		return failed ? 1 : 0;
+	}
 	if (argc == 5 && !strcmp(argv[1], "--for")) {
 		setenv("IMMICH_REGION_KEEP_COLOURS", "1", 1);
 		return open_for(argv[2], atoi(argv[3]), atoi(argv[4]));

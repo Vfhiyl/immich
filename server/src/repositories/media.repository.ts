@@ -316,7 +316,7 @@ export class MediaRepository {
    */
   async admitImage(
     input: string | Buffer,
-    { wholeSize = false, priority }: { wholeSize?: boolean; priority: AdmissionPriority },
+    { wholeSize = false, size, priority }: { wholeSize?: boolean; size?: number; priority: AdmissionPriority },
   ): Promise<AsyncDisposable> {
     const metadata = await sharp(input, { limitInputPixels: false, unlimited: true })
       .metadata()
@@ -328,6 +328,7 @@ export class MediaRepository {
       height: metadata?.height,
       bitsPerSample: metadata?.depth === 'uchar' || metadata?.depth === 'char' ? 8 : 16,
       wholeSize,
+      size,
     });
     return this.admit(bytes, priority);
   }

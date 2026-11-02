@@ -62,7 +62,15 @@ struct ir_image {
 	cmsHTRANSFORM transform;
 	char *error;
 	size_t error_size;
+	/* of the call (ir_decode_cancellable): non-zero once the caller no longer wants the part */
+	const volatile int *cancel;
 };
+
+/* Whether the caller of the decoding no longer wants the part: the formats stop between rows (or tiles) */
+static inline int ir_cancelled(const ir_image *image)
+{
+	return image->cancel && *image->cancel;
+}
 
 /* Writes why into the error of the call */
 void ir_fail(ir_image *image, const char *format, ...);

@@ -192,6 +192,7 @@ typedef struct {
 	struct heif_image *decoded[WINDOW];
 	int failed;
 	char message[256];
+	const ir_image *image; /* whose caller may cancel the part */
 } job;
 
 typedef struct {
@@ -207,6 +208,11 @@ static void *work(void *data)
 	for (;;) {
 		while (!j->failed && j->next < j->count && j->next >= j->added + WINDOW)
 			pthread_cond_wait(&j->changed, &j->lock);
+		if (!j->failed && ir_cancelled(j->image)) {
+			snprintf(j->message, sizeof(j->message), "cancelled");
+			j->failed = 1;
+			pthread_cond_broadcast(&j->changed);
+		}
 		if (j->failed || j->next >= j->count)
 			break;
 		const int i = j->next++;
@@ -268,6 +274,8 @@ static int heif_decode(ir_image *image, int x, int y, int width, int height, int
 	if (workers == 1) {
 		for (int row = first_row; row <= last_row; row++)
 			for (int column = first_column; column <= last_column; column++) {
+				if (ir_cancelled(image))
+					return -1;
 				const tile *t = get_tile(image, (uint32_t) column, (uint32_t) row);
 				if (!t)
 					return -1;
@@ -278,7 +286,7 @@ static int heif_decode(ir_image *image, int x, int y, int width, int height, int
 	}
 
 	job j = { .first_column = first_column, .columns = last_column - first_column + 1, .first_row = first_row,
-		.count = count };
+		.count = count, .image = image };
 	pthread_mutex_init(&j.lock, NULL);
 	pthread_cond_init(&j.changed, NULL);
 	worker w[WORKERS];

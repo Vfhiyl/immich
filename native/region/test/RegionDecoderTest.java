@@ -38,6 +38,17 @@ public class RegionDecoderTest {
     } catch (IOException e) {
       check(e.getMessage().contains("not within the image"), "why a part beyond the image fails: " + e.getMessage());
     }
+    // cancelled: it stops; not cancelled, it decodes
+    long flag = RegionDecoder.newCancel();
+    check(RegionDecoder.decodeCancellable(image, 0, 0, width, height, 1, flag, info) != 0, "decodes, not cancelled");
+    RegionDecoder.cancel(flag);
+    try {
+      RegionDecoder.decodeCancellable(image, 0, 0, size[0], size[1], 1, flag, info);
+      check(false, "a cancelled part of " + path + " fails");
+    } catch (IOException e) {
+      check(e.getMessage().equals("cancelled"), "why a cancelled part fails: " + e.getMessage());
+    }
+    RegionDecoder.freeCancel(flag);
     RegionDecoder.close(image);
     System.out.println("ok " + path + " " + size[0] + "x" + size[1] + (byDescriptor ? " by its descriptor" : ""));
   }
@@ -91,6 +102,15 @@ class RegionDecoder {
 
   static native long decode(long handle, int x, int y, int width, int height, int sample, int[] info)
     throws IOException;
+
+  static native long newCancel();
+
+  static native void cancel(long flag);
+
+  static native void freeCancel(long flag);
+
+  static native long decodeCancellable(
+    long handle, int x, int y, int width, int height, int sample, long flag, int[] info) throws IOException;
 
   static native void close(long handle);
 }

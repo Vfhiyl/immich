@@ -298,6 +298,8 @@ static int png_decode(ir_image *image, int x, int y, int width, int height, int 
 		memcpy(previous, start->previous, p->row_bytes);
 
 	for (int r = start->row; r < y + height; r++) {
+		if (ir_cancelled(image))
+			goto ended;
 		if (inflate_read(&f, row, row_size, 0, NULL) != row_size || unfilter(p, row, has_previous ? previous : NULL))
 			goto failed;
 		if (r >= y) {

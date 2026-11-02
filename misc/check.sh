@@ -207,6 +207,12 @@ native() {
 
 server_build() { cd "$server" && "$(bin "$server" nest)" build; }
 
+# the memory the server estimates heavy work to take covers what it takes (misc/measure)
+memory_estimates() {
+  "$repo/misc/measure/images.sh"
+  "$repo/misc/measure/videos.sh"
+}
+
 schema() {
   cd "$server"
   psql "$postgres/postgres" -qc "CREATE DATABASE $check_db" >/dev/null
@@ -278,6 +284,7 @@ step 'schema: migrations and drift' schema
 step 'server: generated SQL is up to date' generated_sql
 step 'open-api: specification and SDK are up to date' open_api
 step 'server: unit tests' unit
+step 'server: memory estimates cover what is measured' memory_estimates
 step 'web: formatting' web_format
 step 'web: lint' web_lint
 step 'web: types' web_types

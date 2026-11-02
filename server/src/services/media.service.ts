@@ -351,7 +351,11 @@ export class MediaService extends BaseService {
 
     const thumbSource = extracted ? extracted.buffer : asset.originalPath;
     // only when the memory of decoding it and encoding its files is there, beside the other heavy operations
-    const admitted = await this.mediaRepository.admitImage(thumbSource, { wholeSize: isConvertFullsize, priority });
+    const admitted = await this.mediaRepository.admitImage(thumbSource, {
+      wholeSize: isConvertFullsize,
+      size: image.preview.size,
+      priority,
+    });
     let decoded;
     try {
       decoded = await this.decodeImage(
@@ -551,8 +555,11 @@ export class MediaService extends BaseService {
       inputImage = source.path;
     }
 
+    // only as large as the cut around the face needs, rather than whole (a photo of 200 MP took 600 MB)
+    const size = this.getFaceSourceSize({ width: oldWidth, height: oldHeight }, { x1, y1, x2, y2 });
     // a person waits for it
     await using _admitted = await this.mediaRepository.admitImage(inputImage, {
+      size,
       priority: AdmissionPriority.Interactive,
     });
     const decoded = await this.mediaRepository.decodeImage(inputImage, {
@@ -560,8 +567,7 @@ export class MediaService extends BaseService {
       processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
       // if this is an extracted image, it may not have orientation metadata
       orientation: Buffer.isBuffer(inputImage) && exifOrientation ? Number(exifOrientation) : undefined,
-      // only as large as the cut around the face needs, rather than whole (a photo of 200 MP took 600 MB)
-      size: this.getFaceSourceSize({ width: oldWidth, height: oldHeight }, { x1, y1, x2, y2 }),
+      size,
       shortSide: true,
     });
     await using _decodedFile = { [Symbol.asyncDispose]: () => this.mediaRepository.releaseImage(decoded) };

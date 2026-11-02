@@ -731,6 +731,7 @@ describe(MediaService.name, () => {
 
       expect(mocks.media.admitImage).toHaveBeenCalledWith(asset.originalPath, {
         wholeSize: false,
+        size: 1440,
         priority: AdmissionPriority.Upload,
       });
       expect(events).toEqual(['admitted', 'decoded', 'encoded', 'encoded', 'given back']);
@@ -739,6 +740,7 @@ describe(MediaService.name, () => {
       await sut.handleGenerateThumbnails({ id: asset.id });
       expect(mocks.media.admitImage).toHaveBeenLastCalledWith(asset.originalPath, {
         wholeSize: false,
+        size: 1440,
         priority: AdmissionPriority.Background,
       });
     });
@@ -2054,6 +2056,7 @@ describe(MediaService.name, () => {
       await sut.handleGeneratePersonThumbnail({ ownerId: person.ownerId, personGroupId: person.personGroupId });
 
       expect(mocks.media.admitImage).toHaveBeenCalledWith(personThumbnailStub.newThumbnailMiddle.originalPath, {
+        size: 917,
         priority: AdmissionPriority.Interactive,
       });
     });

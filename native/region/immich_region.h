@@ -46,6 +46,11 @@ int ir_sampled(int length, int sample);
 int ir_decode(ir_image *image, int x, int y, int width, int height, int sample, uint8_t *rgba, size_t stride,
 	char *error, size_t error_size);
 
+/* As ir_decode, stopping as soon as it can (between rows or tiles) once `*cancel` is non-zero, which another thread may
+ * set while it decodes: returns -1, with "cancelled" in `error` */
+int ir_decode_cancellable(ir_image *image, int x, int y, int width, int height, int sample, uint8_t *rgba,
+	size_t stride, const volatile int *cancel, char *error, size_t error_size);
+
 void ir_close(ir_image *image);
 
 #ifdef __cplusplus
