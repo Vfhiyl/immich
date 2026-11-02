@@ -44,7 +44,9 @@ jobs:
           echo "$RUST_SHA256  /tmp/rust.tar.xz" | sha256sum --check
           mkdir -p /tmp/rust && tar -xJf /tmp/rust.tar.xz -C /tmp/rust --strip-components=1
           /tmp/rust/install.sh --prefix=/opt/rust --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu
-          CARGO_HOME=/opt/cargo /opt/rust/bin/cargo install cargo-c --version "$CARGO_C_VERSION" --locked --root /opt/rust
+          # cargo runs rustc, and links with cc, by PATH: the Rust just installed, and the compilers of the toolset
+          PATH="/opt/rh/gcc-toolset-14/root/usr/bin:/opt/rust/bin:$PATH" CARGO_HOME=/opt/cargo \
+            /opt/rust/bin/cargo install cargo-c --version "$CARGO_C_VERSION" --locked --root /opt/rust
 
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
