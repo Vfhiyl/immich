@@ -27,8 +27,20 @@ ln -sf "$(gcc -print-file-name=libgcc_eh.a)" "$PREFIX/lib/libgcc_s.a"
 
 unset PKG_CONFIG_PATH CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH LIBRARY_PATH LD_LIBRARY_PATH
 export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig:$PREFIX/share/pkgconfig"
-export PKG_CONFIG="pkg-config --static"
 export PATH="$PREFIX/bin:$PATH"
+# pkg-config --static, as one program: meson asks it for its --version, which the pkgconf 1.4 of Rocky Linux 8 (the
+# release build) takes for --modversion when another option comes with it (its main.c), failing; and CMake takes
+# PKG_CONFIG for the path of a program
+mkdir -p "$BUILD/tools"
+cat > "$BUILD/tools/pkg-config-static" <<'EOF'
+#!/bin/sh
+case " $* " in
+  *" --version "* | *" --help "*) exec pkg-config "$@" ;;
+esac
+exec pkg-config --static "$@"
+EOF
+chmod +x "$BUILD/tools/pkg-config-static"
+export PKG_CONFIG="$BUILD/tools/pkg-config-static"
 FLAGS="-O2 -fPIC -ffunction-sections -fdata-sections"
 export CFLAGS="$FLAGS" CXXFLAGS="$FLAGS"
 export CPPFLAGS="-I$PREFIX/include"
