@@ -1,0 +1,33 @@
+From b7631b04f2b6a4daa99d2999a2dc2991f1cc8330 Mon Sep 17 00:00:00 2001
+From: Vfhiyl <VfhiyL@proton.me>
+Date: Tue, 3 Nov 2026 12:00:00 +0800
+Subject: [PATCH] Name the threads library as it is in libopenjp2.pc
+
+libopenjp2.pc's Libs.private names each library openjp2 links with as "-l<library>". The threads library comes as a flag, CMAKE_THREAD_LIBS_INIT: where threads are in a library of their own (glibc before 2.34, as on Rocky Linux 8 and Debian 11) it is "-lpthread", which became "-l-lpthread", and linking with `pkg-config --static --libs` fails ("cannot find -l-lpthread"). A library that comes as a flag is now named as it is.
+
+Fixed on master the same way (for "-pthread" and "-lpthread"), not in 2.5.4, the last release (2026-11-03).
+---
+ CMakeLists.txt | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 29a8993..85cdb75 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -335,7 +335,12 @@ function(get_pkgconfig_deps NAME OUT)
+     foreach(lib ${link_libs})
+       # omit -lopenjp2 from Libs.private because libopenjp2 is in Requires
+       if(NOT ${lib} STREQUAL ${OPENJPEG_LIBRARY_NAME})
+-        string(APPEND deps "-l${lib} ")
++        # the threads library may come as a flag (CMAKE_THREAD_LIBS_INIT: -pthread, -lpthread)
++        if(lib MATCHES "^-")
++          string(APPEND deps "${lib} ")
++        else()
++          string(APPEND deps "-l${lib} ")
++        endif()
+       endif()
+     endforeach()
+   endif()
+-- 
+2.43.0
+

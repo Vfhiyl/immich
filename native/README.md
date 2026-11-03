@@ -29,6 +29,7 @@ Every change to a library is a patch in `patches/<library>/`, applied in order, 
 | `libvips/0006` | **LibRaw's buffers are freed before a RAW image is copied out** of the loader, rather than when it is disposed: a RAW file loaded whole (for a full-size image) takes about 13 bytes a pixel instead of 16 (a 24 MP one 305 MB instead of 353). |
 | `heif/0001` | libheif gave the wrong position for the tiles of a rotated photo (the part of the last tile inside the image instead of the part beyond it); not fixed upstream. `libvips/0003` places the tiles by it. |
 | `heif/0002` | libheif's pkg-config file named no libraries of FFmpeg when its decoder is built in (it checked a variable nothing sets): the static link of libvips missed them. Not fixed upstream. |
+| `openjpeg/0001` | OpenJPEG's pkg-config file named the threads library `-l-lpthread` where glibc has it apart (before 2.34, as on Rocky Linux 8, where the release is built): the static link of libvips failed. Fixed upstream, not yet released. |
 | `jpegli/0001`, `0002` | From Immich's base image: an empty DHT marker is written correctly; a broken ICC profile is a warning, not an error. |
 | `jpegli/0003` | jpegli's libjpeg is built as a static library too. |
 | `imagemagick/0001` | ImageMagick reads no configuration from the machine; its built-in policy is Immich's (no delegates, no coders that read other files or URLs, no SVG), and it keeps images beyond 256 MiB in a memory map and beyond 512 MiB on disk, with one thread. |
