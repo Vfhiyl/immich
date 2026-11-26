@@ -59,7 +59,9 @@ jobs:
         run: |
           export PATH="/opt/rh/gcc-toolset-14/root/usr/bin:/opt/node/bin:/opt/rust/bin:$PATH"
           IMMICH_NATIVE_WORK=/tmp/native IMMICH_NATIVE_RELEASE="$RELEASE" native/build.sh "$PWD/native-output"
-          sha256sum "native-output/immich-native-$RELEASE-linux-x64.tar.gz" | tee "native-output/immich-native-$RELEASE-linux-x64.tar.gz.sha256"
+          # (named without its directory, for `sha256sum --check` where the two are downloaded)
+          cd native-output
+          sha256sum "immich-native-$RELEASE-linux-x64.tar.gz" | tee "immich-native-$RELEASE-linux-x64.tar.gz.sha256"
 
       - name: Upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
