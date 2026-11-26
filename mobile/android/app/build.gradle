@@ -12,6 +12,15 @@ def nativeWork = System.getenv('IMMICH_NATIVE_WORK') ?:
   "${System.getenv('HOME') ?: System.getProperty('user.home')}/.cache/immich-native"
 def regionRoot = "${nativeWork}/region"
 
+// The ABIs of the app: those of `flutter build --target-platform` (e.g. android-arm64 → arm64-v8a only), else all three.
+// The APK then carries only these, also of the plugins, which ship native libraries for every ABI; except with
+// --split-per-abi, which makes an APK per ABI itself
+def flutterAbis = ['android-arm': 'armeabi-v7a', 'android-arm64': 'arm64-v8a', 'android-x64': 'x86_64']
+def appAbis = project.hasProperty('target-platform')
+  ? project.property('target-platform').toString().split(',').collect { flutterAbis[it] ?: it }
+  : flutterAbis.values().toList()
+def splitPerAbi = project.hasProperty('split-per-abi') && project.property('split-per-abi').toString() == 'true'
+
 def keystoreProperties = new Properties()
 def keystorePropertiesFile = rootProject.file('key.properties')
 if (keystorePropertiesFile.exists()) {
@@ -50,6 +59,14 @@ android {
     versionName flutter.versionName
     resValue "string", "app_name", "Immich"
     buildConfigField "boolean", "PASSKEYS", "true"
+
+    if (!splitPerAbi) {
+      // (in place of the Flutter plugin's, which are all three)
+      ndk {
+        abiFilters.clear()
+        abiFilters.addAll(appAbis)
+      }
+    }
 
     externalNativeBuild {
       cmake {
@@ -103,8 +120,7 @@ android {
 // The static libraries of our decoders for parts of large images (CMakeLists.txt), built from native/sources.txt with
 // our patches by native/build-region.sh, into IMMICH_NATIVE_WORK (by default ~/.cache/immich-native); it builds a
 // library again only when its source, patches or compiler changed
-def regionAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64']
-def regionTasks = regionAbis.collect { abi ->
+def regionTasks = (splitPerAbi ? flutterAbis.values().toList() : appAbis).collect { abi ->
   tasks.register("buildRegionLibraries-${abi}", Exec) {
     commandLine rootProject.file('../../native/build-region.sh'), "android-${abi}", "${regionRoot}/android-${abi}"
     environment 'IMMICH_NATIVE_WORK', nativeWork

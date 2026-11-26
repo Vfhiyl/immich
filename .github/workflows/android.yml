@@ -1,0 +1,122 @@
+name: Android app
+# Builds the Android app for a release: arm64 only, signed with our release key. The APK and its SHA-256 are an artifact
+# of the run; publish them as a release by hand.
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   KEY_JKS                 the keystore (PKCS12), base64
+#   ALIAS                   the alias of the key in it
+#   ANDROID_KEY_PASSWORD    the password of the key
+#   ANDROID_STORE_PASSWORD  the password of the keystore (with PKCS12 the same as the key's)
+# The run fails unless the APK is signed by the certificate below: an update must be signed by the same key as the app
+# it replaces, so a build that fell back to the debug key (mobile/android/app/build.gradle) is never published.
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Name of the release: the version of mobile/pubspec.yaml and a number of our own (1–99), e.g. 3.4.2-1'
+        required: true
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build for arm64
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      CERTIFICATE_SHA256: f061fcd905aaaf2a630d615a50184527644830c158c8ca8b0ccea4963a034da2
+      RELEASE: ${{ inputs.release }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Version
+        id: version
+        # versionName = the release; versionCode = pubspec's build number × 100 + our number, so that it grows with
+        # each release, ours and upstream's
+        run: |
+          read -r name code < <(sed -n 's/^version: \([^+]*\)+\([0-9]*\)$/\1 \2/p' mobile/pubspec.yaml)
+          number="${RELEASE#"$name"-}"
+          if [[ "$number" == "$RELEASE" || ! "$number" =~ ^[1-9][0-9]?$ ]]; then
+            echo "The release must be $name-N with N from 1 to 99, not $RELEASE" >&2
+            exit 1
+          fi
+          echo "code=$((code * 100 + number))" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Mise
+        uses: immich-app/devtools/actions/use-mise@caac7f7e4298458a14238959504f411fc6cc7f06 # use-mise-action-v3.2.3
+        with:
+          github_token: ${{ github.token }}
+          working_directory: ./mobile
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: ''
+
+      - name: Install dependencies
+        run: mise //mobile:install:ci
+
+      - name: Perform codegen
+        run: mise //mobile:codegen
+
+      - name: Create the keystore
+        env:
+          KEY_JKS: ${{ secrets.KEY_JKS }}
+        run: |
+          if [[ -z "$KEY_JKS" ]]; then
+            echo "The secret KEY_JKS is not set" >&2
+            exit 1
+          fi
+          printf '%s' "$KEY_JKS" | base64 -d > mobile/android/key.jks
+
+      - name: Build
+        working-directory: ./mobile
+        env:
+          ALIAS: ${{ secrets.ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          CODE: ${{ steps.version.outputs.code }}
+        run: flutter build apk --release --target-platform android-arm64 --build-name "$RELEASE" --build-number "$CODE"
+
+      - name: Remove the keystore
+        if: ${{ always() }}
+        run: rm -f mobile/android/key.jks
+
+      - name: Check and name the APK
+        env:
+          CODE: ${{ steps.version.outputs.code }}
+        run: |
+          build_tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          apk=mobile/build/app/outputs/flutter-apk/app-release.apk
+          signer="$("$build_tools/apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          if [[ "$signer" != "$CERTIFICATE_SHA256" ]]; then
+            echo "The APK is signed by $signer, not by the release key ($CERTIFICATE_SHA256)" >&2
+            exit 1
+          fi
+          abis="$(unzip -Z1 "$apk" 'lib/*' | cut -d/ -f2 | sort -u | tr '\n' ' ')"
+          if [[ "$abis" != "arm64-v8a " ]]; then
+            echo "The APK has native libraries for $abis, not only for arm64-v8a" >&2
+            exit 1
+          fi
+          badging="$("$build_tools/aapt2" dump badging "$apk")"
+          if [[ "$badging" != *"versionCode='$CODE' versionName='$RELEASE'"* ]]; then
+            echo "The APK is not version $RELEASE ($CODE): ${badging%%$'\n'*}" >&2
+            exit 1
+          fi
+          mkdir output
+          mv "$apk" "output/immich-$RELEASE-android-arm64.apk"
+          # (named without its directory, for `sha256sum --check` where the two are downloaded)
+          cd output
+          sha256sum "immich-$RELEASE-android-arm64.apk" | tee "immich-$RELEASE-android-arm64.apk.sha256"
+
+      - name: Upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: immich-${{ inputs.release }}-android-arm64
+          path: |
+            output/immich-${{ inputs.release }}-android-arm64.apk
+            output/immich-${{ inputs.release }}-android-arm64.apk.sha256
