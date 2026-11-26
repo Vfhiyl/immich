@@ -356,18 +356,26 @@ g++ -o "$BUILD/thumbnail/immich-thumbnail" "$BUILD/thumbnail/immich-thumbnail.o"
 
 # nothing but glibc, which every Linux has: where it is older than 2.34 (Rocky Linux 8, where the release is built),
 # threads, dlopen, the real-time and the terminal functions (libutil, which Rust's standard library names) are in
-# libraries of their own; glibc 2.34 moved them into libc and keeps the libraries, empty, for programs linked before
+# libraries of their own, and the resolver's (libresolv, for glib's) too; glibc 2.34 moved them into libc and keeps
+# the libraries, for programs linked before. All that is not glibc is told at once
 check_needed() {
-  local file="$1" dependency
-  for dependency in $(readelf -d "$file" | awk '/NEEDED/ { gsub(/[][]/, "", $5); print $5 }'); do
-    case "$dependency" in
-      libc.so.* | libm.so.* | libpthread.so.* | libdl.so.* | librt.so.* | libutil.so.* | ld-linux-*) ;;
-      *) echo "$file depends on $dependency, which is not part of glibc" >&2; exit 1 ;;
-    esac
+  local file dependency others failed=0
+  for file in "$@"; do
+    others=()
+    for dependency in $(readelf -d "$file" | awk '/NEEDED/ { gsub(/[][]/, "", $5); print $5 }'); do
+      case "$dependency" in
+        libc.so.* | libm.so.* | libpthread.so.* | libdl.so.* | librt.so.* | libutil.so.* | libresolv.so.* | ld-linux-*) ;;
+        *) others+=("$dependency") ;;
+      esac
+    done
+    if ((${#others[@]})); then
+      echo "$file depends on ${others[*]}, which are not part of glibc" >&2
+      failed=1
+    fi
   done
+  return "$failed"
 }
-check_needed "$PREFIX/lib/sharp-linux-x64.node"
-check_needed "$BUILD/thumbnail/immich-thumbnail"
+check_needed "$PREFIX/lib/sharp-linux-x64.node" "$BUILD/thumbnail/immich-thumbnail"
 
 rm -rf "${OUTPUT:?}/lib" "${OUTPUT:?}/bin" "${OUTPUT:?}/include"
 mkdir -p "$OUTPUT/lib" "$OUTPUT/bin"
