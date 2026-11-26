@@ -457,6 +457,7 @@ describe(MediaRepository.name, () => {
       });
     }
 
+    // (sharp demosaics all of the 20 MP file: some 4 s alone, more beside the other tests)
     it('should make a camera RAW file smaller from half its size, as sharp makes it from all of it', async () => {
       // 5472 x 3648: its preview is less than half of it
       const path = join(testAssets, 'raw/Canon/EOS_70D.CR2');
@@ -477,7 +478,7 @@ describe(MediaRepository.name, () => {
       }
       expect(total / data.length).toBeLessThan(2);
       await sut.releaseImage(smaller);
-    });
+    }, 30_000);
 
     it('should read a photo that must be rotated whole as sharp does, through a file removed when released', async () => {
       const dir = mkdtempDisposableSync(join(tmpdir(), 'media-repository-'));

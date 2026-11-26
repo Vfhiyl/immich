@@ -354,12 +354,14 @@ g++ -o "$BUILD/thumbnail/immich-thumbnail" "$BUILD/thumbnail/immich-thumbnail.o"
 
 # --- the package ---
 
-# nothing but glibc, which every Linux has
+# nothing but glibc, which every Linux has: where it is older than 2.34 (Rocky Linux 8, where the release is built),
+# threads, dlopen, the real-time and the terminal functions (libutil, which Rust's standard library names) are in
+# libraries of their own; glibc 2.34 moved them into libc and keeps the libraries, empty, for programs linked before
 check_needed() {
   local file="$1" dependency
   for dependency in $(readelf -d "$file" | awk '/NEEDED/ { gsub(/[][]/, "", $5); print $5 }'); do
     case "$dependency" in
-      libc.so.* | libm.so.* | libpthread.so.* | libdl.so.* | librt.so.* | ld-linux-*) ;;
+      libc.so.* | libm.so.* | libpthread.so.* | libdl.so.* | librt.so.* | libutil.so.* | ld-linux-*) ;;
       *) echo "$file depends on $dependency, which is not part of glibc" >&2; exit 1 ;;
     esac
   done
