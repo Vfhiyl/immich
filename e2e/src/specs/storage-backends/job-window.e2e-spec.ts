@@ -54,8 +54,9 @@ describe('the window of a queue', () => {
     // their thumbnails are queued once their metadata is read
     await eventually(async () => expect(await backlog()).toBe(count - window), { timeout: 120_000 });
     const { body: paused } = await api.json<Queue>('/queues/thumbnailGeneration');
-    // those in redis wait as paused
-    expect(paused.statistics).toMatchObject({ waiting: count - window, paused: window });
+    // all of them wait, those in the database and those in redis (where the jobs of a paused queue wait too, as of
+    // BullMQ 6)
+    expect(paused.statistics).toMatchObject({ waiting: count, paused: 0 });
 
     await command('resume');
     await eventually(

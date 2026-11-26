@@ -22,6 +22,7 @@ import app.alextran.immich.images.RegionImageApi
 import app.alextran.immich.images.RegionImagesImpl
 import app.alextran.immich.images.RemoteImageApi
 import app.alextran.immich.images.RemoteImagesImpl
+import app.alextran.immich.passkey.PasskeyPlugin
 import app.alextran.immich.permission.PermissionApi
 import app.alextran.immich.permission.PermissionApiImpl
 import app.alextran.immich.sync.NativeSyncApi
@@ -35,6 +36,7 @@ class MainActivity : FlutterFragmentActivity() {
   override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)
     registerPlugins(this, flutterEngine)
+    flutterEngine.plugins.add(PasskeyPlugin())
   }
 
   override fun onNewIntent(intent: Intent) {

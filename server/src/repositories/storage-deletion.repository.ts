@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, OnConflictBuilder, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import type { RecordedFile } from 'src/repositories/storage-backend.repository.js';
 import { StorageLocation } from 'src/cores/storage.core.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { BuiltinStorageBackend } from 'src/enum.js';
+import type { RecordedFile } from 'src/repositories/storage-backend.repository.js';
 import { DB } from 'src/schema/index.js';
 import { StorageDeletionTable } from 'src/schema/tables/storage-deletion.table.js';
 
@@ -54,9 +54,9 @@ export const toDeletedOriginalFile = (row: {
 const builtinBackends = Object.values(BuiltinStorageBackend);
 
 /**
- * A file is registered once, however often its deletion is requested; a registration made before the file was written
- * is replaced by the deletion, which may keep it longer and with what recovering it needs
- */
+A file is registered once, however often its deletion is requested; a registration made before the file was written
+is replaced by the deletion, which may keep it longer and with what recovering it needs
+*/
 const replaceWriteRegistration = (oc: OnConflictBuilder<DB, 'storage_deletion'>) =>
   oc
     .columns(['backendId', 'key'])
@@ -91,9 +91,9 @@ export class StorageDeletionRepository {
   }
 
   /**
-   * Register every file of a user that is stored on a backend, before the user and their records are deleted. Originals
-   * keep what is needed to recover them.
-   */
+  Register every file of a user that is stored on a backend, before the user and their records are deleted. Originals
+  keep what is needed to recover them.
+  */
   @GenerateSql({
     params: [DummyValue.UUID, { originalsNotBefore: DummyValue.DATE, derivedNotBefore: DummyValue.DATE }],
   })

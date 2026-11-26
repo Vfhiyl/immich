@@ -1,8 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { parse } from 'node:path';
 import sanitize from 'sanitize-filename';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { AuthDto } from 'src/dtos/auth.dto.js';
+import { AuthDto, isEditedOnly } from 'src/dtos/auth.dto.js';
 import {
   DownloadArchiveDto,
   DownloadArchiveInfo,
@@ -14,6 +13,7 @@ import { readBlob } from 'src/repositories/storage-backend.repository.js';
 import { ImmichReadStream } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
+import { getFilenameExtension } from 'src/utils/file.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { compileStorageTemplate, toTemplatePath } from 'src/utils/storage-template.js';
 
@@ -92,8 +92,9 @@ export class DownloadService extends BaseService {
   async downloadArchive(auth: AuthDto, dto: DownloadArchiveDto): Promise<ImmichReadStream> {
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: dto.assetIds });
 
+    const edited = isEditedOnly(auth, dto.edited);
     const zip = this.storageRepository.createZipStream();
-    const assets = await this.assetRepository.getForOriginals(dto.assetIds, dto.edited ?? false);
+    const assets = await this.assetRepository.getForOriginals(dto.assetIds, edited);
     const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
     const templateNames = await this.getTemplateNames(dto.assetIds);
     const paths: Record<string, number> = {};
@@ -104,34 +105,37 @@ export class DownloadService extends BaseService {
         continue;
       }
 
-      const { originalPath, originalFileName } = asset;
+      const { originalPath, editedPath, originalFileName } = asset;
 
-      let filename = templateNames?.get(assetId) ?? (sanitize(originalFileName) || 'unnamed');
+      // the name the storage template gives it, with its folders, else its own; with the extension of what is sent
+      const named = templateNames?.get(assetId) ?? (sanitize(originalFileName) || 'unnamed');
+      const name = named.slice(0, named.length - getFilenameExtension(named).length);
+      const extension = getFilenameExtension(editedPath || originalPath);
+      let filename = name + extension;
+
       const count = paths[filename] || 0;
       paths[filename] = count + 1;
       if (count !== 0) {
-        const parsedFilename = parse(filename);
-        filename = `${parsedFilename.name}+${count}${parsedFilename.ext}`;
+        filename = `${name}+${count}${extension}`;
       }
 
-      const file =
-        dto.edited && asset.editedPath
-          ? {
-              path: asset.editedPath,
-              backendId: asset.editedBackendId ?? null,
-              key: asset.editedKey ?? null,
-              size: asset.editedSize,
-              checksum: asset.editedChecksum,
-              encryption: asset.editedEncryption,
-            }
-          : {
-              path: originalPath,
-              backendId: asset.originalBackendId,
-              key: asset.originalKey,
-              size: asset.originalSize,
-              checksum: asset.originalChecksum,
-              encryption: asset.originalEncryption,
-            };
+      const file = editedPath
+        ? {
+            path: editedPath,
+            backendId: asset.editedBackendId ?? null,
+            key: asset.editedKey ?? null,
+            size: asset.editedSize,
+            checksum: asset.editedChecksum,
+            encryption: asset.editedEncryption,
+          }
+        : {
+            path: originalPath,
+            backendId: asset.originalBackendId,
+            key: asset.originalKey,
+            size: asset.originalSize,
+            checksum: asset.originalChecksum,
+            encryption: asset.originalEncryption,
+          };
       const source = this.storageBackendRepository.resolve(file);
       if ('blob' in source) {
         const { blob } = source;
@@ -144,7 +148,7 @@ export class DownloadService extends BaseService {
       try {
         realpath = await this.storageRepository.realpath(realpath);
       } catch {
-        this.logger.warn('Unable to resolve realpath', { originalPath });
+        this.logger.warn('Unable to resolve realpath', { realpath });
       }
 
       zip.addFile(realpath, filename);
@@ -159,9 +163,9 @@ export class DownloadService extends BaseService {
   }
 
   /**
-   * With storage backends, files have opaque keys rather than paths of the storage template, which then names the files
-   * of a download instead, in its folders (when it is enabled)
-   */
+  With storage backends, files have opaque keys rather than paths of the storage template, which then names the files
+  of a download instead, in its folders (when it is enabled)
+  */
   private async getTemplateNames(ids: string[]) {
     if (!this.storageBackendRepository.hasConfiguredBackends()) {
       return;

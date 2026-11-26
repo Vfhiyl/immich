@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import type { Insertable, Kysely, Updateable } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
-import type { Insertable, Kysely, Updateable } from 'kysely';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
@@ -136,9 +136,9 @@ export class SessionRepository {
   }
 
   /**
-   * Make every client sync anew, e.g. after the database was restored from a backup: what they synced since the backup
-   * was taken is gone, and no records of deletions tell them so
-   */
+  Make every client sync anew, e.g. after the database was restored from a backup: what they synced since the backup
+  was taken is gone, and no records of deletions tell them so
+  */
   @GenerateSql()
   async markAllForSyncReset() {
     await this.db.updateTable('session').set({ isPendingSyncReset: true }).execute();

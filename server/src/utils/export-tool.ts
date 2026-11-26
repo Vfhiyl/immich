@@ -5,7 +5,6 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { parseArgs } from 'node:util';
-import type { ToolOutput } from 'src/utils/encryption-tool.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { StorageBackendRole } from 'src/enum.js';
 import { createVerifyingStream } from 'src/repositories/blob-store.js';
@@ -13,13 +12,14 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { RecordedFile, StorageBackendRepository, readBlob } from 'src/repositories/storage-backend.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+import type { ToolOutput } from 'src/utils/encryption-tool.js';
 
 /**
- * The `immich-export` command: every original with its metadata, in folders people can read, with nothing but the
- * storage backends, the master key file and either a database (e.g. a database backup restored into an empty
- * PostgreSQL) or, when no database is left, what the encrypted objects describe themselves with. It needs no Redis and
- * no running Immich. An export can be stopped and run again: what was exported is kept.
- */
+The `immich-export` command: every original with its metadata, in folders people can read, with nothing but the
+storage backends, the master key file and either a database (e.g. a database backup restored into an empty
+PostgreSQL) or, when no database is left, what the encrypted objects describe themselves with. It needs no Redis and
+no running Immich. An export can be stopped and run again: what was exported is kept.
+*/
 export const EXPORT_TOOL_USAGE = `Usage: immich-export --storage <file> --output <folder> [options]
 
 Exports every original into <folder>/<user>/<year>/<date>/<file name>, each with a JSON file of what Immich knows
@@ -153,7 +153,7 @@ export const toXmp = (asset: Pick<ExportedAsset, 'localDateTime' | 'exif' | 'tag
   bag('Iptc4xmpExt:PersonInImage', asset.people);
 
   return [
-    '<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>',
+    '<?xpacket begin="\u{FEFF}" id="W5M0MpCehiHzreSzNTczkc9d"?>',
     '<x:xmpmeta xmlns:x="adobe:ns:meta/">',
     ' <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
     '  <rdf:Description rdf:about=""',
@@ -194,9 +194,9 @@ interface ExportTarget {
 }
 
 /**
- * The file an asset is exported to: its file name in its folder, or with a number if another asset has the name. The
- * JSON file next to it tells whose a name is, so that a run that is started again finds the same names.
- */
+The file an asset is exported to: its file name in its folder, or with a number if another asset has the name. The
+JSON file next to it tells whose a name is, so that a run that is started again finds the same names.
+*/
 const findTarget = async (folder: string, fileName: string, id: string, size: number | null): Promise<ExportTarget> => {
   const extension = extname(fileName);
   const stem = basename(fileName, extension);
@@ -235,9 +235,9 @@ export class Exporter {
   }
 
   /**
-   * Export originals, each with its JSON file and XMP sidecar; `onExported` is told after each one, and stops the export
-   * when it returns false
-   */
+  Export originals, each with its JSON file and XMP sidecar; `onExported` is told after each one, and stops the export
+  when it returns false
+  */
   async exportAssets(
     assets: AsyncIterable<ExportedAsset>,
     options: ExportOptions,
@@ -254,9 +254,9 @@ export class Exporter {
   }
 
   /**
-   * Export the originals on the backend for originals by what their encrypted objects describe: file name and owner,
-   * dated by when the object was written. Objects that are not encrypted describe nothing and keep their key as name.
-   */
+  Export the originals on the backend for originals by what their encrypted objects describe: file name and owner,
+  dated by when the object was written. Objects that are not encrypted describe nothing and keep their key as name.
+  */
   async exportFromObjects({ output }: ExportOptions): Promise<ExportSummary> {
     const summary: ExportSummary = { exported: 0, skipped: 0, failed: 0 };
     const backendId = this.backends.getBackendFor(StorageBackendRole.Originals);

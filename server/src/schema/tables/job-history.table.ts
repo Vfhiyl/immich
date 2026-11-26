@@ -1,19 +1,19 @@
 import {
   Column,
   CreateDateColumn,
-  type Generated,
   Index,
   PrimaryColumn,
   PrimaryGeneratedColumn,
   Table,
+  type Generated,
   type Timestamp,
 } from '@immich/sql-tools';
 
 /**
- * The jobs that ran, per hour (UTC) and job: those that succeeded (or had nothing to do), failed, or were put back for
- * later as their environment failed (the machine learning service, the disk, a storage service). Counted as jobs end
- * and written every few seconds; kept for good (a year is some 400,000 rows)
- */
+The jobs that ran, per hour (UTC) and job: those that succeeded (or had nothing to do), failed, or were put back for
+later as their environment failed (the machine learning service, the disk, a storage service). Counted as jobs end
+and written every few seconds; kept for good (a year is some 400,000 rows)
+*/
 @Table('job_run_hourly')
 export class JobRunHourlyTable {
   @PrimaryColumn({ type: 'timestamp with time zone' })

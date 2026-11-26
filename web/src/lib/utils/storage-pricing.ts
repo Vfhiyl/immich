@@ -13,9 +13,9 @@ export const emptyPricing = (backendId: string, currency = 'CNY'): AdminConfigSt
 });
 
 /**
- * The backends to show prices for: the configured ones, then those that have prices but are no longer configured (so
- * that their prices can be removed)
- */
+The backends to show prices for: the configured ones, then those that have prices but are no longer configured (so
+that their prices can be removed)
+*/
 export const pricedBackendIds = (configured: string[], pricings: AdminConfigStorageBackendPricingDto[]) => [
   ...configured,
   ...pricings.map(({ backendId }) => backendId).filter((id) => !configured.includes(id)),

@@ -32,7 +32,7 @@ class RegionWholeImageRequest extends ImageRequest {
         'height': final int height,
         'rowBytes': final int rowBytes,
       } =>
-        await _fromDecodedPlatformImage(pointer, width, height, rowBytes),
+        await _firstFrame(await _codecFromDecodedPlatformImage(pointer, width, height, rowBytes)),
       _ => null,
     };
     return frame == null ? null : ImageInfo(image: frame.image, scale: scale);

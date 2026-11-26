@@ -22,18 +22,18 @@ import {
 import { KeyProvider, MASTER_KEY_ID_LENGTH } from 'src/repositories/key-provider.js';
 
 /**
- * Application-layer encryption of blobs, in a format that can be read from any position (see the encryption design
- * notes):
- *
- *   blob    = chunk_0 || ... || chunk_n-1 || trailer || length of trailer (4 bytes, big endian)
- *   chunk_i = AEAD(file key, nonce = prefix (7) || i (4, big endian) || last chunk (1), aad = header || blob key)
- *   trailer = header || AEAD(file key, nonce = prefix || 0 || 2, aad = header) of a JSON manifest
- *
- * The header is also recorded in the database; reads use that copy, the trailer makes a blob recoverable from the
- * storage and the master key alone. Every file has its own random key, wrapped with the master key (AES key wrap).
- * The chunk index in the nonce detects reordered chunks, the last chunk flag truncation, and the blob key in the
- * associated data a blob moved to another key.
- */
+Application-layer encryption of blobs, in a format that can be read from any position (see the encryption design
+notes):
+
+  blob    = chunk_0 || ... || chunk_n-1 || trailer || length of trailer (4 bytes, big endian)
+  chunk_i = AEAD(file key, nonce = prefix (7) || i (4, big endian) || last chunk (1), aad = header || blob key)
+  trailer = header || AEAD(file key, nonce = prefix || 0 || 2, aad = header) of a JSON manifest
+
+The header is also recorded in the database; reads use that copy, the trailer makes a blob recoverable from the
+storage and the master key alone. Every file has its own random key, wrapped with the master key (AES key wrap).
+The chunk index in the nonce detects reordered chunks, the last chunk flag truncation, and the blob key in the
+associated data a blob moved to another key.
+*/
 export enum EncryptionSuite {
   Aes256Gcm = 1,
   ChaCha20Poly1305 = 2,
@@ -181,9 +181,9 @@ const isManifest = (value: unknown): value is BlobManifest => {
 };
 
 /**
- * The header and manifest kept in the trailer of a blob, which is all it takes to read a blob when nothing else about
- * it is known (with the master key it was encrypted with)
- */
+The header and manifest kept in the trailer of a blob, which is all it takes to read a blob when nothing else about
+it is known (with the master key it was encrypted with)
+*/
 export const openTrailer = (trailer: Buffer, keys: KeyProvider) => {
   const header = Buffer.from(trailer.subarray(0, ENCRYPTION_HEADER_LENGTH));
   const { suite, noncePrefix, masterKeyId, wrappedKey } = decodeEncryptionHeader(header);
@@ -297,9 +297,9 @@ export class EncryptedBlobStore implements BlobStore {
   }
 
   /**
-   * Encrypt and write a part. Which chunks it holds follows from its number, so a part can be written by any process and
-   * written again with the same result; the last part seals the last chunk as last and ends with the trailer.
-   */
+  Encrypt and write a part. Which chunks it holds follows from its number, so a part can be written by any process and
+  written again with the same result; the last part seals the last chunk as last and ends with the trailer.
+  */
   async uploadPart(key: string, upload: BlobUpload, { number, data, last }: BlobUploadPart): Promise<UploadedPart> {
     const { header, fileKey, chunkSize } = this.openUpload(upload);
     const { suite, noncePrefix } = decodeEncryptionHeader(header);
@@ -435,9 +435,9 @@ export class EncryptedBlobStore implements BlobStore {
   }
 
   /**
-   * The header and manifest of a blob, from its trailer: what a blob describes itself with, for when nothing else is
-   * known about it (e.g. listing backups without a database)
-   */
+  The header and manifest of a blob, from its trailer: what a blob describes itself with, for when nothing else is
+  known about it (e.g. listing backups without a database)
+  */
   async describe(key: string): Promise<{ header: Buffer; manifest: BlobManifest; storedSize: number }> {
     const stat = await this.inner.head(key);
     if (!stat || stat.size < TRAILER_LENGTH_SIZE + ENCRYPTION_HEADER_LENGTH) {

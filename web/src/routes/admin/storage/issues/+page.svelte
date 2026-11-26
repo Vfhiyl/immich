@@ -1,8 +1,8 @@
 <script lang="ts">
-  import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
-  import { Route } from '$lib/route';
-  import { formatAge, handleAcknowledgeStorageIssue } from '$lib/services/storage.service';
-  import { getByteUnitString } from '$lib/utils/byte-units';
+  import AdminPageLayout from '#lib/components/layouts/AdminPageLayout.svelte';
+  import { Route } from '#lib/route.ts';
+  import { formatAge, handleAcknowledgeStorageIssue } from '#lib/services/storage.service.ts';
+  import { getByteUnitString } from '#lib/utils/byte-units.ts';
   import { getBaseUrl, getStorageIssues } from '@immich/sdk';
   import {
     Button,

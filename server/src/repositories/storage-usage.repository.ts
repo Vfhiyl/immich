@@ -1,20 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import type { StorageRequestUsage } from 'src/utils/storage-metering.js';
 import { GenerateSql } from 'src/decorators.js';
 import { BuiltinStorageBackend, StorageUsageCategory } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import type { StorageRequestUsage } from 'src/utils/storage-metering.js';
 
 const builtinBackends = Object.values(BuiltinStorageBackend);
 
 /**
- * The bytes an encrypted file takes besides its content, roughly: a tag for every chunk of 64 KiB, and a trailer of a
- * few hundred bytes. Stored sizes are estimates either way; the bill of the service is what counts.
- */
-const encryptedSize = (size: string, encryption: string) =>
-  sql<number>`coalesce(${sql.ref(size)}, 0) + case when ${sql.ref(encryption)} is null then 0
-    else greatest(1, ceil(coalesce(${sql.ref(size)}, 0) / 65536.0)) * 16 + 512 end`;
+The bytes an encrypted file takes besides its content, roughly: a tag for every chunk of 64 KiB, and a trailer of a
+few hundred bytes. Stored sizes are estimates either way; the bill of the service is what counts.
+*/
+const encryptedSize = sql<number>`coalesce("size", 0) + case when "encryption" is null then 0
+  else greatest(1, ceil(coalesce("size", 0) / 65536.0)) * 16 + 512 end`;
 
 @Injectable()
 export class StorageUsageRepository {
@@ -47,20 +46,20 @@ export class StorageUsageRepository {
         insert into "storage_usage_daily" ("day", "backendId", "category", "objects", "bytes")
         select ${day}::date, "backendId", "category", count(*), coalesce(sum("bytes"), 0)
         from (
-          select "backendId", ${StorageUsageCategory.Files} as "category", ${encryptedSize('size', 'encryption')} as "bytes"
+          select "backendId", ${StorageUsageCategory.Files} as "category", ${encryptedSize} as "bytes"
           from "asset_file"
           union all
-          select "backendId", ${StorageUsageCategory.Files}, ${encryptedSize('size', 'encryption')}
+          select "backendId", ${StorageUsageCategory.Files}, ${encryptedSize}
           from "asset_original_file"
           union all
-          select "backendId", ${StorageUsageCategory.Files}, ${encryptedSize('size', 'encryption')}
+          select "backendId", ${StorageUsageCategory.Files}, ${encryptedSize}
           from "person_thumbnail_file"
           union all
-          select "backendId", ${StorageUsageCategory.Files}, ${encryptedSize('size', 'encryption')}
+          select "backendId", ${StorageUsageCategory.Files}, ${encryptedSize}
           from "user_profile_image_file"
           union all
           -- the size of derived files that wait for their deletion is not recorded
-          select "backendId", ${StorageUsageCategory.PendingDeletion}, ${encryptedSize('size', 'encryption')}
+          select "backendId", ${StorageUsageCategory.PendingDeletion}, ${encryptedSize}
           from "storage_deletion"
           union all
           select "backendId", ${StorageUsageCategory.Uploading}, "committedOffset" from "upload_session"

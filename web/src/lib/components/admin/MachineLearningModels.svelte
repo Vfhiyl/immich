@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { formatAge, toPercent } from '$lib/services/storage.service';
-  import { getByteUnitString } from '$lib/utils/byte-units';
-  import { handleError } from '$lib/utils/handle-error';
+  import { formatAge, toPercent } from '#lib/services/storage.service.ts';
+  import { getByteUnitString } from '#lib/utils/byte-units.ts';
+  import { handleError } from '#lib/utils/handle-error.ts';
   import {
     MachineLearningBackoffLevel,
     undoFaceRegroup,
@@ -9,7 +9,7 @@
     type MachineLearningModelDto,
     type MachineLearningTaskModelsDto,
   } from '@immich/sdk';
-  import { Alert, Button, modalManager, Stack, Text } from '@immich/ui';
+  import { Alert, Button, Stack, Text, modalManager } from '@immich/ui';
   import { t, type Translations } from 'svelte-i18n';
 
   type Props = {
@@ -101,8 +101,8 @@
             </Text>
           {/if}
           {#if task.rebuild && !task.rebuild.finishedAt}
-            {@const total = task.rebuild.total ?? 0}
-            {@const done = task.rebuild.done ?? 0}
+            {const total = $derived(task.rebuild.total ?? 0)}
+            {const done = $derived(task.rebuild.done ?? 0)}
             <Text size="small">{$t('admin.machine_learning_models_rebuilding', { values: { done, total } })}</Text>
             <div class="h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700">
               <div class="h-1.5 rounded-full bg-primary" style:width="{toPercent(done, total)}%"></div>
@@ -121,7 +121,7 @@
               })}
             </Text>
           {:else if task.regroup}
-            {@const regroup = task.regroup}
+            {const regroup = $derived(task.regroup)}
             <div class="flex flex-col gap-1" data-testid="ml-regroup">
               <Text size="small">
                 {$t('admin.machine_learning_models_regroup_done', {

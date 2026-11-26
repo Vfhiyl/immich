@@ -7,10 +7,10 @@ export interface RegroupFace {
 }
 
 /**
- * Which faces leave a person after its faces got embeddings of another model: the faces close to each other (pairs
- * within the distance of the model) form parts; the largest part stays, and so do the parts that hold a fixed face.
- * Fixed faces never leave.
- */
+Which faces leave a person after its faces got embeddings of another model: the faces close to each other (pairs
+within the distance of the model) form parts; the largest part stays, and so do the parts that hold a fixed face.
+Fixed faces never leave.
+*/
 export const facesLeavingPerson = (faces: RegroupFace[], pairs: Array<{ a: string; b: string }>): string[] => {
   const parent = new Map(faces.map(({ id }) => [id, id]));
   const root = (id: string) => {

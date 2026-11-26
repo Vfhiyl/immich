@@ -1,6 +1,6 @@
 import { Mocked, vitest } from 'vitest';
-import type { RepositoryInterface } from 'src/types.js';
 import { JobFailureRepository } from 'src/repositories/job-failure.repository.js';
+import type { RepositoryInterface } from 'src/types.js';
 
 /** No failed jobs, so that jobs run and are queued as upstream's without setup */
 export const newJobFailureRepositoryMock = (): Mocked<RepositoryInterface<JobFailureRepository>> => ({

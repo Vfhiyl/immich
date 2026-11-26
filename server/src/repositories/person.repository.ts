@@ -1,22 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import {
+  expressionBuilder,
+  sql,
   type ExpressionBuilder,
   type Insertable,
   type Kysely,
   type SqlBool,
   type Updateable,
-  expressionBuilder,
-  sql,
 } from 'kysely';
 import { jsonArrayFrom, jsonBuildObject, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { StorageLocation } from 'src/cores/storage.core.js';
-import type { RecordedFile } from 'src/repositories/storage-backend.repository.js';
 import { AssetFace, PersonUser, columns } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import { PersonUserRole } from 'src/dtos/person.dto.js';
 import { AssetFileType, AssetVisibility, BuiltinStorageBackend, SourceType, UserMetadataKey } from 'src/enum.js';
 import { type YearMonthDay } from 'src/repositories/asset.repository.js';
+import type { RecordedFile } from 'src/repositories/storage-backend.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
@@ -31,7 +31,7 @@ import {
   withOriginalFile,
 } from 'src/utils/database.js';
 import { isLeapDayObserved } from 'src/utils/date.js';
-import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
+import { paginationHelper, type PaginationOptions } from 'src/utils/pagination.js';
 
 export interface PersonFilterOptions {
   sharedById?: string;
@@ -1013,9 +1013,9 @@ export class PersonRepository {
   }
 
   /**
-   * Record the thumbnail file of people that do not have one yet, with the same rules as for asset files. People
-   * deleted in the meantime are skipped. Returns the number of people updated.
-   */
+  Record the thumbnail file of people that do not have one yet, with the same rules as for asset files. People
+  deleted in the meantime are skipped. Returns the number of people updated.
+  */
   @GenerateSql({
     params: [
       [

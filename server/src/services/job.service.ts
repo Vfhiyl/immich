@@ -1,5 +1,4 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import type { JobItem } from 'src/types.js';
 import { serverVersion } from 'src/constants.js';
 import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
@@ -7,6 +6,7 @@ import { JobCreateDto } from 'src/dtos/job.dto.js';
 import { AssetType, AssetVisibility, IntegrityReport, JobName, JobStatus, ManualJobName, QueueName } from 'src/enum.js';
 import { ArgsOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import type { JobItem } from 'src/types.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { getTrackedAssetId } from 'src/utils/job-failure.js';
 import { classifyJobFailure } from 'src/utils/job-history.js';
@@ -97,9 +97,9 @@ export class JobService extends BaseService {
 
   @OnEvent({ name: 'JobRun' })
   /**
-   * Runs a job. A job that throws or returns `failed` fails in its queue too, where the jobs page counts it; a job for a
-   * file is tracked per asset, from before it starts (should the process stop meanwhile) until it finishes
-   */
+  Runs a job. A job that throws or returns `failed` fails in its queue too, where the jobs page counts it; a job for a
+  file is tracked per asset, from before it starts (should the process stop meanwhile) until it finishes
+  */
   async onJobRun(...[queueName, job]: ArgsOf<'JobRun'>) {
     const assetId = getTrackedAssetId(job);
     let failure: Error | undefined;
@@ -172,10 +172,10 @@ export class JobService extends BaseService {
   }
 
   /**
-   * A job that failed because of where it ran (see isEnvironmentFailure) is put back for later, a while longer each
-   * time in a row, and its queue waits that long in this process too, for its other jobs would fail the same; after
-   * ENVIRONMENT_RETRIES it fails, but not on its file
-   */
+  A job that failed because of where it ran (see isEnvironmentFailure) is put back for later, a while longer each
+  time in a row, and its queue waits that long in this process too, for its other jobs would fail the same; after
+  ENVIRONMENT_RETRIES it fails, but not on its file
+  */
   private retryLaterIfEnvironment(queueName: QueueName, job: JobItem, error: Error): Error {
     if (!isEnvironmentFailure(error)) {
       return error;
@@ -192,9 +192,7 @@ export class JobService extends BaseService {
     return new JobRetryLater(error.message, delay, { environmentRetries: retries + 1 });
   }
 
-  /**
-   * Queue follow up jobs
-   */
+  /** Queue follow up jobs */
   private async onDone(item: JobItem) {
     switch (item.name) {
       case JobName.SidecarCheck: {

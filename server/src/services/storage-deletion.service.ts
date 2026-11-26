@@ -7,8 +7,8 @@ import {
 } from '@nestjs/common';
 import { chunk, partition } from 'lodash-es';
 import { DateTime } from 'luxon';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { mapNotification } from 'src/dtos/notification.dto.js';
 import {
   StorageDeletionOriginalsQueryDto,
@@ -37,9 +37,9 @@ const DELETION_BATCH_SIZE = 1000;
 /** A run stops after this many files; the rest waits for the next run */
 const DELETIONS_PER_RUN = 100_000;
 /**
- * A run that would delete more originals than this share of all of them (and at least the minimum) pauses instead, and
- * an administrator decides: deleting that much at once is more likely a mistake than what anyone wanted.
- */
+A run that would delete more originals than this share of all of them (and at least the minimum) pauses instead, and
+an administrator decides: deleting that much at once is more likely a mistake than what anyone wanted.
+*/
 const PAUSE_SHARE = 0.02;
 const PAUSE_MINIMUM = 100;
 
@@ -255,10 +255,10 @@ export class StorageDeletionService extends BaseService {
   }
 
   /**
-   * Delete the copies of files from the replicas; returns the files without copies left. A replica may refuse while a
-   * copy is locked (object lock), and the file waits for the next attempt. Copies on a backend that is no longer
-   * configured as a replica cannot be deleted, and are forgotten.
-   */
+  Delete the copies of files from the replicas; returns the files without copies left. A replica may refuse while a
+  copy is locked (object lock), and the file waits for the next attempt. Copies on a backend that is no longer
+  configured as a replica cannot be deleted, and are forgotten.
+  */
   private async deleteCopies<T extends { id: string; backendId: string; key: string }>(
     files: T[],
     now: Date,

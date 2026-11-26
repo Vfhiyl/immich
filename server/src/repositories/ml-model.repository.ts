@@ -19,9 +19,9 @@ export interface RebuildSelection {
 }
 
 /**
- * The models that made results (`ml_model`), which made the results of each photo (`asset_ml_result`), and the
- * embeddings of smart search made for a model it changes to (`smart_search_rebuild`)
- */
+The models that made results (`ml_model`), which made the results of each photo (`asset_ml_result`), and the
+embeddings of smart search made for a model it changes to (`smart_search_rebuild`)
+*/
 @Injectable()
 export class MachineLearningModelRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
@@ -139,10 +139,10 @@ export class MachineLearningModelRepository {
   }
 
   /**
-   * Moves the embeddings of `modelIds` to what is searched, at once: searches see either all of the old ones or all
-   * of the new ones. Photos without one have none afterwards (the job of missing embeddings makes them). With another
-   * dimension, the column changes and the index is built again in the same transaction, while searches wait.
-   */
+  Moves the embeddings of `modelIds` to what is searched, at once: searches see either all of the old ones or all
+  of the new ones. Photos without one have none afterwards (the job of missing embeddings makes them). With another
+  dimension, the column changes and the index is built again in the same transaction, while searches wait.
+  */
   async switchSmartSearch({
     modelIds,
     dimSize,
@@ -216,9 +216,9 @@ export class MachineLearningModelRepository {
   }
 
   /**
-   * The faces of a person with an embedding: which are fixed (a user gave them, or they were drawn or read from a
-   * file), and which is the face of its picture
-   */
+  The faces of a person with an embedding: which are fixed (a user gave them, or they were drawn or read from a
+  file), and which is the face of its picture
+  */
   @GenerateSql({ params: [DummyValue.UUID] })
   getFacesToRegroup(personGroupId: string) {
     return this.db
@@ -336,9 +336,9 @@ export class MachineLearningModelRepository {
   }
 
   /**
-   * Puts the faces back where they were before the last regroup, but for what users did since (gave a face a person,
-   * or said it is not the person it had) and people that are gone
-   */
+  Puts the faces back where they were before the last regroup, but for what users did since (gave a face a person,
+  or said it is not the person it had) and people that are gone
+  */
   @GenerateSql()
   async undoRegroup(): Promise<number> {
     return this.db.transaction().execute(async (trx) => {

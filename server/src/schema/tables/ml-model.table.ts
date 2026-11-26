@@ -1,17 +1,17 @@
 import {
   Column,
   CreateDateColumn,
-  type Generated,
   Index,
   PrimaryGeneratedColumn,
   Table,
+  type Generated,
   type Timestamp,
 } from '@immich/sql-tools';
 
 /**
- * The models that made results: a task, the name the model was asked by, and the fingerprint of its files (SHA-256,
- * reported by the machine learning service; null when it does not report one, as upstream's does not)
- */
+The models that made results: a task, the name the model was asked by, and the fingerprint of its files (SHA-256,
+reported by the machine learning service; null when it does not report one, as upstream's does not)
+*/
 @Table({ name: 'ml_model' })
 @Index({
   name: 'ml_model_task_name_fingerprint_uq',

@@ -28,9 +28,9 @@ const sendInterim = (req: Request, res: Response) => (headers: Record<string, st
 };
 
 /**
- * Resumable uploads (draft-ietf-httpbis-resumable-upload), which the draft describes rather than the API description:
- * the content is the file itself, and the asset is described by the `X-Immich-Asset-Data` header of the creation
- */
+Resumable uploads (draft-ietf-httpbis-resumable-upload), which the draft describes rather than the API description:
+the content is the file itself, and the asset is described by the `X-Immich-Asset-Data` header of the creation
+*/
 @ApiExcludeController()
 @Controller('upload')
 export class ResumableUploadController {

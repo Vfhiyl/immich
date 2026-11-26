@@ -15,6 +15,7 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/timeline.model.dart';
 import 'package:immich_mobile/infrastructure/repositories/main_timeline.dart';
 import 'package:immich_mobile/infrastructure/repositories/sync_stream.repository.dart';
+import 'package:immich_mobile/utils/datetime_helpers.dart';
 import 'package:openapi/api.dart' as api;
 
 void main() {
@@ -87,6 +88,7 @@ void main() {
     for (var i = 0; i < local; i++) {
       // some are on the server already, of a user in the timeline or not
       final checksum = random.nextInt(3) == 0 ? 'checksum-${random.nextInt(remote)}' : 'local-checksum-$i';
+      final createdAt = times[random.nextInt(times.length)];
       await db
           .into(db.localAssetEntity)
           .insert(
@@ -95,7 +97,9 @@ void main() {
               name: 'LOCAL_$i.jpg',
               type: AssetType.image,
               checksum: Value(checksum),
-              createdAt: Value(times[random.nextInt(times.length)]),
+              createdAt: Value(createdAt),
+              // as the app sets it (local_album.repository.dart), except for a few without one, which are not shown
+              groupDate: Value(random.nextInt(10) == 0 ? null : timelineGroupDate(createdAt.toLocal())),
             ),
           );
       for (final album in ['selected', 'none', 'excluded']) {
@@ -108,14 +112,24 @@ void main() {
     }
   }
 
-  /// Upstream's timeline in the order of [MainTimeline]: newest first, then by id (descending), server photos first
+  /// Upstream's timeline in the order of [MainTimeline]: by day (group_date) and time, newest first, then by id
+  /// (descending), server photos first
   Future<List<String>> upstreamAssets() async {
     final rows = await db.mergedAssetDrift.mergedAsset(userIds: timelineUsers, limit: (_) => Limit(1000000, 0)).get();
     final keyed = [
       for (final row in rows)
-        (createdAt: row.createdAt, id: row.remoteId ?? row.localId!, source: row.remoteId != null ? 0 : 1),
+        (
+          day: row.groupDate!,
+          createdAt: row.createdAt,
+          id: row.remoteId ?? row.localId!,
+          source: row.remoteId != null ? 0 : 1,
+        ),
     ];
     keyed.sort((a, b) {
+      final byDay = b.day.compareTo(a.day);
+      if (byDay != 0) {
+        return byDay;
+      }
       final byTime = b.createdAt.compareTo(a.createdAt);
       if (byTime != 0) {
         return byTime;
@@ -132,9 +146,9 @@ void main() {
       for (final row in rows)
         (
           DateTime(
-            int.parse(row.bucketDate.substring(0, 4)),
-            int.parse(row.bucketDate.substring(5, 7)),
-            groupBy == GroupAssetsBy.month ? 1 : int.parse(row.bucketDate.substring(8, 10)),
+            int.parse(row.bucketDate!.substring(0, 4)),
+            int.parse(row.bucketDate!.substring(5, 7)),
+            groupBy == GroupAssetsBy.month ? 1 : int.parse(row.bucketDate!.substring(8, 10)),
           ),
           row.assetCount,
         ),
@@ -168,15 +182,12 @@ void main() {
 
   Future<void> expectCountsAreRight() async {
     final counted = await db
-        .customSelect(
-          'SELECT owner_id, local_day, utc_day, asset_count FROM ${TimelineIndex.countTable} ORDER BY 1, 2, 3',
-        )
+        .customSelect('SELECT owner_id, group_date, asset_count FROM ${TimelineIndex.countTable} ORDER BY 1, 2')
         .get();
     final actual = await db
         .customSelect(
-          "SELECT owner_id, COALESCE(strftime('%Y-%m-%d', local_date_time), '') AS local_day, "
-          'substr(created_at, 1, 10) AS utc_day, COUNT(*) AS asset_count FROM remote_asset_entity '
-          'WHERE deleted_at IS NULL AND visibility = 0 GROUP BY 1, 2, 3 ORDER BY 1, 2, 3',
+          'SELECT owner_id, group_date, COUNT(*) AS asset_count FROM remote_asset_entity '
+          'WHERE deleted_at IS NULL AND visibility = 0 AND group_date IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2',
         )
         .get();
     expect(counted.map((row) => row.data).toList(), actual.map((row) => row.data).toList());
@@ -245,7 +256,7 @@ void main() {
     await seed();
 
     // a migration rebuilding the table drops its triggers
-    await db.customStatement('DROP TRIGGER ext_timeline_count_insert_v1');
+    await db.customStatement('DROP TRIGGER ext_timeline_count_insert_v2');
     await sync.updateAssetsV1([for (var i = 300; i < 320; i++) remoteAsset(i)]);
     await TimelineIndex.ensure(db);
     await expectCountsAreRight();
@@ -272,9 +283,17 @@ void main() {
         .get();
 
     final details = plan.map((row) => row.read<String>('detail')).toList();
-    expect(details, contains(startsWith('SEARCH rae USING INDEX ext_idx_remote_asset_timeline (created_at<?)')));
-    expect(details, contains(startsWith('SEARCH lae USING INDEX ext_idx_local_asset_timeline (created_at<?)')));
-    // only photos taken at the same time with the same id (a server photo and one of the phone) are put in order
+    expect(
+      details,
+      contains(
+        startsWith('SEARCH rae USING INDEX ext_idx_remote_asset_group_timeline (group_date>? AND group_date<?)'),
+      ),
+    );
+    expect(
+      details,
+      contains(startsWith('SEARCH lae USING INDEX ext_idx_local_asset_group_timeline (group_date>? AND group_date<?)')),
+    );
+    // only photos of the same day and time with the same id (a server photo and one of the phone) are put in order
     expect(
       details.where((detail) => detail.contains('TEMP B-TREE')),
       everyElement('USE TEMP B-TREE FOR LAST TERM OF ORDER BY'),

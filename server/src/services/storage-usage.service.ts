@@ -1,8 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DateTime } from 'luxon';
-import type { SystemConfig } from 'src/dtos/config.dto.js';
-import type { StorageUsageRepository } from 'src/repositories/storage-usage.repository.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
+import type { SystemConfig } from 'src/dtos/config.dto.js';
 import { mapNotification } from 'src/dtos/notification.dto.js';
 import {
   StorageBackendUsageDto,
@@ -20,13 +19,14 @@ import {
   StorageUsageCategory,
   SystemMetadataKey,
 } from 'src/enum.js';
+import type { StorageUsageRepository } from 'src/repositories/storage-usage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
 /**
- * Counted requests are written to the database this often, and when the application closes; a process that is killed
- * loses what it counted since, which is little enough for estimates
- */
+Counted requests are written to the database this often, and when the application closes; a process that is killed
+loses what it counted since, which is little enough for estimates
+*/
 const FLUSH_INTERVAL_MS = 10 * 1000;
 /** Usage is kept for three years, like the reports of the storage checks */
 const USAGE_RETENTION_YEARS = 3;
@@ -152,10 +152,10 @@ const summarize = (pricing: Pricing | undefined, requests: RequestRow[], stored:
 };
 
 /**
- * What the storage backends store and the requests made to them, per day, and what that costs by the prices the
- * deployment filled in. Requests are counted as they are sent and written to the database every minute; what is stored
- * is recorded every night from the records of the files. Both are estimates: the bill of the service is what counts.
- */
+What the storage backends store and the requests made to them, per day, and what that costs by the prices the
+deployment filled in. Requests are counted as they are sent and written to the database every minute; what is stored
+is recorded every night from the records of the files. Both are estimates: the bill of the service is what counts.
+*/
 @Injectable()
 export class StorageUsageService extends BaseService {
   private flushTimer?: NodeJS.Timeout;
@@ -273,9 +273,9 @@ export class StorageUsageService extends BaseService {
   }
 
   /**
-   * Remind administrators once a month when a backend's estimated cost would exceed its budget, and once more when it
-   * did; only a reminder: nothing is paused
-   */
+  Remind administrators once a month when a backend's estimated cost would exceed its budget, and once more when it
+  did; only a reminder: nothing is paused
+  */
   private async remindOfBudgets() {
     const { storagePricing } = await this.getConfig({ withCache: false });
     const budgets = await this.getBudgets(storagePricing.backends);

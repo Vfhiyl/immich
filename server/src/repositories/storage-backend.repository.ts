@@ -62,9 +62,9 @@ export interface LocalFileLease extends AsyncDisposable {
 }
 
 /**
- * A new file being written: tools write to `path`, then `commit` stores it and returns where. Dispose it with
- * `await using` so that a file that was not committed is removed.
- */
+A new file being written: tools write to `path`, then `commit` stores it and returns where. Dispose it with
+`await using` so that a file that was not committed is removed.
+*/
 export interface OutputFile extends AsyncDisposable {
   path: string;
   commit(): Promise<StoredFile>;
@@ -98,9 +98,9 @@ export const DEFAULT_DELETION_DELAY_DAYS = 360;
 export const DEFAULT_DATABASE_BACKUPS_KEEP_LAST = 14;
 
 /**
- * A file is registered for deletion before it is written, for in case it is never recorded (e.g. the process is killed
- * in between); a day later the cleanup deletes it unless it was recorded, which writing and recording take far less than
- */
+A file is registered for deletion before it is written, for in case it is never recorded (e.g. the process is killed
+in between); a day later the cleanup deletes it unless it was recorded, which writing and recording take far less than
+*/
 export const WRITE_REGISTRATION_DELAY_MS = 24 * 60 * 60 * 1000;
 
 /** Derived files can be generated again, but are kept as long as the database backups that may still record them */
@@ -138,9 +138,9 @@ export const toFileDeletion = (files: Array<RecordedFile | null | undefined>) =>
 };
 
 /**
- * Whether a newly stored file was written over a recorded file, which must then be kept rather than deleted. Only a
- * file written to its path can replace a file that is only known by its path.
- */
+Whether a newly stored file was written over a recorded file, which must then be kept rather than deleted. Only a
+file written to its path can replace a file that is only known by its path.
+*/
 export const isSameStoredFile = (existing: RecordedFile, stored: StorageLocation & { path: string }) => {
   if (existing.backendId === null || existing.key === null) {
     return isBuiltinStorageBackend(stored.backendId) && existing.path === stored.path;
@@ -221,9 +221,9 @@ export class StorageBackendRepository {
   }
 
   /**
-   * Make the configured storage backends available, replacing any configured before. Master keys are needed to write
-   * to encrypted backends, and to read any encrypted file.
-   */
+  Make the configured storage backends available, replacing any configured before. Master keys are needed to write
+  to encrypted backends, and to read any encrypted file.
+  */
   configure(
     backends: StorageBackendConfig[],
     keys?: KeyProvider,
@@ -253,9 +253,9 @@ export class StorageBackendRepository {
   }
 
   /**
-   * How long a file deleted from a backend is kept before it is deleted: originals (all files but those on the backend
-   * for derived files, which can be generated again) for the configured delay, derived files for a fixed one
-   */
+  How long a file deleted from a backend is kept before it is deleted: originals (all files but those on the backend
+  for derived files, which can be generated again) for the configured delay, derived files for a fixed one
+  */
   getDeletionDelay(backendId: string): { days: number; isOriginal: boolean } {
     const isOriginal = backendId !== this.getBackendFor(StorageBackendRole.Derived);
     return { days: isOriginal ? this.originalsDeletionDelayDays : DERIVED_DELETION_DELAY_DAYS, isOriginal };
@@ -305,10 +305,10 @@ export class StorageBackendRepository {
   }
 
   /**
-   * The folder of a replica that holds the copies of a backend, named after it: copies have the keys of their files
-   * there, so the replica can take the place of the backend by configuring the backend with that folder. `deletion`
-   * gives the store with the deletion credentials of the replica, if it has its own.
-   */
+  The folder of a replica that holds the copies of a backend, named after it: copies have the keys of their files
+  there, so the replica can take the place of the backend by configuring the backend with that folder. `deletion`
+  gives the store with the deletion credentials of the replica, if it has its own.
+  */
   getReplicaStore(replicaBackendId: string, sourceBackendId: string, { deletion = false } = {}): BlobStore {
     const id = `${replicaBackendId}/${sourceBackendId}`;
     let stores = this.replicaStores.get(id);
@@ -415,10 +415,10 @@ export class StorageBackendRepository {
   }
 
   /**
-   * Store a complete local file as a new file of a role. Without a backend for the role the file stays where it is;
-   * otherwise it is copied to the backend under a new key, and the caller removes the local file. An encrypted copy
-   * describes itself with its path and `manifest`, for when it has to be recovered without the database.
-   */
+  Store a complete local file as a new file of a role. Without a backend for the role the file stays where it is;
+  otherwise it is copied to the backend under a new key, and the caller removes the local file. An encrypted copy
+  describes itself with its path and `manifest`, for when it has to be recovered without the database.
+  */
   async storeFile(role: StorageBackendRole, path: string, { manifest }: StoreOptions = {}): Promise<StoredFile> {
     const backendId = this.getBackendFor(role);
     if (!backendId) {
@@ -434,11 +434,11 @@ export class StorageBackendRepository {
   }
 
   /**
-   * Prepare a new file that will be stored at `path`, or in the backend configured for its role. On a backend the file
-   * gets a new random key, and `path` only serves as its logical name (its extension is kept for tools and type checks).
-   * With `keepLocalCopy`, the written file is kept as a local copy for processing that follows; with `cache`, in the
-   * cache of derived files, for small files that are read often.
-   */
+  Prepare a new file that will be stored at `path`, or in the backend configured for its role. On a backend the file
+  gets a new random key, and `path` only serves as its logical name (its extension is kept for tools and type checks).
+  With `keepLocalCopy`, the written file is kept as a local copy for processing that follows; with `cache`, in the
+  cache of derived files, for small files that are read often.
+  */
   async createOutput(
     role: StorageBackendRole,
     path: string,
@@ -518,10 +518,10 @@ export class StorageBackendRepository {
   }
 
   /**
-   * Keep a local file as a copy of a stored file, for the processing that follows; the caller must not use or remove
-   * it afterwards. Resolves false, leaving the file to the caller, when no copy is needed (the stored file can be read
-   * where it is) or none can be kept.
-   */
+  Keep a local file as a copy of a stored file, for the processing that follows; the caller must not use or remove
+  it afterwards. Resolves false, leaving the file to the caller, when no copy is needed (the stored file can be read
+  where it is) or none can be kept.
+  */
   /** Whether a copy of a file about to be stored there, of this size, would be kept for the processing that follows */
   async canKeepLocalCopy(location: StorageLocation, size: number): Promise<boolean> {
     const file: StoredFile = { ...location, size, checksum: null, encryption: null };
@@ -651,9 +651,9 @@ export class StorageBackendRepository {
   }
 
   /**
-   * Where to read a recorded file from: a local path, or a blob that has to be read through its store (on a backend
-   * that does not keep files locally, or encrypted), with what the read is verified against.
-   */
+  Where to read a recorded file from: a local path, or a blob that has to be read through its store (on a backend
+  that does not keep files locally, or encrypted), with what the read is verified against.
+  */
   resolve(file: RecordedFile): { path: string } | { blob: RemoteBlob } {
     if (file.backendId === null || file.key === null) {
       return { path: file.path };
@@ -695,9 +695,9 @@ export class StorageBackendRepository {
   }
 
   /**
-   * A blob written moments ago may not be readable yet (services only promise eventual consistency), so a missing blob
-   * is read again a few times with growing pauses before giving up; never treat it as gone.
-   */
+  A blob written moments ago may not be readable yet (services only promise eventual consistency), so a missing blob
+  is read again a few times with growing pauses before giving up; never treat it as gone.
+  */
   private async withReadRetries<T>(file: RecordedFile, read: () => Promise<T>): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       try {
@@ -713,10 +713,10 @@ export class StorageBackendRepository {
   }
 
   /**
-   * The local path to read a recorded file from. On the built-in backends the location and the path name the same
-   * file, so a difference means the path was changed without its location; the path is then used, as before storage
-   * backends existed, and the difference is logged so it can be fixed.
-   */
+  The local path to read a recorded file from. On the built-in backends the location and the path name the same
+  file, so a difference means the path was changed without its location; the path is then used, as before storage
+  backends existed, and the difference is logged so it can be fixed.
+  */
   getLocalPath(file: RecordedFile): string {
     if (file.backendId === null || file.key === null) {
       // recorded before storage backends existed and not backfilled yet
@@ -741,9 +741,9 @@ export class StorageBackendRepository {
   }
 
   /**
-   * Register a file about to be written to a backend for deletion, unless it is recorded by `notBefore`: the cleanup
-   * drops the registration of a file that is recorded, and deletes one that is not
-   */
+  Register a file about to be written to a backend for deletion, unless it is recorded by `notBefore`: the cleanup
+  drops the registration of a file that is recorded, and deletes one that is not
+  */
   @GenerateSql({ params: [DummyValue.STRING, DummyValue.STRING, DummyValue.DATE] })
   async registerWrite(backendId: string, key: string, notBefore = new Date(Date.now() + WRITE_REGISTRATION_DELAY_MS)) {
     await this.db

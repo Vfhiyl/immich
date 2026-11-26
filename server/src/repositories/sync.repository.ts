@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { type Kysely, sql } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import type { SyncAck } from 'src/types.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { MemoryType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import type { SyncAck } from 'src/types.js';
 
 export type SyncBackfillOptions = {
   nowId: string;
@@ -32,9 +32,9 @@ const dummyCreateAfterOptions = {
 };
 
 /**
- * The photos as of `beforeUpdateId`, newest first (by the time they were taken, then id), after the position `after`
- * (`snapshotPosition` of the last one sent): a first sync shows the newest photos first
- */
+The photos as of `beforeUpdateId`, newest first (by the time they were taken, then id), after the position `after`
+(`snapshotPosition` of the last one sent): a first sync shows the newest photos first
+*/
 export type SyncSnapshotOptions = {
   userId: string;
   beforeUpdateId: string;
@@ -130,9 +130,9 @@ export class BaseSync {
   }
 
   /**
-   * Assets in the order of a snapshot; the position is the exact time (in microseconds, which a JavaScript date would
-   * round) and the id
-   */
+  Assets in the order of a snapshot; the position is the exact time (in microseconds, which a JavaScript date would
+  round) and the id
+  */
   protected snapshotQuery({ beforeUpdateId, after }: SyncSnapshotOptions) {
     const [time, id] = after?.split(',') ?? [];
     return this.db

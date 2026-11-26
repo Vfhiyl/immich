@@ -5,10 +5,10 @@ import { join } from 'node:path';
 const MiB = 1024 * 1024;
 
 /**
- * The memory this process may still take, from what the kernel says is available: within the limit of its cgroup
- * (v2, else v1), less what the cgroup uses but cannot give back (all but its inactive file pages), and no more than
- * the machine has available (MemAvailable, proc_meminfo(5))
- */
+The memory this process may still take, from what the kernel says is available: within the limit of its cgroup
+(v2, else v1), less what the cgroup uses but cannot give back (all but its inactive file pages), and no more than
+the machine has available (MemAvailable, proc_meminfo(5))
+*/
 export const readAvailableMemory = async (root = '/'): Promise<number> => {
   const read = (path: string) =>
     readFile(join(root, path), 'utf8')
@@ -73,18 +73,18 @@ export class AdmissionTimeout extends Error {
 const marginOf = (available: number) => Math.max(64 * MiB, available / 20);
 
 /**
- * Lets heavy operations (decoding an image, running ffmpeg) of this process start only when the memory they are
- * estimated to take is there, so that several of them do not run the machine out of memory together, whatever the
- * concurrency of the queues they come from.
- *
- * The waiting operations start by priority, then in order, each when it fits beside those that run; one that does not
- * fit does not hold back those after it that do (as backfilling schedulers do). One that waited for
- * ADMISSION_RESERVE_AFTER_MS is not passed any more: no other starts until it does, when it fits or when nothing else
- * runs. An operation larger than all the memory starts when nothing else runs.
- *
- * What fits is measured when nothing runs (the memory available then, less a margin), and lowered while some run if
- * others (the api, machine learning) take memory meanwhile; the operations that run are counted by their estimates.
- */
+Lets heavy operations (decoding an image, running ffmpeg) of this process start only when the memory they are
+estimated to take is there, so that several of them do not run the machine out of memory together, whatever the
+concurrency of the queues they come from.
+
+The waiting operations start by priority, then in order, each when it fits beside those that run; one that does not
+fit does not hold back those after it that do (as backfilling schedulers do). One that waited for
+ADMISSION_RESERVE_AFTER_MS is not passed any more: no other starts until it does, when it fits or when nothing else
+runs. An operation larger than all the memory starts when nothing else runs.
+
+What fits is measured when nothing runs (the memory available then, less a margin), and lowered while some run if
+others (the api, machine learning) take memory meanwhile; the operations that run are counted by their estimates.
+*/
 export class MemoryAdmission {
   private waiting: Waiter[] = [];
   private running = 0;
@@ -97,9 +97,9 @@ export class MemoryAdmission {
   constructor(private readAvailable: () => Promise<number> = readAvailableMemory) {}
 
   /**
-   * Waits until an operation of an estimated `bytes` may start; call the release when it is done. With `waitLimitMs`,
-   * gives up after waiting so long (AdmissionTimeout), unless it waited ADMISSION_RESERVE_AFTER_MS since `since`
-   */
+  Waits until an operation of an estimated `bytes` may start; call the release when it is done. With `waitLimitMs`,
+  gives up after waiting so long (AdmissionTimeout), unless it waited ADMISSION_RESERVE_AFTER_MS since `since`
+  */
   acquire(
     bytes: number,
     priority = AdmissionPriority.Background,

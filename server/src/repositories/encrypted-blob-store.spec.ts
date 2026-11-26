@@ -36,9 +36,9 @@ const pieces = (value: Buffer, size: number) =>
   );
 
 /**
- * Decodes a stored blob with node crypto alone, following the documented format rather than the code under test, so
- * that the format is what the tests pin down.
- */
+Decodes a stored blob with node crypto alone, following the documented format rather than the code under test, so
+that the format is what the tests pin down.
+*/
 const decodeIndependently = (blob: Buffer, masterKey: Buffer, key: string) => {
   const trailerLength = blob.readUInt32BE(blob.length - 4);
   const trailer = blob.subarray(-4 - trailerLength, -4);
@@ -90,6 +90,7 @@ describe(EncryptedBlobStore.name, () => {
   let sut: EncryptedBlobStore;
 
   const stored = async (key: string) => buffer(await inner.get(key));
+  // eslint-disable-next-line unicorn/no-unnecessary-parameters
   const rewrite = async (key: string, change: (blob: Buffer) => Buffer) => {
     const blob = await stored(key);
     await inner.deleteMany([key]);

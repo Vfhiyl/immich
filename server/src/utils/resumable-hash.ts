@@ -1,12 +1,12 @@
 import { IHasher, createSHA1 } from 'hash-wasm';
 
 /**
- * SHA-1 whose state can be saved and loaded again, so that a file received over several requests (and processes) is
- * hashed once while it arrives. Node's own hashes cannot save their state.
- *
- * Saved states are only compatible within a version of hash-wasm, which is why it is pinned; a state also holds up to
- * a block of input bytes, so it is kept like the content it hashes.
- */
+SHA-1 whose state can be saved and loaded again, so that a file received over several requests (and processes) is
+hashed once while it arrives. Node's own hashes cannot save their state.
+
+Saved states are only compatible within a version of hash-wasm, which is why it is pinned; a state also holds up to
+a block of input bytes, so it is kept like the content it hashes.
+*/
 export class ResumableSha1 {
   private constructor(private hasher: IHasher) {}
 

@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { createReadStream } from 'node:fs';
-import type { IStorageCheckJob } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
 import { mapNotification } from 'src/dtos/notification.dto.js';
 import {
@@ -30,16 +29,17 @@ import { FoundIssue, ListedBlob, VerifiableFile } from 'src/repositories/storage
 import { ReplicaSource, TRACKED_REPLICA_ROLES, toListingId } from 'src/repositories/storage-replica.repository.js';
 import { StorageCheckStats } from 'src/schema/tables/storage-check.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import type { IStorageCheckJob } from 'src/types.js';
 
 /**
- * What is younger is not judged: a service may list a new object late (it only promises eventual consistency), and a
- * file may be written moments before it is recorded
- */
+What is younger is not judged: a service may list a new object late (it only promises eventual consistency), and a
+file may be written moments before it is recorded
+*/
 export const STORAGE_CHECK_GRACE_MS = 48 * 60 * 60 * 1000;
 /**
- * Reconciliation runs at most this often: the checks for missing and for untracked files both start one, and two runs
- * a moment apart would see each other's issues as a second look
- */
+Reconciliation runs at most this often: the checks for missing and for untracked files both start one, and two runs
+a moment apart would see each other's issues as a second look
+*/
 const RECONCILE_MIN_INTERVAL_MS = 60 * 60 * 1000;
 const LISTING_BATCH_SIZE = 1000;
 /** New files are read back a day after they were written, which was verified then */
@@ -48,9 +48,9 @@ const NEW_FILE_DELAY_MS = 24 * 60 * 60 * 1000;
 /** Replicas are listed every two weeks: they are only read when a backend is lost, and listing is not free */
 const REPLICA_RECONCILE_INTERVAL_MS = 14 * 24 * 60 * 60 * 1000;
 /**
- * A sample of the copies on each replica is read back and decrypted every month: listing only shows that a copy is
- * there and of the right size, not that it can be restored
- */
+A sample of the copies on each replica is read back and decrypted every month: listing only shows that a copy is
+there and of the right size, not that it can be restored
+*/
 const REPLICA_VERIFY_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
 /** 1 % of the copies, but at least this many (all of them when there are fewer) */
 const REPLICA_SAMPLE_SHARE = 0.01;
@@ -106,9 +106,9 @@ const csvValue = (value: string | null) => (value === null ? '' : `"${value.repl
 const CHECKED_ROLES = new Set([StorageBackendRole.Originals, StorageBackendRole.Derived]);
 
 /**
- * Checks of the files on storage backends, which report and never change anything. Reconciliation lists every backend
- * and compares it with what is recorded: files that are missing, that nothing records, or that have another size.
- */
+Checks of the files on storage backends, which report and never change anything. Reconciliation lists every backend
+and compares it with what is recorded: files that are missing, that nothing records, or that have another size.
+*/
 @Injectable()
 export class StorageCheckService extends BaseService {
   @OnJob({ name: JobName.StorageReconcile, queue: QueueName.IntegrityCheck })
@@ -148,9 +148,9 @@ export class StorageCheckService extends BaseService {
   }
 
   /**
-   * Compare each replica with the copies it should hold: originals without a copy get one registered, copies that are
-   * missing or of another size are made again, and objects that are no copy are reported, never deleted
-   */
+  Compare each replica with the copies it should hold: originals without a copy get one registered, copies that are
+  missing or of another size are made again, and objects that are no copy are reported, never deleted
+  */
   @OnJob({ name: JobName.StorageReplicaReconcile, queue: QueueName.IntegrityCheck })
   async handleReplicaReconcile({ force }: IStorageCheckJob = {}): Promise<JobStatus> {
     const sources = this.storageBackendRepository
@@ -195,9 +195,9 @@ export class StorageCheckService extends BaseService {
   }
 
   /**
-   * Read a sample of the copies on each replica back, decrypt them and compare their checksum with what is recorded of
-   * the files they copy; a copy that fails is reported and made again
-   */
+  Read a sample of the copies on each replica back, decrypt them and compare their checksum with what is recorded of
+  the files they copy; a copy that fails is reported and made again
+  */
   @OnJob({ name: JobName.StorageReplicaVerify, queue: QueueName.IntegrityCheck })
   async handleReplicaVerify({ force }: IStorageCheckJob = {}): Promise<JobStatus> {
     const sources = this.storageBackendRepository
@@ -294,10 +294,10 @@ export class StorageCheckService extends BaseService {
   }
 
   /**
-   * Read files back, decrypt them and compare their checksum, within the time and share of files the integrity check
-   * settings allow per run: files that failed first, then files never verified, then the ones verified longest ago,
-   * so that every file is read back in turn. New files wait a day, since they were verified when they were written.
-   */
+  Read files back, decrypt them and compare their checksum, within the time and share of files the integrity check
+  settings allow per run: files that failed first, then files never verified, then the ones verified longest ago,
+  so that every file is read back in turn. New files wait a day, since they were verified when they were written.
+  */
   @OnJob({ name: JobName.StorageVerify, queue: QueueName.IntegrityCheck })
   async handleVerify(): Promise<JobStatus> {
     const backends = this.getCheckedBackends();

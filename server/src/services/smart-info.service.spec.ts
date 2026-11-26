@@ -246,6 +246,36 @@ describe(SmartInfoService.name, () => {
       expect(mocks.database.wait).toHaveBeenCalled();
     });
 
+    it('should use the edited preview when both preview variants exist', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Preview, isEdited: false, path: 'original-preview' })
+        .file({ type: AssetFileType.Preview, isEdited: true, path: 'edited-preview' })
+        .build();
+      mocks.machineLearning.encodeImage.mockResolvedValue({ embedding: '[0.01, 0.02, 0.03]', model: clipModel });
+      mocks.assetJob.getForClipEncoding.mockResolvedValue(asset);
+
+      expect(await sut.handleEncodeClip({ id: asset.id })).toEqual(JobStatus.Success);
+      expect(mocks.machineLearning.encodeImage).toHaveBeenCalledWith(
+        'edited-preview',
+        expect.objectContaining({ modelName: 'ViT-B-32__openai' }),
+      );
+    });
+
+    it('should select the edited preview regardless of file order', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Preview, isEdited: true, path: 'edited-preview' })
+        .file({ type: AssetFileType.Preview, isEdited: false, path: 'original-preview' })
+        .build();
+      mocks.machineLearning.encodeImage.mockResolvedValue({ embedding: '[0.01, 0.02, 0.03]', model: clipModel });
+      mocks.assetJob.getForClipEncoding.mockResolvedValue(asset);
+
+      expect(await sut.handleEncodeClip({ id: asset.id })).toEqual(JobStatus.Success);
+      expect(mocks.machineLearning.encodeImage).toHaveBeenCalledWith(
+        'edited-preview',
+        expect.objectContaining({ modelName: 'ViT-B-32__openai' }),
+      );
+    });
+
     it('should skip invisible assets', async () => {
       const asset = AssetFactory.from({ visibility: AssetVisibility.Hidden })
         .file({ type: AssetFileType.Preview })

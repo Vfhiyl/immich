@@ -15,7 +15,6 @@ import {
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
-import type { StorageRequest } from 'src/utils/storage-metering.js';
 import {
   BlobDeleteResult,
   BlobGetOptions,
@@ -38,6 +37,7 @@ import {
   assertValidBlobPrefix,
   createVerifyingStream,
 } from 'src/repositories/blob-store.js';
+import type { StorageRequest } from 'src/utils/storage-metering.js';
 
 /** Equal parts of 16 MiB: at least 5 MiB and a multiple of 256 KiB, as every supported service accepts */
 export const S3_PART_SIZE = 16 * 1024 * 1024;
@@ -89,9 +89,9 @@ const contentLength = (message: unknown) => {
 };
 
 /**
- * Report every request a client sends, attempts that are retried included, with the bytes it sent and received
- * (from the content length): what services charge for. Failed requests count too.
- */
+Report every request a client sends, attempts that are retried included, with the bytes it sent and received
+(from the content length): what services charge for. Failed requests count too.
+*/
 export const meterS3Client = (client: S3Client, onRequest: (request: StorageRequest) => void) => {
   client.middlewareStack.add(
     (next, context) => async (args) => {
@@ -119,10 +119,10 @@ const isNotFound = (error: unknown) =>
   ['NoSuchKey', 'NotFound'].includes(errorName(error) ?? '') || statusCode(error) === 404;
 
 /**
- * Blob store on any service that speaks the S3 protocol. It only relies on the minimum common contract of the
- * supported services (see the object storage design notes): no conditional writes (keys are unique), no checksums
- * of the service (Immich computes size and SHA-1), equal-sized multipart parts, and every read is verified.
- */
+Blob store on any service that speaks the S3 protocol. It only relies on the minimum common contract of the
+supported services (see the object storage design notes): no conditional writes (keys are unique), no checksums
+of the service (Immich computes size and SHA-1), equal-sized multipart parts, and every read is verified.
+*/
 export class S3BlobStore implements BlobStore {
   readonly limits: BlobStoreLimits = {
     maxDeleteBatch: 1000,
@@ -452,9 +452,9 @@ export class S3BlobStore implements BlobStore {
     }
   }
 
-  private getResponseSize(key: string, range: BlobRange | undefined, contentRange?: string, contentLength?: number) {
+  private getResponseSize(key: string, range: BlobRange | undefined, contentRange?: string, contentLength = 0) {
     if (!range) {
-      return { total: contentLength ?? 0, length: contentLength ?? 0 };
+      return { total: contentLength, length: contentLength };
     }
 
     // a service that ignores the range would send the whole blob as if it were the range
@@ -528,9 +528,9 @@ const assertValidRange = (key: string, range: BlobRange, size?: number) => {
 };
 
 /**
- * Multi-object delete requires a body checksum. Content-MD5 is the one that every supported service documents, while
- * newer SDKs default to other algorithms that some services reject.
- */
+Multi-object delete requires a body checksum. Content-MD5 is the one that every supported service documents, while
+newer SDKs default to other algorithms that some services reject.
+*/
 type DeleteMiddleware = Parameters<DeleteObjectsCommand['middlewareStack']['addRelativeTo']>[0];
 type Handler = (args: { request: unknown }) => Promise<unknown>;
 

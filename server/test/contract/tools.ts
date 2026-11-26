@@ -5,10 +5,10 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 /**
- * Third-party S3 services for contract tests, downloaded once and verified against pinned checksums. Versions are
- * at least two weeks old when pinned; MinIO no longer publishes binaries, so two other independent implementations
- * are used, which also keeps the tests from relying on the behavior of a single one.
- */
+Third-party S3 services for contract tests, downloaded once and verified against pinned checksums. Versions are
+at least two weeks old when pinned; MinIO no longer publishes binaries, so two other independent implementations
+are used, which also keeps the tests from relying on the behavior of a single one.
+*/
 export interface Tool {
   name: string;
   version: string;

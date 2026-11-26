@@ -10,10 +10,10 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 /**
- * Uploads in progress, in a file of the config directory: an upload stopped by a broken connection or the command
- * being stopped goes on where it stopped when the command runs again. Written whole (to a new file, renamed over the
- * old), one change at a time.
- */
+Uploads in progress, in a file of the config directory: an upload stopped by a broken connection or the command
+being stopped goes on where it stopped when the command runs again. Written whole (to a new file, renamed over the
+old), one change at a time.
+*/
 export class FileSessionStore implements SessionStore {
   #sessions?: Promise<Record<string, ResumableUploadSession>>;
   #writing: Promise<void> = Promise.resolve();

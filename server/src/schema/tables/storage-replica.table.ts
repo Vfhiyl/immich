@@ -2,19 +2,19 @@ import {
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
-  type Generated,
   Index,
-  type Int8,
   PrimaryGeneratedColumn,
   Table,
+  type Generated,
+  type Int8,
   type Timestamp,
 } from '@immich/sql-tools';
 import { StorageBackendTable } from 'src/schema/tables/storage-backend.table.js';
 
 /**
- * Which backends each replica copies, as configured. A trigger on the table of original files registers a copy of
- * every new original for each replica of its backend, in the same transaction that records it, so that none is missed.
- */
+Which backends each replica copies, as configured. A trigger on the table of original files registers a copy of
+every new original for each replica of its backend, in the same transaction that records it, so that none is missed.
+*/
 @Table('storage_replica_source')
 export class StorageReplicaSourceTable {
   @ForeignKeyColumn(() => StorageBackendTable, {
@@ -33,10 +33,10 @@ export class StorageReplicaSourceTable {
 }
 
 /**
- * A copy of a file on a replica: waiting to be made while `completedAt` is null, then a location of the file. The copy
- * has the key of the file below a folder named after its backend, so that a replica can take the place of the backend
- * it copies by pointing the backend there. A copy is only recorded as made once the replica returned its size.
- */
+A copy of a file on a replica: waiting to be made while `completedAt` is null, then a location of the file. The copy
+has the key of the file below a folder named after its backend, so that a replica can take the place of the backend
+it copies by pointing the backend there. A copy is only recorded as made once the replica returned its size.
+*/
 @Table('storage_replica_copy')
 @Index({
   name: 'storage_replica_copy_source_key_replica_idx',

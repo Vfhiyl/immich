@@ -3,12 +3,12 @@ import { IncomingMessage, Server, ServerResponse, createServer } from 'node:http
 import { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { StorageRequest } from 'src/utils/storage-metering.js';
 import {
   AzureBackendOptions,
   createAzureContainerClient,
   toAzureOperation,
 } from 'src/repositories/azure-blob-store.js';
+import type { StorageRequest } from 'src/utils/storage-metering.js';
 
 // how the client talks to a service is checked here; how the store behaves against a service is checked by the
 // contract tests in test/contract, against Azurite

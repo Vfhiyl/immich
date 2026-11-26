@@ -1,6 +1,6 @@
 import { Mocked, vitest } from 'vitest';
-import type { RepositoryInterface } from 'src/types.js';
 import { StorageReplicaRepository } from 'src/repositories/storage-replica.repository.js';
+import type { RepositoryInterface } from 'src/types.js';
 
 /** No replicas and no copies, so that services that store or delete files work without setup */
 export const newStorageReplicaRepositoryMock = (): Mocked<RepositoryInterface<StorageReplicaRepository>> => ({

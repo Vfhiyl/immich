@@ -1,3 +1,4 @@
+import type { DatabaseConnectionParams } from '@immich/sql-tools';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { partition } from 'lodash-es';
@@ -7,8 +8,6 @@ import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGunzip } from 'node:zlib';
-import type { DatabaseConnectionParams } from '@immich/sql-tools';
-import type { IStorageCheckJob } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
 import { mapNotification } from 'src/dtos/notification.dto.js';
@@ -32,6 +31,7 @@ import { StorageCheckStats } from 'src/schema/tables/storage-check.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DatabaseBackupService, createSqlOwnerTransformStream } from 'src/services/database-backup.service.js';
 import { StorageCheckService } from 'src/services/storage-check.service.js';
+import type { IStorageCheckJob } from 'src/types.js';
 import { isValidDatabaseBackupName, isValidDatabaseRoutineBackupName } from 'src/utils/database-backups.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import {
@@ -66,10 +66,10 @@ export const databaseNameOf = (connection: DatabaseConnectionParams) =>
     : connection.database;
 
 /**
- * Database backups on the backend for backups. The routine backups Immich writes to its backups folder are stored
- * there, encrypted, under random keys; each one describes itself in its encrypted manifest, so that backups can be
- * listed and read with nothing but the backend and the master key, also when the database is gone.
- */
+Database backups on the backend for backups. The routine backups Immich writes to its backups folder are stored
+there, encrypted, under random keys; each one describes itself in its encrypted manifest, so that backups can be
+listed and read with nothing but the backend and the master key, also when the database is gone.
+*/
 @Injectable()
 export class StorageBackupService extends BaseService {
   @OnJob({ name: JobName.DatabaseBackupStore, queue: QueueName.BackupDatabase })
@@ -108,9 +108,9 @@ export class StorageBackupService extends BaseService {
   }
 
   /**
-   * Copy the backups to each replica of the backend for backups, as they are stored, and keep as many there: a replica
-   * applies the same rules to what it holds, which may be more than the backend has, e.g. after it refused a deletion
-   */
+  Copy the backups to each replica of the backend for backups, as they are stored, and keep as many there: a replica
+  applies the same rules to what it holds, which may be more than the backend has, e.g. after it refused a deletion
+  */
   private async copyToReplicas(backendId: string, backups: StoredDatabaseBackup[], keepLast: number) {
     const replicas = this.storageBackendRepository
       .getReplicaSources()
@@ -181,11 +181,11 @@ export class StorageBackupService extends BaseService {
   }
 
   /**
-   * Restore the latest stored backup into a database of its own on the same server, as a disaster would need it (from
-   * the backend for backups, with the master key), check that it holds what Immich needs, and read back a sample of the
-   * originals it records: a backup is only worth something if it can be restored, and the files it records are there.
-   * The database is dropped afterwards; Immich's own is not touched.
-   */
+  Restore the latest stored backup into a database of its own on the same server, as a disaster would need it (from
+  the backend for backups, with the master key), check that it holds what Immich needs, and read back a sample of the
+  originals it records: a backup is only worth something if it can be restored, and the files it records are there.
+  The database is dropped afterwards; Immich's own is not touched.
+  */
   @OnJob({ name: JobName.StorageRestoreDrill, queue: QueueName.BackupDatabase })
   async handleRestoreDrill({ force }: IStorageCheckJob = {}): Promise<JobStatus> {
     const backendId = this.storageBackendRepository.getBackendFor(StorageBackendRole.Backup);
@@ -341,10 +341,10 @@ export class StorageBackupService extends BaseService {
   }
 
   /**
-   * A backup goes once more newer backups exist than it had to wait for when it was taken, or than are kept now if that
-   * is more: a larger number applies to old backups too, a smaller one does not shorten their time. Returns the
-   * backups that are kept.
-   */
+  A backup goes once more newer backups exist than it had to wait for when it was taken, or than are kept now if that
+  is more: a larger number applies to old backups too, a smaller one does not shorten their time. Returns the
+  backups that are kept.
+  */
   private async deleteOldBackups(
     backups: StoredDatabaseBackup[],
     keepLast: number,

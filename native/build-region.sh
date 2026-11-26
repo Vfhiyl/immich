@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the libraries the app decodes parts of large images with (region/, see README.md), from the sources of
+# Builds the libraries the app decodes parts of large images with (region/, see LIBRARIES.md), from the sources of
 # sources.txt with our patches, as static libraries: zlib, libjpeg-turbo, lcms2, FFmpeg's HEVC decoder and libheif. It needs only
 # curl, CMake and make (and the NDK for Android); the app's Android build runs it.
 #

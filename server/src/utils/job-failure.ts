@@ -2,9 +2,9 @@ import { JobName } from 'src/enum.js';
 import { JobItem } from 'src/types.js';
 
 /**
- * The jobs for a file (whose `data.id` is the asset) that can fail on it again and again: they are tracked per asset, and
- * held back from it after a few attempts (see `JobFailureRepository`)
- */
+The jobs for a file (whose `data.id` is the asset) that can fail on it again and again: they are tracked per asset, and
+held back from it after a few attempts (see `JobFailureRepository`)
+*/
 export const TRACKED_JOBS = [
   JobName.AssetExtractMetadata,
   JobName.AssetGenerateThumbnails,

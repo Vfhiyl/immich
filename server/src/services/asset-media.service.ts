@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { extname, join } from 'node:path';
 import sanitize from 'sanitize-filename';
-import type { UploadFile, UploadRequest } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { Asset, AuthSharedLink } from 'src/database.js';
 import {
@@ -19,7 +18,7 @@ import {
   UploadFieldName,
 } from 'src/dtos/asset-media.dto.js';
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
-import { AuthDto } from 'src/dtos/auth.dto.js';
+import { AuthDto, isEditedOnly, isMetadataHidden } from 'src/dtos/auth.dto.js';
 import { StorageDeletionImportDto } from 'src/dtos/storage-deletion.dto.js';
 import {
   AssetFileType,
@@ -35,6 +34,7 @@ import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { StoredFile, isBuiltinStorageBackend } from 'src/repositories/storage-backend.repository.js';
 import { toDeletedOriginalFile } from 'src/repositories/storage-deletion.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import type { UploadFile, UploadRequest } from 'src/types.js';
 import { requireUploadAccess } from 'src/utils/access.js';
 import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
@@ -52,6 +52,8 @@ export class AssetMediaService extends BaseService {
     if (!checksum) {
       return;
     }
+
+    await this.requireAccess({ auth, permission: Permission.AssetUpload, ids: [auth.user.id] });
 
     const assetId = await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, fromChecksum(checksum));
     if (!assetId) {
@@ -128,9 +130,9 @@ export class AssetMediaService extends BaseService {
   }
 
   /**
-   * Recover a deleted original as a new photo of a user: it is decrypted and goes through the usual upload, so it gets a
-   * new id and is processed again; what the deleted photo had (albums, description, tags, people) is not recovered
-   */
+  Recover a deleted original as a new photo of a user: it is decrypted and goes through the usual upload, so it gets a
+  new id and is processed again; what the deleted photo had (albums, description, tags, people) is not recovered
+  */
   async importDeletedOriginal(
     auth: AuthDto,
     id: string,
@@ -179,9 +181,9 @@ export class AssetMediaService extends BaseService {
   }
 
   /**
-   * Create an asset from an upload. A resumable upload stored the original on its backend already (`stored`); its
-   * `file` then only names it, without a local file.
-   */
+  Create an asset from an upload. A resumable upload stored the original on its backend already (`stored`); its
+  `file` then only names it, without a local file.
+  */
   async uploadAsset(
     auth: AuthDto,
     dto: AssetMediaCreateDto,
@@ -203,6 +205,19 @@ export class AssetMediaService extends BaseService {
       this.requireQuota(auth, file.size);
 
       if (dto.livePhotoVideoId) {
+        if (auth.sharedLink) {
+          const ids = new Set([dto.livePhotoVideoId]);
+          const [assetIds1, assetIds2] = await Promise.all([
+            this.accessRepository.asset.checkSharedLinkAccess(auth.sharedLink.id, ids),
+            this.accessRepository.asset.checkOwnerAccess(auth.user.id, ids, false),
+          ]);
+
+          if (!assetIds1.intersection(assetIds2).has(dto.livePhotoVideoId)) {
+            throw new BadRequestException(`Not found or no ${Permission.AssetUpdate} permission`);
+          }
+        } else {
+          await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [dto.livePhotoVideoId] });
+        }
         await onBeforeLink(
           { asset: this.assetRepository, event: this.eventRepository },
           { userId: auth.user.id, livePhotoVideoId: dto.livePhotoVideoId },
@@ -333,11 +348,7 @@ export class AssetMediaService extends BaseService {
   async downloadOriginal(auth: AuthDto, id: string, dto: AssetDownloadOriginalDto): Promise<ImmichFileResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
 
-    if (auth.sharedLink) {
-      dto.edited = true;
-    }
-
-    const asset = await this.assetRepository.getForOriginal(id, dto.edited ?? false);
+    const asset = await this.assetRepository.getForOriginal(id, isEditedOnly(auth, dto.edited));
     const file = asset.editedPath
       ? {
           path: asset.editedPath,
@@ -376,10 +387,7 @@ export class AssetMediaService extends BaseService {
       throw new BadRequestException('May not request original file');
     }
 
-    if (auth.sharedLink) {
-      dto.edited = true;
-    }
-
+    const edited = isEditedOnly(auth, dto.edited);
     const size = (dto.size ?? AssetMediaSize.THUMBNAIL) as unknown as AssetFileType;
     const {
       originalPath,
@@ -390,9 +398,9 @@ export class AssetMediaService extends BaseService {
       size: fileSize,
       checksum,
       encryption,
-    } = await this.assetRepository.getForThumbnail(id, size, dto.edited ?? false);
+    } = await this.assetRepository.getForThumbnail(id, size, edited);
 
-    if (size === AssetFileType.FullSize && mimeTypes.isWebSupportedImage(originalPath) && !dto.edited) {
+    if (size === AssetFileType.FullSize && mimeTypes.isWebSupportedImage(originalPath) && !edited) {
       // use original file for web supported images
       return { targetSize: 'original' };
     }
@@ -407,8 +415,7 @@ export class AssetMediaService extends BaseService {
       throw new NotFoundException('Asset media not found');
     }
 
-    const fileNameBase =
-      auth.sharedLink && !auth.sharedLink.showExif ? id : getFileNameWithoutExtension(originalFileName);
+    const fileNameBase = isMetadataHidden(auth) ? id : getFileNameWithoutExtension(originalFileName);
     const fileName = `${fileNameBase}_${size}${getFilenameExtension(path)}`;
 
     return new ImmichFileResponse({
@@ -489,7 +496,7 @@ export class AssetMediaService extends BaseService {
       return;
     }
 
-    const album = await this.albumRepository.getById(sharedLink.albumId, { withAssets: false });
+    const album = await this.albumRepository.getById(sharedLink.albumId);
     if (!album) {
       return;
     }

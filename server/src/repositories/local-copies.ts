@@ -17,9 +17,9 @@ export interface LocalCopyLimits {
 }
 
 /**
- * Copies of uploads for the processing that follows; removed when processing ends, so the limits only matter when it
- * does not. Fixed rather than configurable: copies are a shortcut, reads work the same without them.
- */
+Copies of uploads for the processing that follows; removed when processing ends, so the limits only matter when it
+does not. Fixed rather than configurable: copies are a shortcut, reads work the same without them.
+*/
 export const LOCAL_COPY_LIMITS: LocalCopyLimits = {
   maxAgeMs: 24 * 60 * 60 * 1000,
   refreshOnRead: false,
@@ -49,13 +49,13 @@ interface Entry {
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
 
 /**
- * Local copies of files stored on backends that do not keep them locally, so that processing right after an upload
- * reads the uploaded file instead of downloading it again. A copy is only a shortcut: it may be gone at any time
- * (removed when processing ends, when it is too old, or to keep space), and readers then read the backend.
- *
- * Copies are shared by the server processes through the filesystem. Readers get a hard link of a copy, so a copy that
- * is removed meanwhile stays readable for them.
- */
+Local copies of files stored on backends that do not keep them locally, so that processing right after an upload
+reads the uploaded file instead of downloading it again. A copy is only a shortcut: it may be gone at any time
+(removed when processing ends, when it is too old, or to keep space), and readers then read the backend.
+
+Copies are shared by the server processes through the filesystem. Readers get a hard link of a copy, so a copy that
+is removed meanwhile stays readable for them.
+*/
 export class LocalCopies {
   private addedSinceSweep = 0;
 
@@ -72,9 +72,9 @@ export class LocalCopies {
   }
 
   /**
-   * Move a local file into the copies of a stored file. Resolves false, leaving the file where it is, when there is not
-   * enough space or the file cannot be moved (e.g. it is on another filesystem).
-   */
+  Move a local file into the copies of a stored file. Resolves false, leaving the file where it is, when there is not
+  enough space or the file cannot be moved (e.g. it is on another filesystem).
+  */
   /** Whether a copy of this size would be kept now, under the limits (the space may still run out meanwhile) */
   async canKeep(size: number): Promise<boolean> {
     try {

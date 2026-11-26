@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import type { StorageCheckStats } from 'src/schema/tables/storage-check.table.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { StorageCheckKind, StorageCheckStatus, StorageIssueKind } from 'src/enum.js';
 import { STORAGE_PROBE_PREFIX } from 'src/repositories/storage-backend.repository.js';
 import { DB } from 'src/schema/index.js';
+import type { StorageCheckStats } from 'src/schema/tables/storage-check.table.js';
 
 /** Issues of one kind that a run reports at most, so that a broken backend does not fill the database */
 export const MAX_ISSUES_PER_RUN = 10_000;
@@ -120,9 +120,9 @@ export class StorageCheckRepository {
   }
 
   /**
-   * Listed files whose size is not the recorded one: exactly that size, or for an encrypted file the encrypted chunks of
-   * that size and a trailer
-   */
+  Listed files whose size is not the recorded one: exactly that size, or for an encrypted file the encrypted chunks of
+  that size and a trailer
+  */
   @GenerateSql({ params: [DummyValue.STRING] })
   async findSizeMismatches(backendId: string): Promise<FoundIssue[]> {
     const { rows } = await sql<{ key: string; size: string; listed: string }>`
@@ -144,9 +144,9 @@ export class StorageCheckRepository {
   }
 
   /**
-   * Listed files that nothing records, written before `writtenBefore`: no location, no pending deletion, no upload
-   * being received, and not the probe of the startup check
-   */
+  Listed files that nothing records, written before `writtenBefore`: no location, no pending deletion, no upload
+  being received, and not the probe of the startup check
+  */
   @GenerateSql({ params: [DummyValue.STRING, DummyValue.DATE] })
   async findUntracked(backendId: string, writtenBefore: Date): Promise<FoundIssue[]> {
     const { rows } = await sql<{ key: string; size: string }>`
@@ -264,9 +264,9 @@ export class StorageCheckRepository {
   // issues
 
   /**
-   * Note issues a run saw: a new one is a candidate, one seen before is confirmed (and reported) the second time.
-   * Resolves to the number of issues that this confirmed.
-   */
+  Note issues a run saw: a new one is a candidate, one seen before is confirmed (and reported) the second time.
+  Resolves to the number of issues that this confirmed.
+  */
   async recordSightings(backendId: string, kind: StorageIssueKind, issues: FoundIssue[], now: Date): Promise<number> {
     if (issues.length === 0) {
       return 0;

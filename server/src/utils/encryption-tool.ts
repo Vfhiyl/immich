@@ -28,10 +28,10 @@ import {
 import { MasterKeys, writeNewMasterKey } from 'src/repositories/key-provider.js';
 
 /**
- * The `immich-encryption` command: master keys and encrypted files, with nothing but the files themselves. It needs no
- * database, no Redis and no running Immich, so that keys can be made before the first start and files recovered after
- * a disaster.
- */
+The `immich-encryption` command: master keys and encrypted files, with nothing but the files themselves. It needs no
+database, no Redis and no running Immich, so that keys can be made before the first start and files recovered after
+a disaster.
+*/
 export interface ToolOutput {
   log: (message: string) => void;
   error: (message: string) => void;

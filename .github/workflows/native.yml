@@ -1,7 +1,7 @@
 name: Native libraries
 # Builds the native libraries of the server (native/build.sh) for a release: on Rocky Linux 8, whose glibc (2.28) is
 # the oldest that Node.js 24 runs on, so that they run on every Linux that runs the server. The archive and its SHA-256
-# are an artifact of the run; publish them as a release (native/README.md, Releasing).
+# are an artifact of the run; publish them as a release (native/LIBRARIES.md, Releasing).
 on:
   workflow_dispatch:
     inputs:

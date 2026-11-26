@@ -11,15 +11,15 @@ import 'package:immich_mobile/domain/models/timeline.model.dart';
 /// The main timeline (the server photos of the user and the partners shown with them, and the photos of this phone
 /// not on the server yet), fast at any size: the days come from the counts of [TimelineIndex] instead of counting
 /// every photo, and a page starts at the day it is in instead of skipping every photo before it. The same photos in
-/// the same order as upstream's `mergedBucket` and `mergedAsset`, but in a total order (photos taken at the same time
-/// do not change places between pages).
+/// the same order as upstream's `mergedBucket` and `mergedAsset` (by the day the headers group on, `group_date`, then
+/// by time), but in a total order (photos taken at the same time do not change places between pages).
 class MainTimeline {
   final Drift _db;
   final List<String> _userIds;
 
-  /// The days of the timeline by time in UTC, newest first, while [watchBuckets] is listened to: a page starts at the
-  /// day it is in. The timeline loads its pages again after each change of the buckets
-  List<({String day, int count})>? _utcDays;
+  /// The days of the timeline, newest first, while [watchBuckets] is listened to: a page starts at the day it is in.
+  /// The timeline loads its pages again after each change of the buckets
+  List<({String day, int count})>? _days;
 
   MainTimeline(this._db, this._userIds);
 
@@ -51,45 +51,34 @@ AND lae.id NOT IN (
   WHERE la.backup_selection = 2
 )''';
 
-  /// The photos of the timeline per local day (as upstream's `mergedBucket`: the local date of a server photo, the
-  /// day on this phone otherwise) and day in UTC (the order of the timeline)
-  static const _days =
+  /// The photos of the timeline per day (`group_date`, as upstream's `mergedBucket`: the local date of a server photo,
+  /// the day on this phone otherwise; photos without one are not shown)
+  static const _daysSql =
       '''
-SELECT local_day, utc_day, SUM(n) AS n FROM (
-  SELECT local_day, utc_day, SUM(asset_count) AS n FROM ${TimelineIndex.countTable}
-  WHERE owner_id IN (SELECT id FROM users) AND local_day <> ''
-  GROUP BY 1, 2
+SELECT day, SUM(n) AS n FROM (
+  SELECT group_date AS day, SUM(asset_count) AS n FROM ${TimelineIndex.countTable}
+  WHERE owner_id IN (SELECT id FROM users)
+  GROUP BY 1
   UNION ALL
-  SELECT strftime('%Y-%m-%d', rae.created_at, 'localtime'), substr(rae.created_at, 1, 10), COUNT(*)
-  FROM remote_asset_entity rae INDEXED BY ext_idx_remote_asset_timeline_no_local_date
-  WHERE rae.local_date_time IS NULL AND rae.deleted_at IS NULL AND rae.visibility = 0
-    AND rae.owner_id IN (SELECT id FROM users)
-  GROUP BY 1, 2
+  SELECT rae.group_date, -COUNT(*)
+  FROM remote_asset_entity rae INDEXED BY idx_remote_asset_stack_id WHERE $_hiddenInStack AND rae.group_date IS NOT NULL
+  GROUP BY 1
   UNION ALL
-  SELECT COALESCE(strftime('%Y-%m-%d', rae.local_date_time), strftime('%Y-%m-%d', rae.created_at, 'localtime')),
-    substr(rae.created_at, 1, 10), -COUNT(*)
-  FROM remote_asset_entity rae INDEXED BY idx_remote_asset_stack_id WHERE $_hiddenInStack
-  GROUP BY 1, 2
-  UNION ALL
-  SELECT strftime('%Y-%m-%d', lae.created_at, 'localtime'), substr(lae.created_at, 1, 10), COUNT(*)
-  FROM local_asset_entity lae WHERE $_localOnly
-  GROUP BY 1, 2
+  SELECT lae.group_date, COUNT(*) FROM local_asset_entity lae WHERE $_localOnly AND lae.group_date IS NOT NULL
+  GROUP BY 1
 )
-GROUP BY 1, 2''';
+GROUP BY 1''';
 
   @visibleForTesting
-  static String get daysSqlForTest => _days;
+  static String get daysSqlForTest => _daysSql;
 
-  Selectable<({String localDay, String utcDay, int count})> _selectDays() => _db
+  Selectable<({String day, int count})> _selectDays() => _db
       .customSelect(
-        'WITH users(id) AS (VALUES ${List.filled(_userIds.length, '(?)').join(', ')}) $_days',
+        'WITH users(id) AS (VALUES ${List.filled(_userIds.length, '(?)').join(', ')}) $_daysSql',
         variables: [for (final id in _userIds) Variable.withString(id)],
         readsFrom: _tables,
       )
-      .map(
-        (row) =>
-            (localDay: row.read<String>('local_day'), utcDay: row.read<String>('utc_day'), count: row.read<int>('n')),
-      );
+      .map((row) => (day: row.read<String>('day'), count: row.read<int>('n')));
 
   /// The days (or months) of the timeline, newest first, with their number of photos
   Stream<List<Bucket>> watchBuckets(GroupAssetsBy groupBy) {
@@ -98,11 +87,11 @@ GROUP BY 1, 2''';
     buckets.onListen = () {
       days = _selectDays().watch().listen(
         (days) {
-          _utcDays = _sum(days, (day) => day.utcDay);
+          _days = _sum(days, (day) => day.day);
           buckets.add([
             for (final bucket in _sum(
               days,
-              (day) => groupBy == GroupAssetsBy.month ? day.localDay.substring(0, 7) : day.localDay,
+              (day) => groupBy == GroupAssetsBy.month ? day.day.substring(0, 7) : day.day,
             ))
               TimeBucket(date: _parseDate(bucket.day), assetCount: bucket.count),
           ]);
@@ -114,7 +103,7 @@ GROUP BY 1, 2''';
     buckets.onPause = () => days?.pause();
     buckets.onResume = () => days?.resume();
     buckets.onCancel = () async {
-      _utcDays = null;
+      _days = null;
       await days?.cancel();
       await buckets.close();
     };
@@ -123,8 +112,8 @@ GROUP BY 1, 2''';
 
   /// The number of photos per key, newest first, without days that have none
   static List<({String day, int count})> _sum(
-    List<({String localDay, String utcDay, int count})> days,
-    String Function(({String localDay, String utcDay, int count})) key,
+    List<({String day, int count})> days,
+    String Function(({String day, int count})) key,
   ) {
     final counts = <String, int>{};
     for (final day in days) {
@@ -144,14 +133,13 @@ GROUP BY 1, 2''';
 
   /// [count] photos of the timeline from [offset] on
   Future<List<BaseAsset>> getAssets({required int offset, required int count}) async {
-    final days = _utcDays ?? _sum(await _selectDays().get(), (day) => day.utcDay);
+    final days = _days ?? _sum(await _selectDays().get(), (day) => day.day);
     var newer = 0;
     for (final day in days) {
       if (offset < newer + day.count) {
-        // the photos taken on that day and before: every time stored on that day starts with it, and is smaller than
-        // it followed by the largest character
+        // the photos of that day and before
         final rows = await _db.mergedAssetDrift
-            .mergedAssetPage(userIds: _userIds, before: '${day.day}\u{10FFFF}', count: count, skip: offset - newer)
+            .mergedAssetPage(userIds: _userIds, day: day.day, count: count, skip: offset - newer)
             .get();
         return rows.map(_toAsset).toList();
       }

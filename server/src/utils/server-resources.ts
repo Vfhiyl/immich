@@ -35,9 +35,9 @@ export const readMemoryLimit = async (root = '/') => {
 };
 
 /**
- * The swap the server may use: of the machine (SwapTotal, proc_meminfo(5)), or less when its container has a limit
- * (cgroup v2 memory.swap.max). Swap lets a machine of little memory run: the background work goes on, slower
- */
+The swap the server may use: of the machine (SwapTotal, proc_meminfo(5)), or less when its container has a limit
+(cgroup v2 memory.swap.max). Swap lets a machine of little memory run: the background work goes on, slower
+*/
 export const readSwap = async (root = '/') => {
   const meminfo = await read(join(root, 'proc/meminfo'));
   const kb = meminfo ? /^SwapTotal:\s+(\d+) kB$/m.exec(meminfo)?.[1] : undefined;
@@ -48,9 +48,9 @@ export const readSwap = async (root = '/') => {
 };
 
 /**
- * The processes the kernel killed as memory ran out so far: of the container of the server (cgroup v2 memory.events,
- * `oom_kill`), else of the machine (/proc/vmstat); null where it cannot tell
- */
+The processes the kernel killed as memory ran out so far: of the container of the server (cgroup v2 memory.events,
+`oom_kill`), else of the machine (/proc/vmstat); null where it cannot tell
+*/
 export const readOomKills = async (root = '/') => {
   for (const [path, pattern] of [
     ['sys/fs/cgroup/memory.events', /^oom_kill (\d+)$/m],

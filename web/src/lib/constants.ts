@@ -252,7 +252,7 @@ export interface Lang {
   rtl?: boolean;
 }
 
-export const defaultLang: Lang = { name: 'English', code: 'en', loader: () => import('$i18n/en.json') };
+export const defaultLang: Lang = { name: 'English', code: 'en', loader: () => import('#i18n/en.json') };
 
 export enum ImmichProduct {
   Client = 'immich-client',
@@ -312,3 +312,12 @@ export enum BackupFileStatus {
 }
 
 export const assetViewerFadeDuration: number = 150;
+
+export const libraryTableClasses = {
+  column1: 'w-4/12',
+  column2: 'w-4/12',
+  column3: 'w-1/12',
+  column4: 'w-1/12',
+  column5: 'w-1/12',
+  column6: 'w-1/12 flex justify-end',
+};

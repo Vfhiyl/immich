@@ -2,7 +2,6 @@ import {
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
-  type Generated,
   Index,
   Int8,
   PrimaryGeneratedColumn,
@@ -10,6 +9,7 @@ import {
   Timestamp,
   Unique,
   UpdateDateColumn,
+  type Generated,
 } from '@immich/sql-tools';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AssetFileType, BuiltinStorageBackend } from 'src/enum.js';

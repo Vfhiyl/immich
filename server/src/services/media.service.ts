@@ -1,16 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type {
-  AudioStreamInfo,
-  DecodeToBufferOptions,
-  GenerateThumbnailOptions,
-  ImageDimensions,
-  JobItem,
-  JobOf,
-  VideoFormat,
-  VideoInterfaces,
-  VideoStreamInfo,
-} from 'src/types.js';
-import { FACE_THUMBNAIL_SIZE } from 'src/constants.js';
+import { FACE_THUMBNAIL_SIZE, THUMBNAIL_DECODING_TIER } from 'src/constants.js';
 import { ImagePathOptions, StorageCore, ThumbnailPathEntity } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -47,7 +36,19 @@ import {
   toRecordedFile,
 } from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import type {
+  AudioStreamInfo,
+  DecodeToBufferOptions,
+  GenerateThumbnailOptions,
+  ImageDimensions,
+  JobItem,
+  JobOf,
+  VideoFormat,
+  VideoInterfaces,
+  VideoStreamInfo,
+} from 'src/types.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
+import { tokenizeForSearch } from 'src/utils/database.js';
 import { DERIVED_MAX_RATIO, DERIVED_SIZE_RULE_VERSION } from 'src/utils/derived-size.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { JobRetryLater } from 'src/utils/job-retry.js';
@@ -82,9 +83,9 @@ export class MediaService extends BaseService {
   }
 
   /**
-   * The previews and thumbnails of images longer than 4096:1440 were made by their short side alone (a long screenshot
-   * of 1080 x 20000 had a preview of its own size); they are made again by the rule of getDerivedScale, once
-   */
+  The previews and thumbnails of images longer than 4096:1440 were made by their short side alone (a long screenshot
+  of 1080 x 20000 had a preview of its own size); they are made again by the rule of getDerivedScale, once
+  */
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
   async onDerivedSizeRule() {
     const state = await this.systemMetadataRepository.get(SystemMetadataKey.DerivedSizeRule);
@@ -413,14 +414,14 @@ export class MediaService extends BaseService {
       fileType: AssetFileType.Preview,
       format: previewFormat,
       isEdited: useEdits,
-      isProgressive: !!image.preview.progressive && previewFormat !== ImageFormat.Webp,
+      isProgressive: !!image.preview.progressive && previewFormat === ImageFormat.Jpeg,
       isTransparent,
     });
     const thumbnailFile = this.getImageFile(asset, {
       fileType: AssetFileType.Thumbnail,
       format: thumbnailFormat,
       isEdited: useEdits,
-      isProgressive: !!image.thumbnail.progressive && thumbnailFormat !== ImageFormat.Webp,
+      isProgressive: !!image.thumbnail.progressive && thumbnailFormat === ImageFormat.Jpeg,
       isTransparent,
     });
     this.storageCore.ensureFolders(previewFile.path);
@@ -439,8 +440,13 @@ export class MediaService extends BaseService {
         : undefined;
     await using _smallFile = small && { [Symbol.asyncDispose]: () => this.mediaRepository.releaseImage(small) };
     const baseOptions = { colorspace, processInvalidImages: false, edits: small ? [] : edits };
-    const thumbnailOptions = { ...image.thumbnail, ...baseOptions, format: thumbnailFormat };
-    const previewOptions = { ...image.preview, ...baseOptions, format: previewFormat };
+    const thumbnailOptions = {
+      ...image.thumbnail,
+      ...baseOptions,
+      format: thumbnailFormat,
+      decodingTier: THUMBNAIL_DECODING_TIER,
+    } as const;
+    const previewOptions = { ...image.preview, ...baseOptions, format: previewFormat, decodingTier: 0 } as const;
     const promises = [
       this.mediaRepository.generateThumbhash(small ?? decoded, baseOptions),
       this.mediaRepository.generateThumbnail(small ?? decoded, thumbnailOptions, thumbnailOutput.path),
@@ -457,7 +463,7 @@ export class MediaService extends BaseService {
         fileType: AssetFileType.FullSize,
         format: fullsizeFormat,
         isEdited: useEdits,
-        isProgressive: !!image.fullsize.progressive && fullsizeFormat !== ImageFormat.Webp,
+        isProgressive: !!image.fullsize.progressive && fullsizeFormat === ImageFormat.Jpeg,
         isTransparent,
       });
       const fullsizeOptions = {
@@ -466,7 +472,8 @@ export class MediaService extends BaseService {
         format: fullsizeFormat,
         quality: image.fullsize.quality,
         progressive: image.fullsize.progressive,
-      };
+        decodingTier: 0,
+      } as const;
       fullsizeOutput = staged.use(await this.createDerivedOutput(fullsizeFile.path));
       promises.push(this.mediaRepository.generateThumbnail(decoded, fullsizeOptions, fullsizeOutput.path));
     } else if (generateFullsize && extracted && extracted.format === RawExtractedFormat.Jpeg) {
@@ -474,7 +481,7 @@ export class MediaService extends BaseService {
         fileType: AssetFileType.FullSize,
         format: extracted.format,
         isEdited: false,
-        isProgressive: !!image.fullsize.progressive && image.fullsize.format !== ImageFormat.Webp,
+        isProgressive: !!image.fullsize.progressive && image.fullsize.format === ImageFormat.Jpeg,
         isTransparent,
       });
       this.storageCore.ensureFolders(fullsizeFile.path);
@@ -595,6 +602,7 @@ export class MediaService extends BaseService {
           ),
         },
       ],
+      decodingTier: THUMBNAIL_DECODING_TIER,
     };
 
     await this.mediaRepository.generateThumbnail(decoded, thumbnailOptions, thumbnail.path);
@@ -610,9 +618,9 @@ export class MediaService extends BaseService {
   }
 
   /**
-   * The shorter side of the image a face is cut from, for the cut (getCrop) to be at least FACE_THUMBNAIL_SIZE across
-   * (and a little more, for the rounding of the cut at that size); undefined, the image whole, if there is no cut
-   */
+  The shorter side of the image a face is cut from, for the cut (getCrop) to be at least FACE_THUMBNAIL_SIZE across
+  (and a little more, for the rounding of the cut at that size); undefined, the image whole, if there is no cut
+  */
   private getFaceSourceSize(dims: ImageDimensions, box: BoundingBox): number | undefined {
     const crop = this.getCrop({ old: dims, new: dims }, box);
     if (crop.width <= 0) {
@@ -666,14 +674,15 @@ export class MediaService extends BaseService {
   ) {
     const previewFile = this.getImageFile(asset, {
       fileType: AssetFileType.Preview,
-      format: image.preview.format,
+      // TODO: write JPEG XL for video thumbnails
+      format: image.preview.format === ImageFormat.Jxl ? ImageFormat.Webp : image.preview.format,
       isEdited: false,
       isProgressive: false,
       isTransparent: false,
     });
     const thumbnailFile = this.getImageFile(asset, {
       fileType: AssetFileType.Thumbnail,
-      format: image.thumbnail.format,
+      format: image.thumbnail.format === ImageFormat.Jxl ? ImageFormat.Webp : image.thumbnail.format,
       isEdited: false,
       isProgressive: false,
       isTransparent: false,
@@ -1078,7 +1087,10 @@ export class MediaService extends BaseService {
     await this.personRepository.updateVisibility(faceStatuses.visible, faceStatuses.hidden);
 
     const ocrStatuses = checkOcrVisibility(ocrData, originalDimensions, cropBox);
-    await this.ocrRepository.updateOcrVisibilities(asset.id, ocrStatuses.visible, ocrStatuses.hidden);
+    const searchText = (cropBox ? ocrStatuses.visible : ocrData)
+      .flatMap(({ text }) => tokenizeForSearch(text))
+      .join(' ');
+    await this.ocrRepository.updateOcrVisibilities(asset.id, ocrStatuses.visible, ocrStatuses.hidden, searchText);
 
     return generated;
   }

@@ -23,9 +23,9 @@ const FAILURES_KEPT = 200_000;
 const REASONS_LISTED = 50;
 
 /**
- * A job fails far more often than usual when, in the last 24 hours, it ran at least ALERT_MIN_RUNS times, at least
- * ALERT_RATE of them failed, and that is ALERT_FACTOR times the share that failed in the 30 days before (or more)
- */
+A job fails far more often than usual when, in the last 24 hours, it ran at least ALERT_MIN_RUNS times, at least
+ALERT_RATE of them failed, and that is ALERT_FACTOR times the share that failed in the 30 days before (or more)
+*/
 export const JOB_ALERT = { minRuns: 20, rate: 0.2, factor: 3 };
 
 /** The unit of a series from `since`: hours up to 3 days, days up to 3 months, else months */
@@ -48,9 +48,9 @@ const toRuns = (row: {
 });
 
 /**
- * The history of jobs for the admin: how many ran and failed over time, why they failed, and the jobs that fail far
- * more often than usual (the admin is notified of those, at most once a day for each job)
- */
+The history of jobs for the admin: how many ran and failed over time, why they failed, and the jobs that fail far
+more often than usual (the admin is notified of those, at most once a day for each job)
+*/
 @Injectable()
 export class JobHistoryService extends BaseService {
   private flushTimer?: ReturnType<typeof setInterval>;

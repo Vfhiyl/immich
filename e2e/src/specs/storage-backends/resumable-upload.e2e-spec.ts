@@ -22,9 +22,9 @@ import {
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 /**
- * Resumable uploads (draft-ietf-httpbis-resumable-upload) against a real server: without storage backends, with
- * encrypted local backends, and on an S3 service.
- */
+Resumable uploads (draft-ietf-httpbis-resumable-upload) against a real server: without storage backends, with
+encrypted local backends, and on an S3 service.
+*/
 const PART = 16 * 1024 * 1024;
 const photoPath = join(testAssetDir, 'formats/jpg/el_torcal_rocks.jpg');
 

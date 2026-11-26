@@ -3,12 +3,12 @@ import {
   CreateDateColumn,
   ForeignKeyColumn,
   ForeignKeyConstraint,
-  type Generated,
   Index,
   Int8,
   PrimaryColumn,
   Table,
   Timestamp,
+  type Generated,
 } from '@immich/sql-tools';
 import { BuiltinStorageBackend } from 'src/enum.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';

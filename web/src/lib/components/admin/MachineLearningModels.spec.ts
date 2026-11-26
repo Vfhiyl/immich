@@ -3,11 +3,9 @@ import {
   type MachineLearningModelDto,
   type MachineLearningTaskModelsDto,
 } from '@immich/sdk';
-import { render, screen, within } from '@testing-library/svelte';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { getAnimateMock } from '$lib/__mocks__/animate.mock';
-import { getIntersectionObserverMock } from '$lib/__mocks__/intersection-observer.mock';
-import { getVisualViewportMock } from '$lib/__mocks__/visual-viewport.mock';
+import { describe, expect, test } from 'vitest';
+import { render } from 'vitest-browser-svelte';
+import { page } from 'vitest/browser';
 import MachineLearningModels from './MachineLearningModels.svelte';
 
 const model = (name: string, fingerprint: string | null = 'a'.repeat(64)): MachineLearningModelDto => ({
@@ -32,29 +30,23 @@ const task = (overrides: Partial<MachineLearningTaskModelsDto>): MachineLearning
 });
 
 describe('MachineLearningModels component', () => {
-  beforeEach(() => {
-    vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
-    vi.stubGlobal('visualViewport', getVisualViewportMock());
-    Element.prototype.animate = getAnimateMock();
-  });
-
-  test('tells the model of each task, and nothing more while nothing changes', () => {
-    render(MachineLearningModels, {
+  test('tells the model of each task, and nothing more while nothing changes', async () => {
+    await render(MachineLearningModels, {
       tasks: [task({}), task({ task: 'ocr', enabled: false, active: null, target: model('PP-OCRv5_mobile', null) })],
     });
 
     // the texts are keys in unit tests
-    const clip = screen.getByTestId('ml-task-clip');
-    expect(within(clip).getByText(/ViT-B-32__openai/)).toBeInTheDocument();
-    expect(within(clip).queryByText('admin.machine_learning_models_rebuilding')).not.toBeInTheDocument();
-    expect(within(clip).queryByText('admin.machine_learning_models_searched')).not.toBeInTheDocument();
-    expect(
-      within(screen.getByTestId('ml-task-ocr')).getByText('admin.machine_learning_models_disabled'),
-    ).toBeInTheDocument();
+    const clip = page.getByTestId('ml-task-clip');
+    await expect.element(clip.getByText(/ViT-B-32__openai/)).toBeInTheDocument();
+    await expect.element(clip.getByText('admin.machine_learning_models_rebuilding')).not.toBeInTheDocument();
+    await expect.element(clip.getByText('admin.machine_learning_models_searched')).not.toBeInTheDocument();
+    await expect
+      .element(page.getByTestId('ml-task-ocr').getByText('admin.machine_learning_models_disabled'))
+      .toBeInTheDocument();
   });
 
-  test('tells the progress of a rebuild, and which model searches use meanwhile', () => {
-    render(MachineLearningModels, {
+  test('tells the progress of a rebuild, and which model searches use meanwhile', async () => {
+    await render(MachineLearningModels, {
       tasks: [
         task({
           target: model('ViT-L-14__openai', null),
@@ -64,14 +56,14 @@ describe('MachineLearningModels component', () => {
       ],
     });
 
-    expect(screen.getByText('admin.machine_learning_models_rebuilding')).toBeInTheDocument();
-    expect(screen.getByText('admin.machine_learning_models_searched')).toBeInTheDocument();
-    expect(screen.getByText(/admin.machine_learning_models_files_unknown/)).toBeInTheDocument();
+    await expect.element(page.getByText('admin.machine_learning_models_rebuilding')).toBeInTheDocument();
+    await expect.element(page.getByText('admin.machine_learning_models_searched')).toBeInTheDocument();
+    await expect.element(page.getByText(/admin.machine_learning_models_files_unknown/)).toBeInTheDocument();
   });
 
-  test('warns of files that changed, and of servers that answer with files that were replaced', () => {
+  test('warns of files that changed, and of servers that answer with files that were replaced', async () => {
     const at = new Date().toISOString();
-    render(MachineLearningModels, {
+    await render(MachineLearningModels, {
       tasks: [
         task({
           task: 'facial-recognition',
@@ -83,29 +75,29 @@ describe('MachineLearningModels component', () => {
       ],
     });
 
-    expect(screen.getByText('admin.machine_learning_models_rebuilt')).toBeInTheDocument();
-    expect(screen.getByText('admin.machine_learning_models_replaced')).toBeInTheDocument();
-    expect(screen.getByText('admin.machine_learning_models_conflict')).toBeInTheDocument();
+    await expect.element(page.getByText('admin.machine_learning_models_rebuilt')).toBeInTheDocument();
+    await expect.element(page.getByText('admin.machine_learning_models_replaced')).toBeInTheDocument();
+    await expect.element(page.getByText('admin.machine_learning_models_conflict')).toBeInTheDocument();
   });
 
   test('tells when its jobs give way to the memory of machine learning', async () => {
     const memory = { used: 7 * 1024 ** 3, limit: 8 * 1024 ** 3, source: 'cgroup2' };
-    const { rerender } = render(MachineLearningModels, {
+    const { rerender } = await render(MachineLearningModels, {
       tasks: [task({})],
       backoff: { level: MachineLearningBackoffLevel.Normal, checkedAt: '', memory, pressure: null },
     });
-    expect(screen.getByText('admin.machine_learning_backoff_memory')).toBeInTheDocument();
+    await expect.element(page.getByText('admin.machine_learning_backoff_memory')).toBeInTheDocument();
 
     await rerender({
       tasks: [task({})],
       backoff: { level: MachineLearningBackoffLevel.Paused, checkedAt: '', memory, pressure: null },
     });
-    expect(screen.getByText('admin.machine_learning_backoff_paused')).toBeInTheDocument();
+    await expect.element(page.getByText('admin.machine_learning_backoff_paused')).toBeInTheDocument();
   });
 
-  test('tells what the regroup of people changed, with the named people, and offers to undo it', () => {
+  test('tells what the regroup of people changed, with the named people, and offers to undo it', async () => {
     const at = new Date().toISOString();
-    render(MachineLearningModels, {
+    await render(MachineLearningModels, {
       tasks: [
         task({
           task: 'facial-recognition',
@@ -123,28 +115,28 @@ describe('MachineLearningModels component', () => {
       ],
     });
 
-    const regroup = screen.getByTestId('ml-regroup');
-    expect(within(regroup).getByText('admin.machine_learning_models_regroup_done')).toBeInTheDocument();
-    expect(within(regroup).getByText('admin.machine_learning_models_regroup_changes')).toBeInTheDocument();
-    expect(
-      within(regroup).getByRole('button', { name: 'admin.machine_learning_models_regroup_undo' }),
-    ).toBeInTheDocument();
+    const regroup = page.getByTestId('ml-regroup');
+    await expect.element(regroup.getByText('admin.machine_learning_models_regroup_done')).toBeInTheDocument();
+    await expect.element(regroup.getByText('admin.machine_learning_models_regroup_changes')).toBeInTheDocument();
+    await expect
+      .element(regroup.getByRole('button', { name: 'admin.machine_learning_models_regroup_undo' }))
+      .toBeInTheDocument();
   });
 
   test('tells a regroup that runs, or was undone, without offering to undo it', async () => {
     const at = new Date().toISOString();
     const regroup = { startedAt: at, facesLeft: 0, facesJoined: 0, people: [], otherPeople: 0 };
-    const { rerender } = render(MachineLearningModels, {
+    const { rerender } = await render(MachineLearningModels, {
       tasks: [task({ task: 'facial-recognition', regroup: { ...regroup, finishedAt: null, undoneAt: null } })],
     });
-    expect(screen.getByText('admin.machine_learning_models_regroup_running')).toBeInTheDocument();
+    await expect.element(page.getByText('admin.machine_learning_models_regroup_running')).toBeInTheDocument();
 
     await rerender({
       tasks: [task({ task: 'facial-recognition', regroup: { ...regroup, finishedAt: at, undoneAt: at } })],
     });
-    expect(screen.getByText('admin.machine_learning_models_regroup_undone')).toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: 'admin.machine_learning_models_regroup_undo' }),
-    ).not.toBeInTheDocument();
+    await expect.element(page.getByText('admin.machine_learning_models_regroup_undone')).toBeInTheDocument();
+    await expect
+      .element(page.getByRole('button', { name: 'admin.machine_learning_models_regroup_undo' }))
+      .not.toBeInTheDocument();
   });
 });

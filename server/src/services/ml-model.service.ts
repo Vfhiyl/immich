@@ -1,12 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { JobItem, JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { MachineLearningModelDto, MachineLearningModelsResponseDto } from 'src/dtos/ml-model.dto.js';
 import { DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName, SystemMetadataKey } from 'src/enum.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import { ModelTask } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import type { JobItem, JobOf } from 'src/types.js';
 import { facesLeavingPerson } from 'src/utils/face-regroup.js';
 import {
   batched,
@@ -25,6 +25,12 @@ import {
   configuredModelName,
   isRebuilding,
 } from 'src/utils/ml-models.js';
+/**
+Makes the results of every photo again when the model of a task changes (another name in the configuration, or
+new files of the same model), in the background behind new photos: smart search switches to the new embeddings at
+once when every photo has one, faces keep their place and person, text keeps the lines that did not change
+*/
+import { IGNORED_THRESHOLD_SETTINGS, getFaceThresholds, getOcrThresholds } from 'src/utils/ml-thresholds.js';
 
 type MachineLearningConfig = SystemConfig['machineLearning'];
 
@@ -49,13 +55,6 @@ const REGROUP_NEIGHBOURS = 20;
 
 /** How long the last step of a rebuild waits before it looks again whether the jobs it follows are done */
 const FINISH_RETRY_MS = 60_000;
-
-/**
- * Makes the results of every photo again when the model of a task changes (another name in the configuration, or
- * new files of the same model), in the background behind new photos: smart search switches to the new embeddings at
- * once when every photo has one, faces keep their place and person, text keeps the lines that did not change
- */
-import { IGNORED_THRESHOLD_SETTINGS, getFaceThresholds, getOcrThresholds } from 'src/utils/ml-thresholds.js';
 
 @Injectable()
 export class MachineLearningModelService extends BaseService {
@@ -140,10 +139,10 @@ export class MachineLearningModelService extends BaseService {
   }
 
   /**
-   * Queues a job for every photo whose results are not of the target, the newest first: those without results
-   * first, then those with results of another model, both behind new photos (whose jobs have no priority); then the
-   * last step, behind them all
-   */
+  Queues a job for every photo whose results are not of the target, the newest first: those without results
+  first, then those with results of another model, both behind new photos (whose jobs have no priority); then the
+  last step, behind them all
+  */
   private async queueRebuild(task: ModelTask, state: TaskModelState) {
     const selection = await this.machineLearningModels.getSelection(task, state);
     for (const phase of ['missing', 'stale'] as const) {
@@ -204,9 +203,9 @@ export class MachineLearningModelService extends BaseService {
   }
 
   /**
-   * Regroups the people after their faces got embeddings of another model: faces that are no longer close to the rest
-   * of their person leave it (see `facesLeavingPerson`), then recognition looks for the person of every face without one
-   */
+  Regroups the people after their faces got embeddings of another model: faces that are no longer close to the rest
+  of their person leave it (see `facesLeavingPerson`), then recognition looks for the person of every face without one
+  */
   @OnJob({ name: JobName.FaceRegroup, queue: QueueName.FacialRecognition })
   async handleFaceRegroup({ generation }: JobOf<JobName.FaceRegroup>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
@@ -321,7 +320,7 @@ export class MachineLearningModelService extends BaseService {
   /** Whether the queue of a task has jobs waiting, delayed or running, besides `running` of its own */
   private async hasPendingJobs(task: ModelTask, running = 0) {
     const counts = await this.jobRepository.getJobCounts(TASKS[task].queue);
-    return counts.waiting + counts.delayed + counts.paused + counts.active > running;
+    return counts.waiting + counts.delayed + counts.active > running;
   }
 
   async getModels(): Promise<MachineLearningModelsResponseDto> {

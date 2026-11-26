@@ -2,7 +2,6 @@ import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/com
 import { Insertable } from 'kysely';
 import { DateTime, Duration } from 'luxon';
 import { Writable } from 'node:stream';
-import type { SyncAck } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
@@ -25,6 +24,7 @@ import {
 import { SyncQueryOptions } from 'src/repositories/sync.repository.js';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import type { SyncAck } from 'src/types.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
 import { UPSTREAM_SYNC_DELETE_RETENTION_DAYS, getPruneBefore, withRetentionSetting } from 'src/utils/sync-retention.js';
@@ -68,20 +68,20 @@ export const send = async <T extends keyof SyncItem, D extends SyncItem[T]>(
 };
 
 /**
- * A first sync of assets (no checkpoint yet), or one in progress (a checkpoint with the position of the last asset
- * sent): it sends the assets as they were when it started, newest first, so that the newest photos show first. The
- * checkpoint keeps when it started, and the changes since then follow in the order of change once it is done
- */
+A first sync of assets (no checkpoint yet), or one in progress (a checkpoint with the position of the last asset
+sent): it sends the assets as they were when it started, newest first, so that the newest photos show first. The
+checkpoint keeps when it started, and the changes since then follow in the order of change once it is done
+*/
 const isSnapshot = (checkpoint: SyncAck | undefined) => !checkpoint || !!checkpoint.extraId;
 
 /**
- * Sends a snapshot: each asset with its position, the last one with the last change of the assets of the snapshot
- * instead, which completes it, as upstream's checkpoint after the same assets (and as many items as upstream sends, so
- * its clients see no difference but the order). Returns where the changes go on from, and whether they must complete
- * it: when nothing was left of a snapshot in progress (the assets after its position changed since, and follow as
- * changes), the first change completes it, or a separate ack if there is none (an ack of the same type before the
- * changes could be applied after them by a client that sends the last ack of each type)
- */
+Sends a snapshot: each asset with its position, the last one with the last change of the assets of the snapshot
+instead, which completes it, as upstream's checkpoint after the same assets (and as many items as upstream sends, so
+its clients see no difference but the order). Returns where the changes go on from, and whether they must complete
+it: when nothing was left of a snapshot in progress (the assets after its position changed since, and follow as
+changes), the first change completes it, or a separate ack if there is none (an ack of the same type before the
+changes could be applied after them by a client that sends the last ack of each type)
+*/
 const sendSnapshot = async (
   response: Writable,
   type: SyncEntityType.AssetV2 | SyncEntityType.PartnerAssetV2,

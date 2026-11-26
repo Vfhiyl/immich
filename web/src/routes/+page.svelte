@@ -1,10 +1,10 @@
 <script lang="ts">
-  import AuthPageLayout from '$lib/components/layouts/AuthPageLayout.svelte';
-  import ResourceCheckReport from '$lib/components/admin/ResourceCheckReport.svelte';
-  import StorageSetupReport from '$lib/components/storage/StorageSetupReport.svelte';
-  import { Route } from '$lib/route';
-  import { websocketStore } from '$lib/stores/websocket';
-  import { handleError } from '$lib/utils/handle-error';
+  import ResourceCheckReport from '#lib/components/admin/ResourceCheckReport.svelte';
+  import AuthPageLayout from '#lib/components/layouts/AuthPageLayout.svelte';
+  import StorageSetupReport from '#lib/components/storage/StorageSetupReport.svelte';
+  import { Route } from '#lib/route.ts';
+  import { websocketStore } from '#lib/stores/websocket.ts';
+  import { handleError } from '#lib/utils/handle-error.ts';
   import {
     getResourceSetupCheck,
     getStorageSetup,

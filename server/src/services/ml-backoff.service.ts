@@ -24,10 +24,10 @@ const WRITE_EVERY_MS = 60_000;
 const SEVERITY = { calm: 0, hold: 1, [BackoffLevel.Normal]: 0, [BackoffLevel.Reduced]: 2, [BackoffLevel.Paused]: 3 };
 
 /**
- * Makes the jobs that send photos to machine learning give way when its memory runs short: one at a time, then not
- * at all, and back step by step once the memory is free again (see `nextBackoff`). Each worker of microservices
- * does so for itself; searches, which the API sends, are not held back.
- */
+Makes the jobs that send photos to machine learning give way when its memory runs short: one at a time, then not
+at all, and back step by step once the memory is free again (see `nextBackoff`). Each worker of microservices
+does so for itself; searches, which the API sends, are not held back.
+*/
 @Injectable()
 export class MachineLearningBackoffService extends BaseService {
   private interval?: ReturnType<typeof setInterval>;

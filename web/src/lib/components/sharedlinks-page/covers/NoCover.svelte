@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { cleanClass } from '$lib';
+  import { cleanClass } from '#lib';
 
   interface Props {
     alt?: string;
@@ -10,6 +10,8 @@
   let { alt = '', preload = false, class: className }: Props = $props();
 </script>
 
+<!-- WebP and PNG only: the libvips the server ships (native/LIBRARIES.md), which builds these images too, encodes
+  no AVIF -->
 <enhanced:img
   {alt}
   class={cleanClass('size-full rounded-xl object-cover aspect-square', className)}
@@ -17,5 +19,5 @@
   draggable="false"
   loading={preload ? 'eager' : 'lazy'}
   sizes="min(271px,186px)"
-  src="$lib/assets/no-thumbnail.png"
+  src="#lib/assets/no-thumbnail.png?format=webp;png"
 />

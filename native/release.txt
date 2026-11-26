@@ -1,3 +1,3 @@
 # The release of the native libraries (native/build.sh) that Docker images install: the URL of its archive and its
-# SHA-256, on one line. Fill in after publishing a release (see README.md, Releasing).
+# SHA-256, on one line. Fill in after publishing a release (see LIBRARIES.md, Releasing).
 https://github.com/Vfhiyl/immich/releases/download/native-8.18.7-1/immich-native-8.18.7-1-linux-x64.tar.gz ba6f1a420d2754be365d013fad1d1458363f816e67176e4195e04d25adc9d928

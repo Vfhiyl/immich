@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { handleImportDeletedOriginal } from '$lib/services/storage.service';
+  import { handleImportDeletedOriginal } from '#lib/services/storage.service.ts';
   import { Field, FormModal, Select, Stack, Text } from '@immich/ui';
   import { mdiImport } from '@mdi/js';
   import { t } from 'svelte-i18n';

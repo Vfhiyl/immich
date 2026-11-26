@@ -12,10 +12,10 @@ import { promisify } from 'node:util';
 import pg from 'pg';
 
 /**
- * Runs a real Immich server (API and microservices workers) as a local process, so that storage backend scenarios
- * can be tested end to end, including restarts with another configuration. It needs PostgreSQL with the vector
- * extension and Redis, which `src/specs/storage-backends/setup.ts` provides, and a built server (`server/dist`).
- */
+Runs a real Immich server (API and microservices workers) as a local process, so that storage backend scenarios
+can be tested end to end, including restarts with another configuration. It needs PostgreSQL with the vector
+extension and Redis, which `src/specs/storage-backends/setup.ts` provides, and a built server (`server/dist`).
+*/
 
 const serverRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../server');
 const webBuild = resolve(serverRoot, '../web/build');
@@ -153,9 +153,9 @@ export const sha1 = (value: Buffer) => createHash('sha1').update(value).digest('
 /** A directory with everything one test environment writes: media location, backends and configuration */
 export class TestEnvironment {
   /**
-   * With `web`, the server serves the built web app (`web/build`), for tests in a browser. Without `configFile`, the
-   * system settings are in the database and can be changed in the web app (call `Api.configure` after the start).
-   */
+  With `web`, the server serves the built web app (`web/build`), for tests in a browser. Without `configFile`, the
+  system settings are in the database and can be changed in the web app (call `Api.configure` after the start).
+  */
   static async create({ web = false, configFile = true } = {}) {
     const environment = new this(await mkdtemp(join(tmpdir(), 'immich-e2e-storage-')), configFile);
     await environment.writeBuildData(web);
@@ -228,9 +228,9 @@ export class TestEnvironment {
   }
 
   /**
-   * What a new server that replaces a lost one has: an empty database and media location, but the same storage
-   * configuration, master key file and storage. The server must be stopped.
-   */
+  What a new server that replaces a lost one has: an empty database and media location, but the same storage
+  configuration, master key file and storage. The server must be stopped.
+  */
   async loseServer() {
     await withDatabase('postgres', async (client) => {
       await client.query(`DROP DATABASE IF EXISTS ${this.database} WITH (FORCE)`);
@@ -271,9 +271,9 @@ export class TestEnvironment {
   }
 
   /**
-   * Write the storage backend configuration, with a new master key unless `keepMasterKey`; with `keyCommand`, the keys
-   * come from a command that prints the key file (as one would print what a key management service decrypts)
-   */
+  Write the storage backend configuration, with a new master key unless `keepMasterKey`; with `keyCommand`, the keys
+  come from a command that prints the key file (as one would print what a key management service decrypts)
+  */
   async writeBackends(backends: LocalBackend[], { keepMasterKey = false, keyCommand = false } = {}) {
     const lines = [];
     if (backends.some(({ s3, azure, encrypted }) => encrypted ?? !!(s3 || azure))) {
@@ -333,9 +333,9 @@ export class TestEnvironment {
   }
 
   /**
-   * Files stored on a backend, without the probes of the startup check and what writes that were cut off left (stopping
-   * the server can cut one off; they are removed after two days)
-   */
+  Files stored on a backend, without the probes of the startup check and what writes that were cut off left (stopping
+  the server can cut one off; they are removed after two days)
+  */
   async listBackend(id: string) {
     const entries = await readdirIfExists(this.backendRoot(id));
     return entries
@@ -605,10 +605,10 @@ const isApiUp = async () => {
 };
 
 /**
- * A machine learning service as the server sees it (`POST /predict`, `GET /ping`), answering smart search with an
- * embedding of the files it pretends to have (`fingerprint`, which a test changes as if the files were replaced),
- * and telling those files the way this fork's service does; it finds no faces and no text
- */
+A machine learning service as the server sees it (`POST /predict`, `GET /ping`), answering smart search with an
+embedding of the files it pretends to have (`fingerprint`, which a test changes as if the files were replaced),
+and telling those files the way this fork's service does; it finds no faces and no text
+*/
 export class FakeMachineLearning {
   static async start() {
     const service = new this();

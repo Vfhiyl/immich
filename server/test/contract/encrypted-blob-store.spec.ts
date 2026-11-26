@@ -8,9 +8,9 @@ import { S3_PART_SIZE } from 'src/repositories/s3-blob-store.js';
 import { stores } from 'test/contract/stores.js';
 
 /**
- * Encryption on top of every store: what the encrypted layer needs from a store (exact ranges, multipart uploads of
- * a stream whose length is not known up front) must hold for all of them.
- */
+Encryption on top of every store: what the encrypted layer needs from a store (exact ranges, multipart uploads of
+a stream whose length is not known up front) must hold for all of them.
+*/
 const sha1 = (value: Buffer) => createHash('sha1').update(value).digest();
 const CHUNK = 64 * 1024;
 const pieces = (value: Buffer, size: number) =>

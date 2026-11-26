@@ -2,19 +2,19 @@ import {
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
-  type Generated,
   PrimaryColumn,
   Table,
-  type Timestamp,
   UpdateDateColumn,
+  type Generated,
+  type Timestamp,
 } from '@immich/sql-tools';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 /**
- * A job for an asset that has not finished: it failed, or the process stopped while it ran (as when memory ran out). The
- * row goes once the job finishes; after a few attempts in a row by one version of the server, the job is no longer
- * queued for the asset (see `JOB_FAILURE_ATTEMPTS`), until an admin retries it or another version of the server runs
- */
+A job for an asset that has not finished: it failed, or the process stopped while it ran (as when memory ran out). The
+row goes once the job finishes; after a few attempts in a row by one version of the server, the job is no longer
+queued for the asset (see `JOB_FAILURE_ATTEMPTS`), until an admin retries it or another version of the server runs
+*/
 @Table({ name: 'asset_job_failure' })
 export class AssetJobFailureTable {
   @PrimaryColumn({ type: 'character varying' })

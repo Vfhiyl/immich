@@ -14,6 +14,7 @@ import 'package:immich_mobile/entities/store.entity.dart';
 import 'package:immich_mobile/infrastructure/repositories/resumable_upload.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/store.repository.dart';
 import 'package:immich_mobile/repositories/upload.repository.dart';
+import 'package:logging/logging.dart';
 import 'package:mocktail/mocktail.dart';
 
 import '../infrastructure/repositories/fake_resumable_upload_server.dart';
@@ -233,5 +234,22 @@ void main() {
         ],
       },
     );
+  });
+
+  test('a transport failure is logged as the error, not in the message', () async {
+    final error = http.ClientException('Failed to connect to /203.0.113.9:2283');
+    stubSend((_) => throw error);
+    final level = Logger.root.level;
+    addTearDown(() => Logger.root.level = level);
+    Logger.root.level = Level.ALL;
+    final records = <LogRecord>[];
+    final subscription = sut.logger.onRecord.listen(records.add);
+
+    final result = await upload();
+    await subscription.cancel();
+
+    expect(records.map((r) => r.error), [error, error]);
+    expect(records.map((r) => r.message), everyElement(isNot(contains('203.0.113.9'))));
+    expect(result.error, error);
   });
 }

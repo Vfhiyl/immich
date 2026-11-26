@@ -1,13 +1,13 @@
 import { IncomingHttpHeaders } from 'node:http';
 
 /**
- * Headers of Resumable Uploads for HTTP (draft-ietf-httpbis-resumable-upload). Clients send the draft version they
- * follow as an interop version; the ones that differ in something the server reads or writes are handled here.
- *
- * - interop 3 (draft 01, iOS 17): `Upload-Incomplete`, the opposite of `Upload-Complete`
- * - interop 4 and later: `Upload-Complete`
- * - before interop 8: the lifetime in `Upload-Limit` is called `expires` rather than `max-age`
- */
+Headers of Resumable Uploads for HTTP (draft-ietf-httpbis-resumable-upload). Clients send the draft version they
+follow as an interop version; the ones that differ in something the server reads or writes are handled here.
+
+- interop 3 (draft 01, iOS 17): `Upload-Incomplete`, the opposite of `Upload-Complete`
+- interop 4 and later: `Upload-Complete`
+- before interop 8: the lifetime in `Upload-Limit` is called `expires` rather than `max-age`
+*/
 export const MIN_INTEROP_VERSION = 3;
 export const LATEST_INTEROP_VERSION = 10;
 
@@ -50,10 +50,10 @@ const parseBoolean = (value: string | undefined, name: string) => {
 export class ResumableUploadHeaderError extends Error {}
 
 /**
- * The interop version a client follows, if it is one this server supports. A client that follows another draft gets
- * no interim response (the draft forbids one for a version the server does not speak), so that it goes on with a
- * regular upload, as URLSession does
- */
+The interop version a client follows, if it is one this server supports. A client that follows another draft gets
+no interim response (the draft forbids one for a version the server does not speak), so that it goes on with a
+regular upload, as URLSession does
+*/
 export const getInteropVersion = (headers: IncomingHttpHeaders) => {
   const version = parseNonNegativeInteger(
     header(headers, 'upload-draft-interop-version'),

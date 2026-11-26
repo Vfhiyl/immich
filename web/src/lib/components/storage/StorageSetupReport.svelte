@@ -13,8 +13,8 @@
   type Problem = StorageSetupResponseDto['problems'][number];
 
   // what is wrong, and what to do about it
-  const titleOf = ({ kind, path, backendId, keyId }: Problem) => {
-    const values = { path: path ?? '', backendId: backendId ?? '', keyId: keyId ?? '' };
+  const titleOf = ({ kind, path = '', backendId = '', keyId = '' }: Problem) => {
+    const values = { path, backendId, keyId };
     switch (kind) {
       case StorageSetupProblemKind.ConfigurationMissing: {
         return $t('storage_setup_problem_configuration_missing', { values });
@@ -37,7 +37,7 @@
     }
   };
 
-  const hintOf = ({ kind, keyId }: Problem) => {
+  const hintOf = ({ kind, keyId = '' }: Problem) => {
     switch (kind) {
       case StorageSetupProblemKind.ConfigurationMissing: {
         return $t('storage_setup_hint_configuration_missing');
@@ -52,7 +52,7 @@
         return $t('storage_setup_hint_master_keys_invalid');
       }
       case StorageSetupProblemKind.MasterKeyNotFound: {
-        return $t('storage_setup_hint_master_key_not_found', { values: { keyId: keyId ?? '' } });
+        return $t('storage_setup_hint_master_key_not_found', { values: { keyId } });
       }
       case StorageSetupProblemKind.BackendFailed: {
         return $t('storage_setup_hint_backend_failed');
@@ -88,7 +88,7 @@
   {/if}
 
   {#each report.backends as backend (backend.id)}
-    {@const values = { id: backend.id, role: backend.role, driver: backend.driver }}
+    {const values = $derived({ id: backend.id, role: backend.role, driver: backend.driver })}
     <HStack gap={2}>
       {#if backend.ok}
         <Icon icon={mdiCheck} class="text-success" />

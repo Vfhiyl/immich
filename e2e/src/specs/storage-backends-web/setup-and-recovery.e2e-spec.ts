@@ -94,6 +94,8 @@ test.describe('setup and recovery', () => {
       page.getByText(/The storage holds 1 database backup of a server, the latest immich-db-backup-/),
     ).toBeVisible();
     await page.getByRole('button', { name: 'Restore from backup' }).click();
+    // from a database backup (rather than with FUTO Backups)
+    await page.getByRole('button', { name: 'Database Backup' }).click();
 
     // the folders of the media location are empty: the photos are in storage
     await expect(page.getByText('The storage configuration works.')).toBeVisible({ timeout: 90_000 });

@@ -1,6 +1,6 @@
 import { Mocked, vitest } from 'vitest';
-import type { RepositoryInterface } from 'src/types.js';
 import { StorageDeletionRepository } from 'src/repositories/storage-deletion.repository.js';
+import type { RepositoryInterface } from 'src/types.js';
 
 /** Nothing registered and nothing due, so that services that delete files work without setup */
 export const newStorageDeletionRepositoryMock = (): Mocked<RepositoryInterface<StorageDeletionRepository>> => ({

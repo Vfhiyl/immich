@@ -1,4 +1,4 @@
-# The sources of the native libraries the server ships (see README.md), each pinned to a release (or, where Immich's
+# The sources of the native libraries the server ships (see LIBRARIES.md), each pinned to a release (or, where Immich's
 # base image pins a revision, that revision) and checked against its SHA-256 before it is built.
 #
 # name|version|url|sha256

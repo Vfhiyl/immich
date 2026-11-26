@@ -1,13 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-
 import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import { ModelTask } from 'src/repositories/machine-learning.repository.js';
 import { RecordedFile } from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import type { JobOf } from 'src/types.js';
 import { batched, getCLIPModelInfo, isSmartSearchEnabled } from 'src/utils/misc.js';
 import { isRebuilding } from 'src/utils/ml-models.js';
 
@@ -35,10 +34,10 @@ export class SmartInfoService extends BaseService {
   }
 
   /**
-   * Keeps the column of the embeddings that are searched at the dimension of their model. Upstream deleted every
-   * embedding when the model changed; here a rebuild makes the new ones in the background and switches to them at
-   * once (see `MachineLearningModelService`), so only a column that does not fit its model is changed (and emptied).
-   */
+  Keeps the column of the embeddings that are searched at the dimension of their model. Upstream deleted every
+  embedding when the model changed; here a rebuild makes the new ones in the background and switches to them at
+  once (see `MachineLearningModelService`), so only a column that does not fit its model is changed (and emptied).
+  */
   private async init(newConfig: SystemConfig) {
     if (!isSmartSearchEnabled(newConfig.machineLearning)) {
       return;
@@ -91,7 +90,8 @@ export class SmartInfoService extends BaseService {
     }
 
     const asset = await this.assetJobRepository.getForClipEncoding(id);
-    if (!asset || asset.files.length !== 1) {
+    const previewFile = asset?.files.find((file) => file.isEdited) ?? asset?.files[0];
+    if (!asset || !previewFile) {
       return JobStatus.Failed;
     }
 
@@ -99,7 +99,7 @@ export class SmartInfoService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const { embedding, model } = await this.encodePreview(asset.files[0], machineLearning.clip);
+    const { embedding, model } = await this.encodePreview(previewFile, machineLearning.clip);
     const observed = await this.machineLearningModels.observe(ModelTask.SEARCH, model, machineLearning);
     if (!observed.keep) {
       return observed.conflict ? JobStatus.Failed : JobStatus.Skipped;
@@ -128,7 +128,7 @@ export class SmartInfoService extends BaseService {
     await this.machineLearningModelRepository.upsertRebuildEmbedding(asset.id, modelId, embedding);
     if (!(await this.searchRepository.getEmbedding(asset.id))) {
       // a new photo is found by searches before the switch too
-      const searched = await this.encodePreview(asset.files[0], {
+      const searched = await this.encodePreview(previewFile, {
         ...machineLearning.clip,
         modelName: state.active.name,
       });

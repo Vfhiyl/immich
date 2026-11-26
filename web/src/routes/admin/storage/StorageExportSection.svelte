@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { handleCancelStorageExport, handleStartStorageExport } from '$lib/services/storage.service';
+  import { handleCancelStorageExport, handleStartStorageExport } from '#lib/services/storage.service.ts';
   import { getStorageExport, type StorageExportResponseDto, type UserAdminResponseDto } from '@immich/sdk';
   import { Alert, Button, Field, HStack, Select, Stack, Text } from '@immich/ui';
   import { onDestroy } from 'svelte';
@@ -56,7 +56,7 @@
           : $t('admin.storage_export_named_by_date')}
       </Text>
       {#if storageExport.state}
-        {@const state = storageExport.state}
+        {const state = $derived(storageExport.state)}
         <Alert
           color={state.status === 'running'
             ? 'info'

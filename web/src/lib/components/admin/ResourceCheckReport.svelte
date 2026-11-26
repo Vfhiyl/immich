@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getByteUnitString } from '$lib/utils/byte-units';
+  import { getByteUnitString } from '#lib/utils/byte-units.ts';
   import { ResourceCheckLevel, type ResourceCheckResponseDto } from '@immich/sdk';
   import { Stack, Text } from '@immich/ui';
   import { DateTime } from 'luxon';

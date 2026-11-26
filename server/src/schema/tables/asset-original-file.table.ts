@@ -4,11 +4,11 @@ import {
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
-  type Generated,
   Index,
   Int8,
   Table,
   Timestamp,
+  type Generated,
 } from '@immich/sql-tools';
 import { BuiltinStorageBackend } from 'src/enum.js';
 import { storage_replica_register } from 'src/schema/functions.js';
@@ -16,9 +16,9 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { StorageBackendTable } from 'src/schema/tables/storage-backend.table.js';
 
 /**
- * Where the original file of an asset is stored. Kept apart from the asset table so that recording a location does
- * not touch the asset row, which would make every client sync the asset again.
- */
+Where the original file of an asset is stored. Kept apart from the asset table so that recording a location does
+not touch the asset row, which would make every client sync the asset again.
+*/
 @Table('asset_original_file')
 // every original that is recorded gets a copy on each replica of its backend, see storage_replica_source
 @AfterInsertTrigger({

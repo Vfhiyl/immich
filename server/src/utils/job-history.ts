@@ -26,9 +26,9 @@ const REASON_LENGTH = 300;
 const ERROR_LENGTH = 2000;
 
 /**
- * An error without what differs from one file to another, for failures to be grouped by: ids, hashes, paths and
- * numbers become placeholders ("cannot open /a/b.heic: 12 bytes" and "cannot open /c.heic: 7 bytes" are one reason)
- */
+An error without what differs from one file to another, for failures to be grouped by: ids, hashes, paths and
+numbers become placeholders ("cannot open /a/b.heic: 12 bytes" and "cannot open /c.heic: 7 bytes" are one reason)
+*/
 export const getFailureReason = (message: string) =>
   message
     .split('\n', 1)[0]

@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { chunk, partition } from 'lodash-es';
 import { join } from 'node:path';
-import type { JobOf, SystemFlags } from 'src/types.js';
 import { ErrorMessages } from 'src/constants.js';
 import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -32,9 +31,11 @@ import { KeyProvider } from 'src/repositories/key-provider.js';
 import { PersonId } from 'src/repositories/person.repository.js';
 import { isBuiltinStorageBackend } from 'src/repositories/storage-backend.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import type { JobOf, SystemFlags } from 'src/types.js';
 import { generateMaintenanceSecret } from 'src/utils/maintenance.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 import { checkStorageSetup, probeStorageBackend } from 'src/utils/storage-setup.js';
+import { detectMediaLocation } from 'src/utils/storage.js';
 
 /** What a write that was cut off left on a local backend is removed after this long */
 const TEMPORARY_FILE_MAX_AGE_MS = 2 * 24 * 60 * 60 * 1000;
@@ -50,25 +51,7 @@ const docsMessage = `Please see https://docs.immich.app/administration/system-in
 export class StorageService extends BaseService {
   private detectMediaLocation(): string {
     const envData = this.configRepository.getEnv();
-    if (envData.storage.mediaLocation) {
-      return envData.storage.mediaLocation;
-    }
-
-    const targets: string[] = [];
-    const candidates = ['/data', '/usr/src/app/upload'];
-
-    for (const candidate of candidates) {
-      const isExists = this.storageRepository.existsSync(candidate);
-      if (isExists) {
-        targets.push(candidate);
-      }
-    }
-
-    if (targets.length === 1) {
-      return targets[0];
-    }
-
-    return '/usr/src/app/upload';
+    return detectMediaLocation(envData.storage.mediaLocation, (path) => this.storageRepository.existsSync(path));
   }
 
   @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.StorageService })
@@ -176,9 +159,9 @@ export class StorageService extends BaseService {
   }
 
   /**
-   * Restart in maintenance mode, where the web app shows what is wrong with the storage configuration and how to fix it
-   * (the storage setup page), until a deployer fixed it and continues
-   */
+  Restart in maintenance mode, where the web app shows what is wrong with the storage configuration and how to fix it
+  (the storage setup page), until a deployer fixed it and continues
+  */
   private async startStorageSetup(error: ImmichStartupError) {
     this.logger.error(`${error.message}. Restarting in maintenance mode, to show the storage setup in the web app`);
     await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, {
@@ -291,9 +274,9 @@ export class StorageService extends BaseService {
   }
 
   /**
-   * The master keys as a key file, for an administrator to keep a copy apart from the server: without them, encrypted
-   * files cannot be read. Only after the administrator confirmed their password; every administrator is told.
-   */
+  The master keys as a key file, for an administrator to keep a copy apart from the server: without them, encrypted
+  files cannot be read. Only after the administrator confirmed their password; every administrator is told.
+  */
   async exportMasterKeys(
     auth: AuthDto,
     { password }: StorageMasterKeyExportDto,

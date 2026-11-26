@@ -230,6 +230,7 @@ describe('jobs of models during a rebuild', () => {
       ({ sut, mocks } = newTestService(OcrService));
       mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
       mocks.assetJob.getForOcr.mockResolvedValue({
+        ownerId: 'user-id',
         visibility: AssetFactory.create().visibility,
         previewFile: { path: '/data/thumbs/preview.jpg', backendId: null, key: null, size: null, encryption: null },
       });

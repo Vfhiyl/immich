@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+  sql,
   type ExpressionBuilder,
   type Insertable,
   type Kysely,
@@ -7,18 +8,17 @@ import {
   type SelectQueryBuilder,
   type Selectable,
   type ShallowDehydrateObject,
-  UpdateResult,
   type Updateable,
-  sql,
 } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { isEmpty, isUndefined, omitBy } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
+import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import type { StorageLocation } from 'src/cores/storage.core.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
+import { isMetadataHidden, type AuthDto } from 'src/dtos/auth.dto.js';
 import {
   AssetFileType,
   AssetOrder,
@@ -56,7 +56,6 @@ import {
   withTagId,
   withTags,
 } from 'src/utils/database.js';
-import { globToPostgresRegex } from 'src/utils/misc.js';
 
 export type AssetStats = Record<AssetType, number>;
 
@@ -719,10 +718,10 @@ export class AssetRepository {
   }
 
   /**
-   * Delete an asset, and return the files recorded for it when it was deleted. The asset is locked first: a file being
-   * recorded for it meanwhile waits until it is gone and then fails to be recorded, so that every stored file is either
-   * returned here or deleted by whoever stored it.
-   */
+  Delete an asset, and return the files recorded for it when it was deleted. The asset is locked first: a file being
+  recorded for it meanwhile waits until it is gone and then fails to be recorded, so that every stored file is either
+  returned here or deleted by whoever stored it.
+  */
   @GenerateSql({ params: [{ id: DummyValue.UUID }] })
   async remove(asset: { id: string }) {
     return this.db.transaction().execute(async (tx) => {
@@ -775,13 +774,14 @@ export class AssetRepository {
   }
 
   findLivePhotoMatch(options: LivePhotoSearchOptions) {
-    const { ownerId, otherAssetId, livePhotoCID, type } = options;
+    const { ownerId, libraryId, otherAssetId, livePhotoCID, type } = options;
     return this.db
       .selectFrom('asset')
       .select(['asset.id', 'asset.ownerId'])
       .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
       .where('id', '!=', asUuid(otherAssetId))
       .where('ownerId', '=', asUuid(ownerId))
+      .$call((qb) => (libraryId ? qb.where('libraryId', '=', asUuid(libraryId)) : qb.where('libraryId', 'is', null)))
       .where('type', '=', type)
       .where('asset_exif.livePhotoCID', '=', livePhotoCID)
       .limit(1)
@@ -895,6 +895,7 @@ export class AssetRepository {
   })
   getTimeBucket(timeBucket: string, options: TimeBucketOptions, auth: AuthDto) {
     const order = options.order ?? 'desc';
+    const bucket = timeBucket.replace(/^[+-]/, '');
     const query = this.db
       .with('cte', (qb) =>
         qb
@@ -929,9 +930,7 @@ export class AssetRepository {
               )
               .as('ratio'),
           ])
-          .$if(!auth.sharedLink || auth.sharedLink.showExif, (qb) =>
-            qb.select(['asset_exif.city', 'asset_exif.country']),
-          )
+          .$if(!isMetadataHidden(auth), (qb) => qb.select(['asset_exif.city', 'asset_exif.country']))
           .$if(!!options.withCoordinates, (qb) => qb.select(['asset_exif.latitude', 'asset_exif.longitude']))
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
           .$if(options.visibility === undefined, withDefaultVisibility)
@@ -948,7 +947,14 @@ export class AssetRepository {
 
             return withBoundingBox(withBoundingCircle, bbox);
           })
-          .where(truncatedDate(options.orderBy), '=', timeBucket.replace(/^[+-]/, ''))
+          .$if(options.orderBy === AssetOrderBy.CreatedAt, (qb) =>
+            qb
+              .where('asset.createdAt', '>=', sql<Date>`${bucket}::timestamp AT TIME ZONE 'UTC'`)
+              .where('asset.createdAt', '<', sql<Date>`(${bucket}::timestamp + interval '1 month') AT TIME ZONE 'UTC'`),
+          )
+          .$if(options.orderBy !== AssetOrderBy.CreatedAt, (qb) =>
+            qb.where(truncatedDate(options.orderBy), '=', bucket),
+          )
           .$if(!!options.albumId, (qb) =>
             qb.where((eb) =>
               eb.exists(
@@ -1029,7 +1035,7 @@ export class AssetRepository {
             eb.fn.coalesce(eb.fn('array_agg', ['status']), sql.lit('{}')).as('status'),
             eb.fn.coalesce(eb.fn('array_agg', ['thumbhash']), sql.lit('{}')).as('thumbhash'),
           ])
-          .$if(!auth.sharedLink || auth.sharedLink.showExif, (qb) =>
+          .$if(!isMetadataHidden(auth), (qb) =>
             qb.select((eb) => [
               eb.fn.coalesce(eb.fn('array_agg', ['city']), sql.lit('{}')).as('city'),
               eb.fn.coalesce(eb.fn('array_agg', ['country']), sql.lit('{}')).as('country'),
@@ -1158,9 +1164,9 @@ export class AssetRepository {
   }
 
   /**
-   * Set the storage location of files that do not have one yet. A location on a backend that Immich owns is skipped
-   * when it already belongs to another file, so two files never share such a blob. Returns the number of files updated.
-   */
+  Set the storage location of files that do not have one yet. A location on a backend that Immich owns is skipped
+  when it already belongs to another file, so two files never share such a blob. Returns the number of files updated.
+  */
   @GenerateSql({ params: [[{ id: DummyValue.UUID, backendId: DummyValue.STRING, key: DummyValue.STRING }]] })
   async setFileLocations(files: { id: string; backendId: string; key: string }[]): Promise<number> {
     if (files.length === 0) {
@@ -1209,9 +1215,9 @@ export class AssetRepository {
   }
 
   /**
-   * Record the original file of assets that do not have one yet, with the same rules as `setFileLocations`. Assets
-   * deleted in the meantime are skipped. Returns the number of assets updated.
-   */
+  Record the original file of assets that do not have one yet, with the same rules as `setFileLocations`. Assets
+  deleted in the meantime are skipped. Returns the number of assets updated.
+  */
   @GenerateSql({ params: [[{ id: DummyValue.UUID, backendId: DummyValue.STRING, key: DummyValue.STRING }]] })
   async setOriginalFiles(files: { id: string; backendId: string; key: string }[]): Promise<number> {
     if (files.length === 0) {
@@ -1265,31 +1271,45 @@ export class AssetRepository {
       .execute();
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.STRING], [DummyValue.STRING]] })
-  async detectOfflineExternalAssets(
-    libraryId: string,
-    importPaths: string[],
-    exclusionPatterns: string[],
-  ): Promise<UpdateResult> {
-    const paths = importPaths.map((importPath) => `${importPath}%`);
-    const exclusions = exclusionPatterns.map((pattern) => globToPostgresRegex(pattern));
+  @GenerateSql({ params: [DummyValue.UUID, () => true] })
+  detectOfflineExternalAssets(libraryId: string, isInLibrary: (originalPath: string) => boolean): Promise<number> {
+    // read and write on one connection, so concurrent library scans can't deadlock on the pool
+    return this.db.transaction().execute(async (trx) => {
+      const query = trx
+        .selectFrom('asset')
+        .select(['asset.id', 'asset.originalPath'])
+        .where('asset.libraryId', '=', asUuid(libraryId))
+        .where('asset.isOffline', '=', false)
+        .where('asset.isExternal', '=', true);
+      await sql`declare offline_check no scroll cursor for ${query}`.execute(trx);
 
-    return this.db
-      .updateTable('asset')
-      .set({
-        isOffline: true,
-        deletedAt: new Date(),
-      })
-      .where('isOffline', '=', false)
-      .where('isExternal', '=', true)
-      .where('libraryId', '=', asUuid(libraryId))
-      .where((eb) =>
-        eb.or([
-          eb.not(eb.or(paths.map((path) => eb('originalPath', 'like', path)))),
-          eb.or(exclusions.map((pattern) => eb('originalPath', '~*', pattern))),
-        ]),
-      )
-      .executeTakeFirstOrThrow();
+      const fetchBatch = async () => {
+        const { rows } = await sql<{ id: string; originalPath: string }>`
+          fetch ${sql.lit(JOBS_LIBRARY_PAGINATION_SIZE)} from offline_check
+        `.execute(trx);
+        return rows;
+      };
+
+      const deletedAt = new Date();
+      let count = 0;
+      for (let rows = await fetchBatch(); rows.length > 0; rows = await fetchBatch()) {
+        const ids = rows.filter(({ originalPath }) => !isInLibrary(originalPath)).map(({ id }) => id);
+        if (ids.length === 0) {
+          continue;
+        }
+
+        // a concurrent check of the same library may have offlined these rows after the cursor was declared
+        const { numUpdatedRows } = await trx
+          .updateTable('asset')
+          .set({ isOffline: true, deletedAt })
+          .where('id', '=', anyUuid(ids))
+          .where('isOffline', '=', false)
+          .executeTakeFirst();
+        count += Number(numUpdatedRows);
+      }
+
+      return count;
+    });
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.STRING]] })

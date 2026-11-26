@@ -2,9 +2,9 @@
 export const OUTPUT_TAIL_LENGTH = 16 * 1024;
 
 /**
- * The end of what a program wrote, for an error message: a program may go on writing (a warning for each frame of a
- * long video, say), and keeping all of it would take ever more memory
- */
+The end of what a program wrote, for an error message: a program may go on writing (a warning for each frame of a
+long video, say), and keeping all of it would take ever more memory
+*/
 export class OutputTail {
   private text = '';
 

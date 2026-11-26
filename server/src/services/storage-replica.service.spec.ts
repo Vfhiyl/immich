@@ -20,6 +20,7 @@ describe(StorageReplicaService.name, () => {
   let mocks: ServiceMocks;
   let root: string;
 
+  // eslint-disable-next-line unicorn/no-unnecessary-parameters
   const store = async (key: string, content: string) => {
     await mocks.storageBackend.get('originals').put(key, Readable.from([Buffer.from(content)]));
   };

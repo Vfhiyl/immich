@@ -1,9 +1,7 @@
-import { retryJobFailures, TrackedJobName, type JobFailuresResponseDto } from '@immich/sdk';
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { getAnimateMock } from '$lib/__mocks__/animate.mock';
-import { getIntersectionObserverMock } from '$lib/__mocks__/intersection-observer.mock';
-import { getVisualViewportMock } from '$lib/__mocks__/visual-viewport.mock';
+import { TrackedJobName, retryJobFailures, type JobFailuresResponseDto } from '@immich/sdk';
+import { describe, expect, test, vi } from 'vitest';
+import { render } from 'vitest-browser-svelte';
+import { page } from 'vitest/browser';
 import JobFailures from './JobFailures.svelte';
 
 vi.mock('@immich/sdk', async (original) => ({
@@ -38,29 +36,25 @@ const failures: JobFailuresResponseDto = {
 };
 
 describe('JobFailures component', () => {
-  beforeEach(() => {
-    vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
-    vi.stubGlobal('visualViewport', getVisualViewportMock());
-    Element.prototype.animate = getAnimateMock();
-  });
-
-  test('lists the files a job failed on, and why', () => {
-    render(JobFailures, { failures });
+  test('lists the files a job failed on, and why', async () => {
+    await render(JobFailures, { failures });
 
     // the texts are keys in unit tests
-    const thumbnails = screen.getByTestId('job-failures-AssetGenerateThumbnails');
-    expect(within(thumbnails).getByRole('link', { name: 'panorama.tif' })).toHaveAttribute('href', '/photos/asset-1');
-    expect(within(thumbnails).getByText(/admin.job_failures_stopped/)).toBeInTheDocument();
-    expect(within(thumbnails).getByText(/Input file has corrupt header/)).toBeInTheDocument();
-    expect(within(thumbnails).getByText('admin.job_failures_more')).toBeInTheDocument();
+    const thumbnails = page.getByTestId('job-failures-AssetGenerateThumbnails');
+    await expect
+      .element(thumbnails.getByRole('link', { name: 'panorama.tif' }))
+      .toHaveAttribute('href', '/photos/asset-1');
+    await expect.element(thumbnails.getByText(/admin.job_failures_stopped/)).toBeInTheDocument();
+    await expect.element(thumbnails.getByText(/Input file has corrupt header/)).toBeInTheDocument();
+    await expect.element(thumbnails.getByText('admin.job_failures_more')).toBeInTheDocument();
   });
 
   test('queues the job again for them', async () => {
     vi.mocked(retryJobFailures).mockResolvedValue({ count: 51 });
     const onChange = vi.fn();
-    render(JobFailures, { failures, onChange });
+    await render(JobFailures, { failures, onChange });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'admin.job_failures_retry' }));
+    await page.getByRole('button', { name: 'admin.job_failures_retry' }).click();
 
     expect(retryJobFailures).toHaveBeenCalledWith({
       jobFailureRetryDto: { jobName: TrackedJobName.AssetGenerateThumbnails },

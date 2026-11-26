@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-
-import type { JobOf } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
 import { AssetVisibility, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { ModelTask, OCR } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import type { JobOf } from 'src/types.js';
 import { tokenizeForSearch } from 'src/utils/database.js';
 import { batched, isOcrEnabled } from 'src/utils/misc.js';
+import { getOcrThresholds } from 'src/utils/ml-thresholds.js';
 
 const CORNERS = ['x1', 'y1', 'x2', 'y2', 'x3', 'y3', 'x4', 'y4'] as const;
 type OcrLine = Record<(typeof CORNERS)[number], number> & { text: string };
@@ -15,9 +15,9 @@ type OcrLine = Record<(typeof CORNERS)[number], number> & { text: string };
 export const OCR_LINE_TOLERANCE = 0.01;
 
 /**
- * What changed between the lines found before and those found now: a line with the same text whose corners all
- * moved by no more than `OCR_LINE_TOLERANCE` is the same line, and is kept as it was
- */
+What changed between the lines found before and those found now: a line with the same text whose corners all
+moved by no more than `OCR_LINE_TOLERANCE` is the same line, and is kept as it was
+*/
 export const diffOcrLines = <T extends OcrLine, E extends OcrLine & { id: string }>(existing: E[], found: T[]) => {
   const unmatched = [...existing];
   const add: T[] = [];
@@ -34,7 +34,6 @@ export const diffOcrLines = <T extends OcrLine, E extends OcrLine & { id: string
   }
   return { add, removeIds: unmatched.map(({ id }) => id) };
 };
-import { getOcrThresholds } from 'src/utils/ml-thresholds.js';
 
 @Injectable()
 export class OcrService extends BaseService {
@@ -89,6 +88,11 @@ export class OcrService extends BaseService {
     await this.machineLearningModelRepository.setResult(id, ModelTask.OCR, observed.modelId);
 
     await this.assetRepository.upsertJobStatus({ assetId: id, ocrAt: new Date() });
+
+    await this.eventRepository.emit('AssetOcrExtracted', {
+      userId: asset.ownerId,
+      assetId: id,
+    });
 
     this.logger.debug(`Processed ${ocrResults.text.length} OCR result(s) for ${id}`);
     return JobStatus.Success;

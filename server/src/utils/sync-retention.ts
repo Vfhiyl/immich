@@ -1,8 +1,8 @@
 /**
- * How long the records of deletions are kept for clients to sync, which a deployment configures. Like every retention
- * setting, a longer one applies to deletions recorded before too, while a shorter one only applies to deletions
- * recorded after the change: each setting stays in effect for the deletions recorded while it was set.
- */
+How long the records of deletions are kept for clients to sync, which a deployment configures. Like every retention
+setting, a longer one applies to deletions recorded before too, while a shorter one only applies to deletions
+recorded after the change: each setting stays in effect for the deletions recorded while it was set.
+*/
 export interface SyncDeleteRetentionSetting {
   /** Days, or null to keep them forever */
   days: number | null;
@@ -42,10 +42,10 @@ export const withRetentionSetting = (
 };
 
 /**
- * Before when the records of deletions can be removed now, or null to keep them all. A record is removed once the
- * longer of the setting it was recorded under and the current one has passed; records are removed oldest first, so
- * that what is left is complete from the returned time on.
- */
+Before when the records of deletions can be removed now, or null to keep them all. A record is removed once the
+longer of the setting it was recorded under and the current one has passed; records are removed oldest first, so
+that what is left is complete from the returned time on.
+*/
 export const getPruneBefore = ({ settings }: SyncDeleteRetentionState, now: Date): Date | null => {
   const current = settings.at(-1)!;
   let before = Infinity;

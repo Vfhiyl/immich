@@ -33,11 +33,11 @@ const COPY_CONCURRENCY = 4;
 const COPY_LEASE_MS = 60 * 60 * 1000;
 
 /**
- * Copies of files on replicas. A copy of every original is registered with it (by a trigger, in the same transaction),
- * and made in the background: the bytes as they are stored, still encrypted, to the folder the replica keeps the
- * backend in, under the same key. A copy counts as made once the replica returned the size of the original. Copies are
- * only read when a backend is lost, by configuring the backend with the folder of a replica.
- */
+Copies of files on replicas. A copy of every original is registered with it (by a trigger, in the same transaction),
+and made in the background: the bytes as they are stored, still encrypted, to the folder the replica keeps the
+backend in, under the same key. A copy counts as made once the replica returned the size of the original. Copies are
+only read when a backend is lost, by configuring the backend with the folder of a replica.
+*/
 @Injectable()
 export class StorageReplicaService extends BaseService {
   private replicationLock = false;

@@ -11,32 +11,22 @@ import { type DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { WORKER_HEALTHY_AFTER_MS, WORKER_LAST_EXIT_ENV, getWorkerRestartDelay } from 'src/utils/worker-restart.js';
 
-/**
- * Manages worker lifecycle
- */
+/** Manages worker lifecycle */
 class Workers {
-  /**
-   * Currently running workers
-   */
+  /** Currently running workers */
   workers: Partial<Record<ImmichWorker, { kill: (signal: NodeJS.Signals) => Promise<void> | void }>> = {};
 
-  /**
-   * Fail-safe in case anything dies during restart
-   */
+  /** Fail-safe in case anything dies during restart */
   restarting = false;
 
-  /**
-   * Crashes in a row of the background worker, and when it last started
-   */
+  /** Crashes in a row of the background worker, and when it last started */
   private crashes = 0;
   /** What ended the background worker last (see WORKER_LAST_EXIT_ENV) */
   private lastExit?: string;
   private startedAt = 0;
   private restartTimer?: NodeJS.Timeout;
 
-  /**
-   * Boot all enabled workers
-   */
+  /** Boot all enabled workers */
   async bootstrap() {
     clearTimeout(this.restartTimer);
     const isMaintenanceMode = await this.isMaintenanceMode();
@@ -103,9 +93,9 @@ class Workers {
   }
 
   /**
-   * Start an individual worker
-   * @param name Worker
-   */
+  Start an individual worker
+  @param name Worker
+  */
   private startWorker(name: ImmichWorker) {
     console.log(`Starting ${name} worker`);
 

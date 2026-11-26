@@ -1,15 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { type ExpressionBuilder, type Insertable, type Kysely, type Updateable, sql } from 'kysely';
+import { sql, type ExpressionBuilder, type Insertable, type Kysely, type Updateable } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
 import type { StorageLocation } from 'src/cores/storage.core.js';
-import type { UserMetadata, UserMetadataItem } from 'src/types.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetType, AssetVisibility, BuiltinStorageBackend, UserStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
+import type { UserMetadata, UserMetadataItem } from 'src/types.js';
 import { asUuid } from 'src/utils/database.js';
 
 export interface UserListFilter {
@@ -283,9 +283,9 @@ export class UserRepository {
   }
 
   /**
-   * Record the profile image file of users that do not have one yet, with the same rules as for asset files. Users
-   * deleted in the meantime are skipped. Returns the number of users updated.
-   */
+  Record the profile image file of users that do not have one yet, with the same rules as for asset files. Users
+  deleted in the meantime are skipped. Returns the number of users updated.
+  */
   @GenerateSql({ params: [[{ id: DummyValue.UUID, backendId: DummyValue.STRING, key: DummyValue.STRING }]] })
   async setProfileImageFiles(files: Array<{ id: string } & StorageLocation>): Promise<number> {
     if (files.length === 0) {

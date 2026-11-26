@@ -1,12 +1,12 @@
 import {
   Column,
   CreateDateColumn,
-  type Generated,
   Index,
-  type Int8,
   PrimaryColumn,
   PrimaryGeneratedColumn,
   Table,
+  type Generated,
+  type Int8,
   type Timestamp,
 } from '@immich/sql-tools';
 import { StorageCheckKind, StorageCheckStatus, StorageIssueKind } from 'src/enum.js';
@@ -51,10 +51,10 @@ export class StorageCheckRunTable {
 }
 
 /**
- * A problem a storage check found with a file. It is only reported once seen by two runs in a row, so that what a
- * service shows a little late (it only promises to be eventually consistent) is not reported; it is resolved once a run
- * no longer sees it. Checks report, they never delete or change anything.
- */
+A problem a storage check found with a file. It is only reported once seen by two runs in a row, so that what a
+service shows a little late (it only promises to be eventually consistent) is not reported; it is resolved once a run
+no longer sees it. Checks report, they never delete or change anything.
+*/
 @Table('storage_issue')
 @Index({
   name: 'storage_issue_open_idx',

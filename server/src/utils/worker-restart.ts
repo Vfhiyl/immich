@@ -11,15 +11,15 @@ export const getWorkerRestartDelay = (crashes: number) =>
   Math.min(WORKER_RESTART_MIN_MS * 2 ** Math.max(crashes - 1, 0), WORKER_RESTART_MAX_MS);
 
 /**
- * Added to the badness of the background worker, and of the programs it runs (ffmpeg, exiftool, ...), which inherit it.
- * When memory runs out, the kernel kills the background work, not the api (see proc_pid_oom_score_adj(5))
- */
+Added to the badness of the background worker, and of the programs it runs (ffmpeg, exiftool, ...), which inherit it.
+When memory runs out, the kernel kills the background work, not the api (see proc_pid_oom_score_adj(5))
+*/
 export const BACKGROUND_OOM_SCORE_ADJ = 500;
 
 /**
- * Makes this process the first to be killed when memory runs out. A process may always raise its own oom_score_adj; where
- * there is no such file (not Linux) or it cannot be written, nothing changes
- */
+Makes this process the first to be killed when memory runs out. A process may always raise its own oom_score_adj; where
+there is no such file (not Linux) or it cannot be written, nothing changes
+*/
 export const preferAsOomVictim = () => {
   try {
     writeFileSync('/proc/self/oom_score_adj', String(BACKGROUND_OOM_SCORE_ADJ));
@@ -30,10 +30,10 @@ export const preferAsOomVictim = () => {
 };
 
 /**
- * Ends this worker when the supervisor that forked it is gone (its IPC channel closed, the `'disconnect'` event of
- * process): killed or crashed, it can no longer stop or restart the worker, which would otherwise go on alone, holding
- * its port or taking jobs beside the workers of the next start. Not forked (no channel): nothing to watch
- */
+Ends this worker when the supervisor that forked it is gone (its IPC channel closed, the `'disconnect'` event of
+process): killed or crashed, it can no longer stop or restart the worker, which would otherwise go on alone, holding
+its port or taking jobs beside the workers of the next start. Not forked (no channel): nothing to watch
+*/
 export const exitWithSupervisor = (
   current: { channel?: unknown; once(event: 'disconnect', listener: () => void): unknown } = process,
   // eslint-disable-next-line unicorn/no-process-exit

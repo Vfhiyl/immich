@@ -1,18 +1,18 @@
 <script lang="ts">
-  import JobFailures from '$lib/components/admin/JobFailures.svelte';
-  import MachineLearningModels from '$lib/components/admin/MachineLearningModels.svelte';
-  import ResourceCheckReport from '$lib/components/admin/ResourceCheckReport.svelte';
-  import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
-  import OnEvents from '$lib/components/OnEvents.svelte';
-  import JobsPanel from './QueuePanel.svelte';
-  import { queueManager } from '$lib/managers/queue-manager.svelte';
-  import { getQueuesActions } from '$lib/services/queue.service';
+  import OnEvents from '#lib/components/OnEvents.svelte';
+  import JobFailures from '#lib/components/admin/JobFailures.svelte';
+  import MachineLearningModels from '#lib/components/admin/MachineLearningModels.svelte';
+  import ResourceCheckReport from '#lib/components/admin/ResourceCheckReport.svelte';
+  import AdminPageLayout from '#lib/components/layouts/AdminPageLayout.svelte';
+  import { queueManager } from '#lib/managers/queue-manager.svelte.ts';
+  import { Route } from '#lib/route.ts';
+  import { getQueuesActions } from '#lib/services/queue.service.ts';
   import { getJobFailures, getMachineLearningModels, type QueueResponseDto } from '@immich/sdk';
   import { Alert, CommandPaletteDefaultProvider, Container, Link, type ActionItem } from '@immich/ui';
-  import { Route } from '$lib/route';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
+  import JobsPanel from './QueuePanel.svelte';
 
   type Props = {
     data: PageData;

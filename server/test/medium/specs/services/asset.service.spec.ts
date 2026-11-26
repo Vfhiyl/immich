@@ -27,6 +27,7 @@ const hostLocation = (path: string) => ({ backendId: 'host', key: path.slice(1) 
 
 let defaultDatabase: Kysely<DB>;
 
+// eslint-disable-next-line unicorn/no-unnecessary-parameters
 const setup = (db?: Kysely<DB>) => {
   return newMediumService(AssetService, {
     database: db || defaultDatabase,

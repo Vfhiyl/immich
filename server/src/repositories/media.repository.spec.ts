@@ -405,7 +405,13 @@ describe(MediaRepository.name, () => {
       const decoded = await sut.decodeImage(buffer, { colorspace: Colorspace.P3, processInvalidImages: false });
       await sut.generateThumbnail(
         decoded,
-        { colorspace: Colorspace.P3, quality: 80, format: ImageFormat.Webp, processInvalidImages: false },
+        {
+          colorspace: Colorspace.P3,
+          quality: 80,
+          format: ImageFormat.Webp,
+          processInvalidImages: false,
+          decodingTier: 0,
+        },
         file,
       );
 
@@ -607,17 +613,21 @@ describe(MediaRepository.name, () => {
         [
           'preview',
           (image: Bitmap, path: string) =>
-            sut.generateThumbnail(image, { ...options, format: ImageFormat.Jpeg, size: 1440 }, path),
+            sut.generateThumbnail(image, { ...options, format: ImageFormat.Jpeg, size: 1440, decodingTier: 0 }, path),
         ],
         [
           'thumbnail',
           (image: Bitmap, path: string) =>
-            sut.generateThumbnail(image, { ...options, format: ImageFormat.Webp, size: 250 }, path),
+            sut.generateThumbnail(image, { ...options, format: ImageFormat.Webp, size: 250, decodingTier: 0 }, path),
         ],
         [
           'edited',
           (image: Bitmap, path: string) =>
-            sut.generateThumbnail(image, { ...options, format: ImageFormat.Jpeg, size: 1440, edits }, path),
+            sut.generateThumbnail(
+              image,
+              { ...options, format: ImageFormat.Jpeg, size: 1440, edits, decodingTier: 0 },
+              path,
+            ),
         ],
       ] as const) {
         const fromFile = join(dir.path, `${name}-file`);
@@ -653,8 +663,16 @@ describe(MediaRepository.name, () => {
       const preview = join(dir2.path, 'preview.jpeg');
       const thumbnail = join(dir2.path, 'thumbnail.webp');
       const options = { colorspace: Colorspace.Srgb, processInvalidImages: false, quality: 80 };
-      await sut.generateThumbnail(smaller, { ...options, format: ImageFormat.Jpeg, size: 1440 }, preview);
-      await sut.generateThumbnail(smaller, { ...options, format: ImageFormat.Webp, size: 250 }, thumbnail);
+      await sut.generateThumbnail(
+        smaller,
+        { ...options, format: ImageFormat.Jpeg, size: 1440, decodingTier: 0 },
+        preview,
+      );
+      await sut.generateThumbnail(
+        smaller,
+        { ...options, format: ImageFormat.Webp, size: 250, decodingTier: 0 },
+        thumbnail,
+      );
       await expect(sharp(preview).metadata()).resolves.toMatchObject({ width: 885, height: 16_383 });
       await expect(sharp(thumbnail).metadata()).resolves.toMatchObject({ width: 221, height: 4096 });
     });

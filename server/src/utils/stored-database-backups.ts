@@ -23,10 +23,10 @@ export interface StoredDatabaseBackup {
 }
 
 /**
- * The database backups on a backend for backups, the newest first, each read from its own encrypted manifest: with
- * nothing but the backend and the master key, also when the database is gone. Objects that cannot be read (e.g.
- * encrypted with a master key that is not available) are passed to `onUnreadable` and left out.
- */
+The database backups on a backend for backups, the newest first, each read from its own encrypted manifest: with
+nothing but the backend and the master key, also when the database is gone. Objects that cannot be read (e.g.
+encrypted with a master key that is not available) are passed to `onUnreadable` and left out.
+*/
 export const listStoredDatabaseBackups = async (
   store: EncryptedBlobStore,
   onUnreadable: (key: string, error: unknown) => void,
@@ -59,9 +59,9 @@ export const listStoredDatabaseBackups = async (
 };
 
 /**
- * Copy a stored backup into the backups folder, decrypted and verified, where it can be restored like any backup (as
- * `uploaded-<name>`, like a backup uploaded for a restore)
- */
+Copy a stored backup into the backups folder, decrypted and verified, where it can be restored like any backup (as
+`uploaded-<name>`, like a backup uploaded for a restore)
+*/
 export const fetchStoredDatabaseBackup = async (
   store: EncryptedBlobStore,
   backup: StoredDatabaseBackup,

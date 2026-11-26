@@ -17,7 +17,7 @@ The Docker image installs them. Without Docker, download the archive of the rele
 server/bin/install-native immich-native-<release>-linux-x64.tar.gz
 ```
 
-or build it from source with `native/build.sh` (see `native/README.md`). The server does not start without them.
+or build it from source with `native/build.sh` (see `native/LIBRARIES.md`). The server does not start without them.
 
 ## Patents and licences
 

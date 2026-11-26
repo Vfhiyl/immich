@@ -1,8 +1,8 @@
 <script lang="ts">
-  import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
-  import { Route } from '$lib/route';
-  import { getByteUnitString } from '$lib/utils/byte-units';
-  import { budgetShares, summarizeUsage, USAGE_RANGES, usageSeries } from '$lib/utils/storage-usage';
+  import AdminPageLayout from '#lib/components/layouts/AdminPageLayout.svelte';
+  import { Route } from '#lib/route.ts';
+  import { getByteUnitString } from '#lib/utils/byte-units.ts';
+  import { USAGE_RANGES, budgetShares, summarizeUsage, usageSeries } from '#lib/utils/storage-usage.ts';
   import type { StorageCostDto } from '@immich/sdk';
   import {
     Alert,
@@ -60,7 +60,7 @@
     {/if}
 
     {#each data.usage.backends as backend (backend.backendId)}
-      {@const summary = summarizeUsage(backend)}
+      {const summary = $derived(summarizeUsage(backend))}
       <Card>
         <CardHeader>
           <HStack class="justify-between">
@@ -71,7 +71,7 @@
         <CardBody>
           <Stack gap={4}>
             {#if backend.budget}
-              {@const shares = budgetShares(backend.budget)}
+              {const shares = $derived(budgetShares(backend.budget))}
               <Alert
                 color={shares.isOver ? 'danger' : shares.willBeOver ? 'warning' : 'success'}
                 title={$t('admin.storage_usage_budget', {

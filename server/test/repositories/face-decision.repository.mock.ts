@@ -1,6 +1,6 @@
 import { Mocked, vitest } from 'vitest';
-import type { RepositoryInterface } from 'src/types.js';
 import { FaceDecisionRepository } from 'src/repositories/face-decision.repository.js';
+import type { RepositoryInterface } from 'src/types.js';
 
 /** No decisions of users, so that grouping works as upstream's without setup */
 export const newFaceDecisionRepositoryMock = (): Mocked<RepositoryInterface<FaceDecisionRepository>> => ({

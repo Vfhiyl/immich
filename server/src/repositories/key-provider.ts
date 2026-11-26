@@ -10,9 +10,9 @@ const MASTER_KEY_LENGTH = 32;
 const KEY_COMMAND_TIMEOUT_MS = 60 * 1000;
 
 /**
- * Master keys that wrap the keys of encrypted files. The current key wraps new file keys; older keys stay available
- * to read files written before a key change.
- */
+Master keys that wrap the keys of encrypted files. The current key wraps new file keys; older keys stay available
+to read files written before a key change.
+*/
 export interface KeyProvider {
   readonly currentKeyId: Buffer;
   getKey(id: Buffer): Buffer;
@@ -41,18 +41,18 @@ export class MasterKeys implements KeyProvider {
   private keys = new Map<string, Buffer>();
 
   /**
-   * Master keys from a file: one base64 key per line, the first being the current one, and lines starting with `#`
-   * ignored. Losing the file means losing every encrypted file, so it must be kept (and backed up) apart from the
-   * storage and the database.
-   */
+  Master keys from a file: one base64 key per line, the first being the current one, and lines starting with `#`
+  ignored. Losing the file means losing every encrypted file, so it must be kept (and backed up) apart from the
+  storage and the database.
+  */
   static fromFile(path: string) {
     return MasterKeys.fromText(readFileSync(path, 'utf8'), `The master key file ${path}`, 'file');
   }
 
   /**
-   * Master keys from what a command prints, as a key file holds them: e.g. a key file decrypted by the command line tool
-   * of a key management service. The command runs without a shell; what it prints is never written anywhere.
-   */
+  Master keys from what a command prints, as a key file holds them: e.g. a key file decrypted by the command line tool
+  of a key management service. The command runs without a shell; what it prints is never written anywhere.
+  */
   static fromCommand([program, ...args]: string[]) {
     let output: string;
     try {
@@ -130,10 +130,10 @@ export class MasterKeys implements KeyProvider {
 }
 
 /**
- * Write a new master key to a key file, only readable by its owner. A new file gets the key; with `rotate`, an existing
- * file gets it as its first line, so that it encrypts new files, and keeps the keys that older files need. An existing
- * file is never replaced otherwise, since that would make every file encrypted with it unreadable.
- */
+Write a new master key to a key file, only readable by its owner. A new file gets the key; with `rotate`, an existing
+file gets it as its first line, so that it encrypts new files, and keeps the keys that older files need. An existing
+file is never replaced otherwise, since that would make every file encrypted with it unreadable.
+*/
 export const writeNewMasterKey = async (path: string, { rotate = false } = {}) => {
   const key = generateMasterKey();
   const id = getMasterKeyId(Buffer.from(key, 'base64')).toString('hex');

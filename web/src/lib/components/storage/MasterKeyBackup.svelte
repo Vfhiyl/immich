@@ -1,8 +1,8 @@
 <script lang="ts">
-  import StorageMasterKeyModal from '$lib/modals/StorageMasterKeyModal.svelte';
-  import { formatAge } from '$lib/services/storage.service';
+  import StorageMasterKeyModal from '#lib/modals/StorageMasterKeyModal.svelte';
+  import { formatAge } from '#lib/services/storage.service.ts';
   import { StorageMasterKeySource } from '@immich/sdk';
-  import { Alert, Button, modalManager, Stack, Text } from '@immich/ui';
+  import { Alert, Button, Stack, Text, modalManager } from '@immich/ui';
   import { mdiDownload } from '@mdi/js';
   import { t } from 'svelte-i18n';
 

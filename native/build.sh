@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the native libraries of the server from source, the way they are shipped: sharp's module and immich-thumbnail,
 # each with libvips and every library it uses linked in statically (they depend on nothing but glibc), with our patches
-# (patches/<library>/*.patch, applied in order). See README.md.
+# (patches/<library>/*.patch, applied in order). See LIBRARIES.md.
 #
 # Usage: native/build.sh [output directory]
 #   IMMICH_NATIVE_WORK     where sources are downloaded and built (default: ~/.cache/immich-native)
@@ -392,11 +392,11 @@ cp "$BUILD/thumbnail/immich-thumbnail" "$OUTPUT/bin/"
 } > "$OUTPUT/versions.json"
 
 # the archive of a release: the programs, and how they were made (the sources are those of sources.txt, with these
-# patches; see README.md)
+# patches; see LIBRARIES.md)
 RELEASE="${IMMICH_NATIVE_RELEASE:-dev}"
 rm -rf "${OUTPUT:?}/source"
 mkdir -p "$OUTPUT/source"
-cp -r "$NATIVE/README.md" "$NATIVE/sources.txt" "$NATIVE/build.sh" "$NATIVE/common.sh" "$NATIVE/patches" "$NATIVE/thumbnail" \
+cp -r "$NATIVE/LIBRARIES.md" "$NATIVE/sources.txt" "$NATIVE/build.sh" "$NATIVE/common.sh" "$NATIVE/patches" "$NATIVE/thumbnail" \
   "$OUTPUT/source/"
 tar --owner=0 --group=0 --sort=name -czf "$OUTPUT/immich-native-$RELEASE-linux-x64.tar.gz" -C "$OUTPUT" \
   lib bin versions.json source

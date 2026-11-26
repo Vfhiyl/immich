@@ -6,7 +6,6 @@ import { IncomingHttpHeaders } from 'node:http';
 import { extname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import z from 'zod';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { AssetMetadataUpsertItemSchema } from 'src/dtos/asset.dto.js';
@@ -23,6 +22,7 @@ import {
   UploadSessionStatus,
 } from 'src/enum.js';
 import { BlobStore, BlobUpload, BlobUploadNotFoundError } from 'src/repositories/blob-store.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import { STAGING_FOLDER, StoredFile } from 'src/repositories/storage-backend.repository.js';
 import { UploadAssetData } from 'src/schema/tables/upload-session.table.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
@@ -102,11 +102,11 @@ const problem = (status: number, body: object, headers: Record<string, string> =
 });
 
 /**
- * Resumable uploads (draft-ietf-httpbis-resumable-upload). The file is written to the storage backend for originals
- * in parts while it arrives, encrypted if the backend is; the offset only moves when a part is written and recorded,
- * so an upload can always be resumed from what was recorded, by any process. The bytes after the last part wait in a
- * staging file. When the upload is complete, the asset is created like any upload.
- */
+Resumable uploads (draft-ietf-httpbis-resumable-upload). The file is written to the storage backend for originals
+in parts while it arrives, encrypted if the backend is; the offset only moves when a part is written and recorded,
+so an upload can always be resumed from what was recorded, by any process. The bytes after the last part wait in a
+staging file. When the upload is complete, the asset is created like any upload.
+*/
 @Injectable()
 export class ResumableUploadService extends BaseService {
   private active = new Map<string, { abort: () => void; done: Promise<void> }>();
@@ -242,9 +242,9 @@ export class ResumableUploadService extends BaseService {
   }
 
   /**
-   * The uploads of a user about to be deleted, whose records go with the user: what they wrote to a storage backend
-   * would otherwise stay there until the bucket's rule for unfinished uploads removes it
-   */
+  The uploads of a user about to be deleted, whose records go with the user: what they wrote to a storage backend
+  would otherwise stay there until the bucket's rule for unfinished uploads removes it
+  */
   @OnEvent({ name: 'UserDeleting' })
   async onUserDeleting({ id }: ArgOf<'UserDeleting'>) {
     for (const session of await this.uploadSessionRepository.getByOwner(id)) {
@@ -270,10 +270,10 @@ export class ResumableUploadService extends BaseService {
   }
 
   /**
-   * Receive content for an upload at `offset`. Parts are written once more than a part has arrived: the last part of a
-   * file is written differently (as the last, and encrypted with the trailer), so a part is only written once it is
-   * certain not to be the last one.
-   */
+  Receive content for an upload at `offset`. Parts are written once more than a part has arrived: the last part of a
+  file is written differently (as the last, and encrypted with the trailer), so a part is only written once it is
+  certain not to be the last one.
+  */
   private async append(
     auth: AuthDto,
     initial: Session,
@@ -451,9 +451,9 @@ export class ResumableUploadService extends BaseService {
   }
 
   /**
-   * The backend dropped the upload (services do not promise to keep unfinished uploads): start again with a new one,
-   * and tell the client to send the file from the beginning
-   */
+  The backend dropped the upload (services do not promise to keep unfinished uploads): start again with a new one,
+  and tell the client to send the file from the beginning
+  */
   private async restart(session: Session, version: number): Promise<ResumableUploadResponse> {
     this.logger.warn(`The storage backend dropped upload ${session.id}; it starts again from the beginning`);
     const store = this.getStore(this.toBackendId(session));
@@ -607,9 +607,9 @@ export class ResumableUploadService extends BaseService {
   }
 
   /**
-   * Write received content to the copy at its offset (a part sent again after a crash is written again): whether there
-   * is a copy is decided when the content starts, by its declared length
-   */
+  Write received content to the copy at its offset (a part sent again after a crash is written again): whether there
+  is a copy is decided when the content starts, by its declared length
+  */
   private async writeCopy(session: Session, position: number, data: Buffer) {
     if (this.isBuiltin(session)) {
       return;
@@ -641,9 +641,9 @@ export class ResumableUploadService extends BaseService {
   }
 
   /**
-   * The copy with the last content, if it is the file that was uploaded: it is only a cache of what was received, which
-   * a crash may have left incomplete
-   */
+  The copy with the last content, if it is the file that was uploaded: it is only a cache of what was received, which
+  a crash may have left incomplete
+  */
   private async finishCopy(session: Session, data: Buffer, size: number, checksum: Buffer) {
     await this.writeCopy(session, Number(session.committedOffset), data);
     const path = this.copyPath(session.id);

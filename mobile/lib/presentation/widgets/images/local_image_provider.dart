@@ -169,14 +169,14 @@ class LocalFullImageProvider extends ImageProvider<LocalFullImageProvider> {
     final (width, height) = (key.width, key.height);
     final tiled = key.tiled && width != null && height != null && width > 0 && height > 0;
     final loadOriginal = !tiled && SettingsRepository.instance.appConfig.image.loadOriginal;
-    var request = loader.request = LocalImageRequest(
-      localId: key.id,
-      size: tiled
-          ? regionBaseSize(width, height, key.size * devicePixelRatio)
-          : _previewTarget(devicePixelRatio, !loadOriginal),
-      assetType: key.assetType,
-    );
-    yield* loader.loadRequest(request, decode, isFinal: !loadOriginal);
+    final previewRequest = loader.request = tiled
+        ? LocalImageRequest(
+            localId: key.id,
+            size: regionBaseSize(width, height, key.size * devicePixelRatio),
+            assetType: key.assetType,
+          )
+        : _previewRequest(key, isFinal: !loadOriginal);
+    yield* loader.loadRequest(previewRequest, decode, isFinal: !loadOriginal);
 
     if (!loadOriginal) {
       return;
@@ -186,9 +186,8 @@ class LocalFullImageProvider extends ImageProvider<LocalFullImageProvider> {
       return;
     }
 
-    request = loader.request = LocalImageRequest(localId: key.id, assetType: key.assetType, size: Size.zero);
-
-    yield* loader.loadRequest(request, decode, isFinal: true);
+    final originalRequest = loader.request = _originalRequest(key);
+    yield* loader.loadRequest(originalRequest, decode, isFinal: true);
   }
 
   Stream<Object> _animatedCodec(ImageLoader loader, LocalFullImageProvider key, ImageDecoderCallback decode) async* {
@@ -198,12 +197,7 @@ class LocalFullImageProvider extends ImageProvider<LocalFullImageProvider> {
       return;
     }
 
-    final devicePixelRatio = PlatformDispatcher.instance.views.first.devicePixelRatio;
-    final previewRequest = loader.request = LocalImageRequest(
-      localId: key.id,
-      size: _previewTarget(devicePixelRatio, false),
-      assetType: key.assetType,
-    );
+    final previewRequest = loader.request = _previewRequest(key, isFinal: false);
     yield* loader.loadRequest(previewRequest, decode, isFinal: false);
 
     if (loader.isCancelled) {
@@ -211,11 +205,7 @@ class LocalFullImageProvider extends ImageProvider<LocalFullImageProvider> {
     }
 
     // always try original for animated, since previews don't support animation
-    final originalRequest = loader.request = LocalImageRequest(
-      localId: key.id,
-      size: Size.zero,
-      assetType: key.assetType,
-    );
+    final originalRequest = loader.request = _originalRequest(key);
     final codec = await loader.loadCodecRequest(originalRequest, isFinal: true);
     if (codec == null) {
       if (loader.isCancelled) {
@@ -225,6 +215,15 @@ class LocalFullImageProvider extends ImageProvider<LocalFullImageProvider> {
     }
     yield codec;
   }
+
+  LocalImageRequest _previewRequest(LocalFullImageProvider key, {required bool isFinal}) => LocalImageRequest(
+    localId: key.id,
+    size: _previewTarget(PlatformDispatcher.instance.views.first.devicePixelRatio, isFinal),
+    assetType: key.assetType,
+  );
+
+  LocalImageRequest _originalRequest(LocalFullImageProvider key) =>
+      LocalImageRequest(localId: key.id, size: Size.zero, assetType: key.assetType);
 
   @override
   bool operator ==(Object other) {

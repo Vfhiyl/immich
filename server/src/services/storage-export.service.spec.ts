@@ -1,12 +1,13 @@
 import { join } from 'node:path';
-import type { StorageExportState } from 'src/types.js';
 import { JobName, JobStatus, NotificationLevel, SystemMetadataKey } from 'src/enum.js';
 import { StorageExportService, toTemplateTarget } from 'src/services/storage-export.service.js';
+import type { StorageExportState } from 'src/types.js';
 import { ExportedAsset } from 'src/utils/export-tool.js';
 import { compileStorageTemplate } from 'src/utils/storage-template.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
+// eslint-disable-next-line unicorn/no-unnecessary-parameters
 const asset = (overrides: Partial<ExportedAsset> = {}): ExportedAsset => ({
   id: 'b3f4d2a1-0000-4000-8000-000000000001',
   ownerId: 'user-1',

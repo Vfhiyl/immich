@@ -1,12 +1,12 @@
 const MiB = 1024 * 1024;
 
 /**
- * The peak memory (bytes) of making the image the files of a photo are made from (immich-thumbnail, a process of its
- * own) and of encoding them (sharp, in this process), by what libvips calls its loader and the photo's size. Measured
- * (cos-design/background-admission.md, tmp/measure): the photos of phones are read from top to bottom with the
- * memory of a few hundred lines; some formats are decoded whole (AVIF, JPEG XL, WebP, RAW as large as it is, and those
- * of ImageMagick), about as many bytes a pixel as below. Unknown: decoded whole, 16 bytes a pixel
- */
+The peak memory (bytes) of making the image the files of a photo are made from (immich-thumbnail, a process of its
+own) and of encoding them (sharp, in this process), by what libvips calls its loader and the photo's size. Measured
+(cos-design/background-admission.md, tmp/measure): the photos of phones are read from top to bottom with the
+memory of a few hundred lines; some formats are decoded whole (AVIF, JPEG XL, WebP, RAW as large as it is, and those
+of ImageMagick), about as many bytes a pixel as below. Unknown: decoded whole, 16 bytes a pixel
+*/
 export const estimateImageDecode = ({
   format,
   width,
@@ -14,7 +14,7 @@ export const estimateImageDecode = ({
   bitsPerSample = 8,
   compression,
   wholeSize = false,
-  size,
+  size = 1440,
 }: {
   format?: string;
   /** Of a HEIF: hevc or av1 */
@@ -56,7 +56,7 @@ export const estimateImageDecode = ({
     case 'dcraw': {
       // half its size (patches/libvips/0005) when made half as large or less, else as large as it is
       // (patches/libvips/0006: 13 bytes a pixel)
-      const half = !wholeSize && (size ?? 1440) / Math.min(width, height) <= 0.5;
+      const half = !wholeSize && size / Math.min(width, height) <= 0.5;
       decode = 48 * MiB + pixels * (half ? 4 : 14);
       break;
     }
@@ -73,11 +73,11 @@ export const estimateImageDecode = ({
 };
 
 /**
- * The peak memory (bytes) of ffmpeg decoding a video of `width` x `height` and encoding it with `threads` threads
- * (0: as many as cores, `cores`). Measured (cos-design/background-admission.md): about 9 frames of the input, and for
- * each thread beyond the first some 30 MB and 3 frames, up to 8 more threads (beyond, ffmpeg's frame threads do not
- * grow): a 4K HEVC video of 10 bits 247 MB with one thread, 449 MB with 4, 1 GB with 32
- */
+The peak memory (bytes) of ffmpeg decoding a video of `width` x `height` and encoding it with `threads` threads
+(0: as many as cores, `cores`). Measured (cos-design/background-admission.md): about 9 frames of the input, and for
+each thread beyond the first some 30 MB and 3 frames, up to 8 more threads (beyond, ffmpeg's frame threads do not
+grow): a 4K HEVC video of 10 bits 247 MB with one thread, 449 MB with 4, 1 GB with 32
+*/
 export const estimateVideoTranscode = ({
   width,
   height,
@@ -95,9 +95,9 @@ export const estimateVideoTranscode = ({
 };
 
 /**
- * The peak memory (bytes) of ffmpeg picking the frame of a video its preview is made from (decoding with one thread):
- * the thumbnail filter keeps 12 frames to compare them (a 4K HEVC video of 10 bits 428 MB, of 8 bits 120-140 MB)
- */
+The peak memory (bytes) of ffmpeg picking the frame of a video its preview is made from (decoding with one thread):
+the thumbnail filter keeps 12 frames to compare them (a 4K HEVC video of 10 bits 428 MB, of 8 bits 120-140 MB)
+*/
 export const estimateVideoPreview = ({
   width,
   height,

@@ -1,9 +1,7 @@
 import { ResourceCheckLevel, type ResourceCheckResponseDto } from '@immich/sdk';
-import { render, screen } from '@testing-library/svelte';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { getAnimateMock } from '$lib/__mocks__/animate.mock';
-import { getIntersectionObserverMock } from '$lib/__mocks__/intersection-observer.mock';
-import { getVisualViewportMock } from '$lib/__mocks__/visual-viewport.mock';
+import { describe, expect, test } from 'vitest';
+import { render } from 'vitest-browser-svelte';
+import { page } from 'vitest/browser';
 import ResourceCheckReport from './ResourceCheckReport.svelte';
 
 const GiB = 1024 ** 3;
@@ -25,36 +23,34 @@ const check = (overrides: Partial<ResourceCheckResponseDto> = {}): ResourceCheck
 });
 
 describe('ResourceCheckReport component', () => {
-  beforeEach(() => {
-    vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
-    vi.stubGlobal('visualViewport', getVisualViewportMock());
-    Element.prototype.animate = getAnimateMock();
-  });
-
-  test('tells what the server has, with nothing below what is needed', () => {
-    render(ResourceCheckReport, { check: check() });
+  test('tells what the server has, with nothing below what is needed', async () => {
+    await render(ResourceCheckReport, { check: check() });
 
     // the texts are keys in unit tests
-    expect(screen.getByText('admin.resource_check_memory')).toBeInTheDocument();
-    expect(screen.getByText('admin.resource_check_cpus')).toBeInTheDocument();
-    expect(screen.getByText('admin.resource_check_disk')).toBeInTheDocument();
-    expect(screen.queryByText(/below/)).not.toBeInTheDocument();
+    await expect.element(page.getByText('admin.resource_check_memory')).toBeInTheDocument();
+    await expect.element(page.getByText('admin.resource_check_cpus')).toBeInTheDocument();
+    await expect.element(page.getByText('admin.resource_check_disk')).toBeInTheDocument();
+    await expect.element(page.getByText(/below/)).not.toBeInTheDocument();
   });
 
-  test('tells what is below the minimum or the recommendation', () => {
-    render(ResourceCheckReport, {
+  test('tells what is below the minimum or the recommendation', async () => {
+    await render(ResourceCheckReport, {
       check: check({
         memory: { bytes: 4 * GiB, source: 'cgroup', level: ResourceCheckLevel.BelowMinimum },
         cpus: { cores: 2, source: 'machine', level: ResourceCheckLevel.BelowRecommended },
       }),
     });
 
-    expect(screen.getByText(/admin.resource_check_memory.*admin.resource_check_below_minimum/)).toBeInTheDocument();
-    expect(screen.getByText(/admin.resource_check_cpus.*admin.resource_check_below_recommended/)).toBeInTheDocument();
+    await expect
+      .element(page.getByText(/admin.resource_check_memory.*admin.resource_check_below_minimum/))
+      .toBeInTheDocument();
+    await expect
+      .element(page.getByText(/admin.resource_check_cpus.*admin.resource_check_below_recommended/))
+      .toBeInTheDocument();
   });
 
-  test('tells how much swap to add on a machine of little memory', () => {
-    render(ResourceCheckReport, {
+  test('tells how much swap to add on a machine of little memory', async () => {
+    await render(ResourceCheckReport, {
       check: check({
         memory: { bytes: GiB, source: 'machine', level: ResourceCheckLevel.BelowMinimum },
         swap: {
@@ -67,28 +63,32 @@ describe('ResourceCheckReport component', () => {
       }),
     });
 
-    expect(screen.getByTestId('resource-swap')).toHaveTextContent(
+    await expect.element(page.getByTestId('resource-swap')).toBeInTheDocument();
+    expect(page.getByTestId('resource-swap').element().textContent).toMatch(
       /admin.resource_check_swap.*admin.resource_check_swap_add/,
     );
-    expect(screen.queryByTestId('resource-memory-kills')).not.toBeInTheDocument();
+    await expect.element(page.getByTestId('resource-memory-kills')).not.toBeInTheDocument();
   });
 
-  test('tells no swap to add with enough memory', () => {
-    render(ResourceCheckReport, { check: check() });
+  test('tells no swap to add with enough memory', async () => {
+    await render(ResourceCheckReport, { check: check() });
 
-    expect(screen.getByTestId('resource-swap')).not.toHaveTextContent(/swap_add/);
+    await expect.element(page.getByTestId('resource-swap')).toBeInTheDocument();
+    expect(page.getByTestId('resource-swap').element().textContent).not.toMatch(/swap_add/);
   });
 
-  test('tells when the background work ran out of memory', () => {
-    render(ResourceCheckReport, {
+  test('tells when the background work ran out of memory', async () => {
+    await render(ResourceCheckReport, {
       check: check({ memoryKills: { lastWeek: 3, lastAt: '2026-11-01T10:00:00.000Z' } }),
     });
 
-    expect(screen.getByTestId('resource-memory-kills')).toHaveTextContent('admin.resource_check_memory_kills');
+    await expect
+      .element(page.getByTestId('resource-memory-kills'))
+      .toHaveTextContent('admin.resource_check_memory_kills');
   });
 
-  test('tells whether machine learning answers', () => {
-    render(ResourceCheckReport, {
+  test('tells whether machine learning answers', async () => {
+    await render(ResourceCheckReport, {
       check: check({
         machineLearning: {
           enabled: true,
@@ -101,8 +101,8 @@ describe('ResourceCheckReport component', () => {
       }),
     });
 
-    expect(screen.getByText('admin.resource_check_ml_unreachable')).toBeInTheDocument();
-    expect(screen.getByText('admin.resource_check_ml_reachable')).toBeInTheDocument();
-    expect(screen.getByText('admin.resource_check_ml_reachable_unknown')).toBeInTheDocument();
+    await expect.element(page.getByText('admin.resource_check_ml_unreachable')).toBeInTheDocument();
+    await expect.element(page.getByText('admin.resource_check_ml_reachable')).toBeInTheDocument();
+    await expect.element(page.getByText('admin.resource_check_ml_reachable_unknown')).toBeInTheDocument();
   });
 });

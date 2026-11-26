@@ -10,7 +10,8 @@
 # Needs: Node and pnpm with dependencies installed (`pnpm install`), ffmpeg, redis-server, oazapfts (the version
 # pinned in mise.toml), uv (the version pinned in machine-learning/mise.toml) with Python 3.12 and Flutter on PATH, OPENAPI_GENERATOR_JAR (the openapi-generator-cli jar), a JDK and the
 # Android SDK at ANDROID_HOME (Gradle downloads the rest from Maven Central, or a mirror set in an init script), and
-# a C/C++ toolchain, meson (>= 1.11), cmake, nasm, Rust with cargo-c (native/README.md) to build the native libraries,
+# a C/C++ toolchain, meson (>= 1.11), cmake, nasm, Rust with cargo-c (native/LIBRARIES.md) to build the native libraries,
+# rustup (in ~/.cargo/bin) and libclang for upstream's native core of the app (native/README.md),
 # PostgreSQL with the vector extension at CHECK_POSTGRES_URL (a server URL without database name,
 # default postgres://postgres:postgres@localhost:5432). Playwright downloads its Chromium (of the version
 # @playwright/test pins) the first time the pages are tested in a browser. Nothing here needs Docker.
@@ -100,8 +101,9 @@ docs_format() {
 # the web app, against the SDK built from the generated client (see open_api)
 web="$repo/web"
 web_format() { cd "$web" && "$(bin "$web" prettier)" --cache --check . && cd "$repo" && "$(bin "$repo" prettier)" --check i18n/; }
-# the tailwind rules wait for a worker (synckit), whose default timeout a busy machine exceeds
-web_lint() { cd "$web" && SYNCKIT_TIMEOUT=120000 "$(bin "$web" eslint)" . --max-warnings 0 --concurrency 6; }
+# the tailwind rules wait for a worker (synckit), whose default timeout a busy machine exceeds; 4 workers as upstream
+# (package.json), more run out of memory
+web_lint() { cd "$web" && SYNCKIT_TIMEOUT=120000 "$(bin "$web" eslint)" . --max-warnings 0 --concurrency 4; }
 web_types() {
   cd "$repo" && pnpm --filter @immich/sdk build
   cd "$web"
@@ -112,7 +114,8 @@ web_types() {
 # in English, which some tests expect dates and numbers in
 web_unit() { cd "$web" && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 "$(bin "$web" vitest)" --run; }
 # served by the server in the end-to-end tests in a browser
-web_build() { cd "$web" && "$(bin "$web" vite)" build; }
+# (its images made again, not taken from the cache of earlier builds: what our libvips cannot encode fails here)
+web_build() { cd "$web" && rm -rf node_modules/.cache/imagetools && "$(bin "$web" vite)" build; }
 
 # the CLI, against the SDK built for the web app; built for the end-to-end tests, which run it
 cli="$repo/packages/cli"
@@ -153,6 +156,10 @@ mobile_codegen() {
   local before="$work/mobile-before.diff"
   mobile_changes >"$before"
   cd "$repo/open-api" && PATH="$tools:$PATH" bash bin/generate-dart-sdk.sh
+  # the C header and the Dart bindings of upstream's native core (mobile/mise.toml, codegen:native): with the Rust its
+  # rust-toolchain.toml pins, through rustup, and libclang for ffigen
+  cd "$repo/native" && "$HOME/.cargo/bin/cargo" build --quiet -p native_core_ffi
+  cd "$repo/native/native_core" && flutter pub get && dart run ffigen --config ffigen.yaml
   cd "$mobile"
   flutter pub get --enforce-lockfile
   dart run build_runner build --delete-conflicting-outputs
@@ -249,6 +256,8 @@ open_api() {
 unit() { cd "$work" && "$(bin "$server" vitest)" --config "$server/test/vitest.config.mjs" --run; }
 
 medium() {
+  # the core plugin the workflow tests run, built from its sources (with extism-js and binaryen on PATH)
+  cd "$repo" && pnpm --filter @immich/plugin-core build
   cd "$server"
   MEDIUM_TEST_POSTGRES_URL="$postgres" "$(bin "$server" vitest)" --config test/vitest.config.medium.postgres.mjs --run
 }

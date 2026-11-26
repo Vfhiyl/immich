@@ -5,9 +5,9 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
 
 /**
- * What users decided about faces, kept apart from what the models made of them: the person a user gave a face, and the
- * people a user said a face is not. Automatic grouping keeps to them, also after a change of the face model.
- */
+What users decided about faces, kept apart from what the models made of them: the person a user gave a face, and the
+people a user said a face is not. Automatic grouping keeps to them, also after a change of the face model.
+*/
 @Injectable()
 export class FaceDecisionRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
@@ -108,9 +108,9 @@ export class FaceDecisionRepository {
   }
 
   /**
-   * The people a face cannot be given automatically: those a user said it is not, and those of the other faces of its
-   * photo (two faces of one photo are two people)
-   */
+  The people a face cannot be given automatically: those a user said it is not, and those of the other faces of its
+  photo (two faces of one photo are two people)
+  */
   @GenerateSql({ params: [DummyValue.UUID] })
   async getExcludedPeople(faceId: string): Promise<Set<string>> {
     const rows = await this.db

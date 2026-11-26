@@ -2,22 +2,22 @@ import {
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
-  type Generated,
   Index,
   Int8,
   PrimaryGeneratedColumn,
   Table,
+  type Generated,
   type Timestamp,
 } from '@immich/sql-tools';
 import { StorageBackendTable } from 'src/schema/tables/storage-backend.table.js';
 
 /**
- * Files on storage backends that are no longer recorded and wait for their deletion. Each one gets the earliest time
- * it may be deleted when it is registered, so a shorter delay configured later does not delete it any earlier. Before
- * deleting, the cleanup checks that no location records the file, so a wrong registration never deletes a file in use.
- *
- * Originals keep what is needed to recover them as a new photo until they are deleted.
- */
+Files on storage backends that are no longer recorded and wait for their deletion. Each one gets the earliest time
+it may be deleted when it is registered, so a shorter delay configured later does not delete it any earlier. Before
+deleting, the cleanup checks that no location records the file, so a wrong registration never deletes a file in use.
+
+Originals keep what is needed to recover them as a new photo until they are deleted.
+*/
 @Table('storage_deletion')
 // a file is registered once, however often its deletion is requested
 @Index({ name: 'storage_deletion_backendId_key_idx', columns: ['backendId', 'key'], unique: true })
@@ -41,10 +41,10 @@ export class StorageDeletionTable {
   isOriginal!: boolean;
 
   /**
-   * Registered before the file was written, in case it is never recorded (e.g. the process is killed in between): the
-   * cleanup then deletes it, and drops the registration once the file is recorded. A deletion registered later for the
-   * same file replaces it.
-   */
+  Registered before the file was written, in case it is never recorded (e.g. the process is killed in between): the
+  cleanup then deletes it, and drops the registration once the file is recorded. A deletion registered later for the
+  same file replaces it.
+  */
   @Column({ type: 'boolean', default: false })
   isWrite!: Generated<boolean>;
 

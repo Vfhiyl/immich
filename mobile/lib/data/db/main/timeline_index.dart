@@ -1,68 +1,69 @@
 import 'package:drift/drift.dart';
 
 /// What keeps the main timeline fast at any size: indexes in the order of the timeline, and the number of server
-/// photos per user and day, kept up to date by triggers.
+/// photos per user and day (`group_date`), kept up to date by triggers.
 ///
 /// Created when the database opens, outside drift's migrated schema: upstream numbers its schema versions in
 /// sequence, so a version of ours would collide with upstream's next one. Everything here is named `ext_…`, so as not
 /// to collide with upstream's names, and is recreated (and counted anew) when a migration dropped it, e.g. by
 /// rebuilding a table.
 abstract final class TimelineIndex {
-  static const countTable = 'ext_timeline_day_count';
+  static const countTable = 'ext_timeline_group_count';
 
-  /// Server photos that the main timeline shows, before their stacks are taken into account
-  static const _counted = "deleted_at IS NULL AND visibility = 0";
-
-  static const _indexes = [
-    'CREATE INDEX IF NOT EXISTS ext_idx_remote_asset_timeline ON remote_asset_entity (created_at, id) WHERE $_counted',
-    'CREATE INDEX IF NOT EXISTS ext_idx_local_asset_timeline ON local_asset_entity (created_at, id)',
-    // the few server photos without a local date: their day depends on the time zone of the phone
-    'CREATE INDEX IF NOT EXISTS ext_idx_remote_asset_timeline_no_local_date ON remote_asset_entity (owner_id) WHERE local_date_time IS NULL AND $_counted',
+  /// What earlier versions created: dropped
+  static const _dropped = [
+    'DROP TABLE IF EXISTS ext_timeline_day_count',
+    'DROP INDEX IF EXISTS ext_idx_remote_asset_timeline',
+    'DROP INDEX IF EXISTS ext_idx_local_asset_timeline',
+    'DROP INDEX IF EXISTS ext_idx_remote_asset_timeline_no_local_date',
   ];
 
-  /// `local_day` is the day of the photo's local date ('' without one), `utc_day` the day of its time in UTC (the
-  /// order of the timeline)
+  /// Server photos that the main timeline shows, before their stacks are taken into account: those of a day, as
+  /// upstream's (`group_date`, the local day the headers group on)
+  static const _counted = "deleted_at IS NULL AND visibility = 0 AND group_date IS NOT NULL";
+
+  static const _indexes = [
+    'CREATE INDEX IF NOT EXISTS ext_idx_remote_asset_group_timeline ON remote_asset_entity (group_date, created_at, id) WHERE $_counted',
+    'CREATE INDEX IF NOT EXISTS ext_idx_local_asset_group_timeline ON local_asset_entity (group_date, created_at, id) WHERE group_date IS NOT NULL',
+  ];
+
   static const _table =
       '''
 CREATE TABLE IF NOT EXISTS $countTable (
   owner_id TEXT NOT NULL,
-  local_day TEXT NOT NULL,
-  utc_day TEXT NOT NULL,
+  group_date TEXT NOT NULL,
   asset_count INTEGER NOT NULL,
-  PRIMARY KEY (owner_id, local_day, utc_day)
+  PRIMARY KEY (owner_id, group_date)
 ) WITHOUT ROWID''';
-
-  static String _key(String row) =>
-      "$row.owner_id, COALESCE(strftime('%Y-%m-%d', $row.local_date_time), ''), substr($row.created_at, 1, 10)";
 
   static String _add(String row) =>
       '''
-INSERT INTO $countTable (owner_id, local_day, utc_day, asset_count)
-SELECT ${_key(row)}, 1 WHERE $row.deleted_at IS NULL AND $row.visibility = 0
-ON CONFLICT (owner_id, local_day, utc_day) DO UPDATE SET asset_count = asset_count + 1;''';
+INSERT INTO $countTable (owner_id, group_date, asset_count)
+SELECT $row.owner_id, $row.group_date, 1
+WHERE $row.deleted_at IS NULL AND $row.visibility = 0 AND $row.group_date IS NOT NULL
+ON CONFLICT (owner_id, group_date) DO UPDATE SET asset_count = asset_count + 1;''';
 
   static String _remove(String row) =>
       '''
 UPDATE $countTable SET asset_count = asset_count - 1
-WHERE $row.deleted_at IS NULL AND $row.visibility = 0 AND (owner_id, local_day, utc_day) = (${_key(row)});
-DELETE FROM $countTable WHERE (owner_id, local_day, utc_day) = (${_key(row)}) AND asset_count <= 0;''';
+WHERE $row.deleted_at IS NULL AND $row.visibility = 0 AND (owner_id, group_date) = ($row.owner_id, $row.group_date);
+DELETE FROM $countTable WHERE (owner_id, group_date) = ($row.owner_id, $row.group_date) AND asset_count <= 0;''';
 
   // a new version gets new names: the old triggers are dropped, and everything is counted anew
   static const _triggerPrefix = 'ext_timeline_count_';
   static final _triggers = {
-    '${_triggerPrefix}insert_v1': 'AFTER INSERT ON remote_asset_entity BEGIN ${_add('NEW')} END',
-    '${_triggerPrefix}delete_v1': 'AFTER DELETE ON remote_asset_entity BEGIN ${_remove('OLD')} END',
-    '${_triggerPrefix}update_v1':
-        'AFTER UPDATE OF owner_id, local_date_time, created_at, deleted_at, visibility ON remote_asset_entity '
+    '${_triggerPrefix}insert_v2': 'AFTER INSERT ON remote_asset_entity BEGIN ${_add('NEW')} END',
+    '${_triggerPrefix}delete_v2': 'AFTER DELETE ON remote_asset_entity BEGIN ${_remove('OLD')} END',
+    '${_triggerPrefix}update_v2':
+        'AFTER UPDATE OF owner_id, group_date, deleted_at, visibility ON remote_asset_entity '
         'BEGIN ${_remove('OLD')} ${_add('NEW')} END',
   };
 
   static const _recount =
       '''
-INSERT INTO $countTable (owner_id, local_day, utc_day, asset_count)
-SELECT owner_id, COALESCE(strftime('%Y-%m-%d', local_date_time), ''), substr(created_at, 1, 10), COUNT(*)
-FROM remote_asset_entity WHERE $_counted
-GROUP BY 1, 2, 3''';
+INSERT INTO $countTable (owner_id, group_date, asset_count)
+SELECT owner_id, group_date, COUNT(*) FROM remote_asset_entity WHERE $_counted
+GROUP BY 1, 2''';
 
   /// Per connection: rows that `INSERT OR REPLACE` replaces only fire the delete trigger with it, and sync writes
   /// server photos that way
@@ -70,7 +71,14 @@ GROUP BY 1, 2, 3''';
       db.customStatement('PRAGMA recursive_triggers = ON');
 
   static Future<void> ensure(DatabaseConnectionUser db) async {
+    // a database of a schema before group_date (as the tests of the migrations open them): nothing to index yet
+    if (!await _hasGroupDate(db, 'remote_asset_entity') || !await _hasGroupDate(db, 'local_asset_entity')) {
+      return;
+    }
     await db.transaction(() async {
+      for (final statement in _dropped) {
+        await db.customStatement(statement);
+      }
       for (final index in _indexes) {
         await db.customStatement(index);
       }
@@ -95,6 +103,11 @@ GROUP BY 1, 2, 3''';
       await db.customStatement('DELETE FROM $countTable');
       await db.customStatement(_recount);
     });
+  }
+
+  static Future<bool> _hasGroupDate(DatabaseConnectionUser db, String table) async {
+    final columns = await db.customSelect("SELECT name FROM pragma_table_info('$table')").get();
+    return columns.any((column) => column.read<String>('name') == 'group_date');
   }
 
   /// Whether the counts add up to the photos they count: they would not after a write the triggers missed

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { formatAge } from '$lib/services/storage.service';
-  import { handleError } from '$lib/utils/handle-error';
-  import { retryJobFailures, TrackedJobName, type JobFailuresResponseDto } from '@immich/sdk';
+  import { formatAge } from '#lib/services/storage.service.ts';
+  import { handleError } from '#lib/utils/handle-error.ts';
+  import { TrackedJobName, retryJobFailures, type JobFailuresResponseDto } from '@immich/sdk';
   import { Button, Link, Stack, Text, toastManager } from '@immich/ui';
   import { t, type Translations } from 'svelte-i18n';
 

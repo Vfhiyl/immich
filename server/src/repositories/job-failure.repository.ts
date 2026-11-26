@@ -13,10 +13,10 @@ export const JOB_FAILURE_ATTEMPTS = 3;
 const ERROR_LENGTH = 2000;
 
 /**
- * Jobs for assets that did not finish. A job that fails on an asset again and again (a file that cannot be decoded, or
- * one that makes the process run out of memory) is held back after a few attempts, instead of being queued again
- * every night: like the dead-letter queue of a message queue, which an admin redrives
- */
+Jobs for assets that did not finish. A job that fails on an asset again and again (a file that cannot be decoded, or
+one that makes the process run out of memory) is held back after a few attempts, instead of being queued again
+every night: like the dead-letter queue of a message queue, which an admin redrives
+*/
 @Injectable()
 export class JobFailureRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
@@ -57,9 +57,9 @@ export class JobFailureRepository {
   }
 
   /**
-   * The job did not run on the asset after all (put back in its queue, or kept from running by its environment): the
-   * attempt `start` counted is taken back
-   */
+  The job did not run on the asset after all (put back in its queue, or kept from running by its environment): the
+  attempt `start` counted is taken back
+  */
   @GenerateSql({ params: [JobName.AssetGenerateThumbnails, DummyValue.UUID] })
   async withdraw(jobName: JobName, assetId: string): Promise<void> {
     await this.db

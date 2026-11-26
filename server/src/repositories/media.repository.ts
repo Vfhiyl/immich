@@ -9,21 +9,6 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Writable } from 'node:stream';
 import sharp, { Sharp } from 'sharp';
-import type {
-  Bitmap,
-  DecodeToBufferOptions,
-  GenerateThumbhashOptions,
-  GenerateThumbnailOptions,
-  ImageDimensions,
-  ProbeOptions,
-  RawImageInfo,
-  ShrinkOptions,
-  TranscodeCommand,
-  TransformOptions,
-  VideoInfo,
-  VideoPacketInfo,
-  VideoStreamInfo,
-} from 'src/types.js';
 import { ORIENTATION_TO_SHARP_ROTATION } from 'src/constants.js';
 import { Exif } from 'src/database.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
@@ -42,6 +27,21 @@ import {
   RawExtractedFormat,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import type {
+  Bitmap,
+  DecodeToBufferOptions,
+  GenerateThumbhashOptions,
+  GenerateThumbnailOptions,
+  ImageDimensions,
+  ProbeOptions,
+  RawImageInfo,
+  ShrinkOptions,
+  TranscodeCommand,
+  TransformOptions,
+  VideoInfo,
+  VideoPacketInfo,
+  VideoStreamInfo,
+} from 'src/types.js';
 import { getDerivedScale } from 'src/utils/derived-size.js';
 import { JobRetryLater, getJobRetryData } from 'src/utils/job-retry.js';
 import { AdmissionPriority, AdmissionTimeout, MemoryAdmission } from 'src/utils/memory-admission.js';
@@ -94,9 +94,9 @@ const multiply = (m: Matrix2, n: Matrix2): Matrix2 => [
 ];
 
 /**
- * The turn (clockwise) and mirroring (left to right, done first) that make the matrix of edits, as sharp's affine takes
- * it ([[a, b], [c, d]]: x' = a x + b y, y' = c x + d y). Edits turn by quarters and mirror only
- */
+The turn (clockwise) and mirroring (left to right, done first) that make the matrix of edits, as sharp's affine takes
+it ([[a, b], [c, d]]: x' = a x + b y, y' = c x + d y). Edits turn by quarters and mirror only
+*/
 const toQuarterTurns = ({ a, b, c, d }: { a: number; b: number; c: number; d: number }) => {
   const target: Matrix2 = [
     [Math.round(a), Math.round(b)],
@@ -153,10 +153,10 @@ export class MediaRepository {
   }
 
   /**
-   *
-   * @param input file path to the input image
-   * @returns ExtractResult if succeeded, or null if failed
-   */
+  
+  @param input file path to the input image
+  @returns ExtractResult if succeeded, or null if failed
+  */
   async extract(input: string): Promise<ExtractResult | null> {
     for (const { tag, format } of [
       { tag: 'JpgFromRaw2', format: RawExtractedFormat.Jpeg },
@@ -242,11 +242,11 @@ export class MediaRepository {
   }
 
   /**
-   * The photo with `size` as its shorter side (no larger than it is), or as large as it is (0), made by immich-thumbnail
-   * in a process of its own, into a file of the system's temporary directory. A large one (the preview of a long
-   * screenshot is up to 16 MP, a full-size image up to 200 MP) stays there, its pixels mapped into memory when read
-   * rather than copied, until `releaseImage` removes it
-   */
+  The photo with `size` as its shorter side (no larger than it is), or as large as it is (0), made by immich-thumbnail
+  in a process of its own, into a file of the system's temporary directory. A large one (the preview of a long
+  screenshot is up to 16 MP, a full-size image up to 200 MP) stays there, its pixels mapped into memory when read
+  rather than copied, until `releaseImage` removes it
+  */
   private async decodeByProgram(
     input: string,
     size: number,
@@ -310,10 +310,10 @@ export class MediaRepository {
   }
 
   /**
-   * Waits until there is the memory of making the files of the photo `input` (decoding it, and encoding its files),
-   * estimated by its format and size (a header read only), beside the other heavy operations of this process; the
-   * memory is given back when the result is disposed. `wholeSize`: decoded as large as it is (a full-size image)
-   */
+  Waits until there is the memory of making the files of the photo `input` (decoding it, and encoding its files),
+  estimated by its format and size (a header read only), beside the other heavy operations of this process; the
+  memory is given back when the result is disposed. `wholeSize`: decoded as large as it is (a full-size image)
+  */
   async admitImage(
     input: string | Buffer,
     { wholeSize = false, size, priority }: { wholeSize?: boolean; size?: number; priority: AdmissionPriority },
@@ -334,9 +334,9 @@ export class MediaRepository {
   }
 
   /**
-   * Waits until there is the memory of ffmpeg decoding and encoding `video` with `threads` threads (see admitImage).
-   * With `threads` 0 (as many as there are cores), `fitThreads` first
-   */
+  Waits until there is the memory of ffmpeg decoding and encoding `video` with `threads` threads (see admitImage).
+  With `threads` 0 (as many as there are cores), `fitThreads` first
+  */
   admitVideo(video: VideoStreamInfo, threads: number, priority: AdmissionPriority): Promise<AsyncDisposable> {
     return this.admit(estimateVideoTranscode({ ...videoSize(video), threads }), priority);
   }
@@ -353,10 +353,10 @@ export class MediaRepository {
   }
 
   /**
-   * In a job, waits for the memory up to ADMISSION_WAIT_MS, then puts the job back in its queue (JobRetryLater), so
-   * that the next job of its queue runs meanwhile; it keeps when it began to wait, and once it waited long enough, the
-   * memory is kept for it (see MemoryAdmission). Outside of a job (the api) it waits until admitted
-   */
+  In a job, waits for the memory up to ADMISSION_WAIT_MS, then puts the job back in its queue (JobRetryLater), so
+  that the next job of its queue runs meanwhile; it keeps when it began to wait, and once it waited long enough, the
+  memory is kept for it (see MemoryAdmission). Outside of a job (the api) it waits until admitted
+  */
   private async admit(bytes: number, priority: AdmissionPriority): Promise<AsyncDisposable> {
     const job = getJobRetryData();
     const since = job?.admissionWaitingSince ?? Date.now();
@@ -380,11 +380,11 @@ export class MediaRepository {
   }
 
   /**
-   * The image edited and made the size of a preview (getDerivedScale), the image the preview, the thumbnail and the
-   * thumbhash of a photo are made from. Of an image kept in a file (a photo as large as it is), by immich-thumbnail from
-   * the file: sharp would resize it in linear light with the memory of hundreds of its lines (190 MB for a width of
-   * 16320, 60 MB in the program). Release it with `releaseImage`
-   */
+  The image edited and made the size of a preview (getDerivedScale), the image the preview, the thumbnail and the
+  thumbhash of a photo are made from. Of an image kept in a file (a photo as large as it is), by immich-thumbnail from
+  the file: sharp would resize it in linear light with the memory of hundreds of its lines (190 MB for a width of
+  16320, 60 MB in the program). Release it with `releaseImage`
+  */
   async shrinkImage(image: Bitmap, { size, colorspace, edits = [] }: ShrinkOptions): Promise<Bitmap> {
     if (!image.file) {
       return this.transform(image, { size, edits });
@@ -439,6 +439,7 @@ export class MediaRepository {
         // this is default in libvips (except the threshold is 90), but we need to set it manually in sharp
         chromaSubsampling: options.quality >= 80 ? '4:4:4' : '4:2:0',
         progressive: options.progressive,
+        decodingTier: options.decodingTier,
       })
       .toFile(output);
   }
@@ -576,9 +577,9 @@ export class MediaRepository {
   }
 
   /**
-   * Needed for accurate segments, especially when remuxing, seeking and/or VFR is involved.
-   * Scanning packets for keyframes in JS is much faster than -skip_frame nokey since it avoids decoding the video.
-   */
+  Needed for accurate segments, especially when remuxing, seeking and/or VFR is involved.
+  Scanning packets for keyframes in JS is much faster than -skip_frame nokey since it avoids decoding the video.
+  */
   probePackets(input: string, streamIndex: number): Promise<VideoPacketInfo | null> {
     const ffprobe = spawn(
       'ffprobe',

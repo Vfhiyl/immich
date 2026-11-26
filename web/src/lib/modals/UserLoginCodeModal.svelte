@@ -1,8 +1,8 @@
 <script lang="ts">
-  import Qrcode from '$lib/components/shared-components/Qrcode.svelte';
-  import { OpenQueryParam } from '$lib/constants';
-  import { Route } from '$lib/route';
-  import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
+  import Qrcode from '#lib/components/shared-components/Qrcode.svelte';
+  import { OpenQueryParam } from '#lib/constants.ts';
+  import { Route } from '#lib/route.ts';
+  import { getServerErrorMessage, handleError } from '#lib/utils/handle-error.ts';
   import { createUserLoginCodeAdmin, type LoginCodeResponseDto, type UserAdminResponseDto } from '@immich/sdk';
   import { Alert, Button, Modal, ModalBody, Stack, Text } from '@immich/ui';
   import { mdiQrcode, mdiRefresh } from '@mdi/js';

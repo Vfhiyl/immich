@@ -2,16 +2,16 @@ import {
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
-  type Generated,
   Index,
   Int8,
   PrimaryGeneratedColumn,
   Table,
-  type Timestamp,
   UpdateDateColumn,
+  type Generated,
+  type Timestamp,
 } from '@immich/sql-tools';
-import type { UploadedPart } from 'src/repositories/blob-store.js';
 import { UploadSessionStatus } from 'src/enum.js';
+import type { UploadedPart } from 'src/repositories/blob-store.js';
 import { StorageBackendTable } from 'src/schema/tables/storage-backend.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
@@ -30,10 +30,10 @@ export type UploadAssetData = {
 };
 
 /**
- * A resumable upload (draft-ietf-httpbis-resumable-upload) while it is received, and for a while after, so that a
- * client that missed the response can learn the result. The parts written to the storage backend are the progress:
- * the offset only moves when a part is written and recorded here; the bytes after it wait in a staging file.
- */
+A resumable upload (draft-ietf-httpbis-resumable-upload) while it is received, and for a while after, so that a
+client that missed the response can learn the result. The parts written to the storage backend are the progress:
+the offset only moves when a part is written and recorded here; the bytes after it wait in a staging file.
+*/
 @Table('upload_session')
 @Index({ name: 'upload_session_expiresAt_idx', columns: ['expiresAt'] })
 export class UploadSessionTable {

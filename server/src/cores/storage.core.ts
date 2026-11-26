@@ -1,5 +1,4 @@
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import type { VideoInterfaces } from 'src/types.js';
 import { StorageAsset } from 'src/database.js';
 import {
   AssetFileType,
@@ -21,6 +20,7 @@ import { MoveRepository } from 'src/repositories/move.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import type { VideoInterfaces } from 'src/types.js';
 import { getAssetFile } from 'src/utils/asset.util.js';
 import { getConfig } from 'src/utils/config.js';
 
@@ -158,10 +158,10 @@ export class StorageCore {
   }
 
   /**
-   * The storage location of a file given by its absolute path: files under the media location belong to the media
-   * backend with a key relative to it, so the key survives a change of media location; anything else (e.g. sidecars
-   * next to external library files) belongs to the host backend.
-   */
+  The storage location of a file given by its absolute path: files under the media location belong to the media
+  backend with a key relative to it, so the key survives a change of media location; anything else (e.g. sidecars
+  next to external library files) belongs to the host backend.
+  */
   static getStorageLocation(path: string): StorageLocation {
     if (!isAbsolute(path)) {
       throw new Error(`Expected an absolute path: ${path}`);

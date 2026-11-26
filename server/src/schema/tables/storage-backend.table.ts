@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, type Generated, PrimaryColumn, Table, Timestamp } from '@immich/sql-tools';
+import { Column, CreateDateColumn, PrimaryColumn, Table, Timestamp, type Generated } from '@immich/sql-tools';
 import { StorageBackendDriver } from 'src/enum.js';
 
 /** Storage backends that files can live on. The built-in local backends are created by a migration. */

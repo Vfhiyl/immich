@@ -56,6 +56,7 @@ void main() {
     await LogService.init(
       logRepository: logRepository,
       settingsRepository: SettingsRepository.instance,
+      storeService: StoreService.I,
       shouldBuffer: false,
     );
   });

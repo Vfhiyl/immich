@@ -6,9 +6,9 @@ import { DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 
 /**
- * Run medium tests against an existing PostgreSQL server instead of a test container, for machines without Docker.
- * MEDIUM_TEST_POSTGRES_URL points to the server (without a database name); it needs the vector extension.
- */
+Run medium tests against an existing PostgreSQL server instead of a test container, for machines without Docker.
+MEDIUM_TEST_POSTGRES_URL points to the server (without a database name); it needs the vector extension.
+*/
 const globalSetup = async () => {
   const templateName = 'mich';
   const base = process.env.MEDIUM_TEST_POSTGRES_URL ?? 'postgres://postgres:postgres@localhost:5432';

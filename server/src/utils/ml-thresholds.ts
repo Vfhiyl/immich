@@ -3,13 +3,13 @@ import { SystemConfig } from 'src/dtos/config.dto.js';
 import { cleanModelName } from 'src/utils/misc.js';
 
 /**
- * The thresholds of the models of machine learning, fixed per model like the dimensions of CLIP models: they belong to
- * a model (a distance that tells two people apart under one model may merge them under another), so they change with
- * it and are not settings. A model missing here is refused in the configuration.
- *
- * The values are upstream's defaults, which it uses for every model; they are kept until a model is measured on a
- * labelled set of faces (and a new model gets its values from such a measurement).
- */
+The thresholds of the models of machine learning, fixed per model like the dimensions of CLIP models: they belong to
+a model (a distance that tells two people apart under one model may merge them under another), so they change with
+it and are not settings. A model missing here is refused in the configuration.
+
+The values are upstream's defaults, which it uses for every model; they are kept until a model is measured on a
+labelled set of faces (and a new model gets its values from such a measurement).
+*/
 export const FACE_MODEL_THRESHOLDS: Record<string, { minScore: number; maxDistance: number }> = {
   antelopev2: { minScore: 0.7, maxDistance: 0.5 },
   buffalo_l: { minScore: 0.7, maxDistance: 0.5 },

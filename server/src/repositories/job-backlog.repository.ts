@@ -15,11 +15,11 @@ export class JobBacklogRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
   /**
-   * Adds jobs to the backlog of a queue, each with its turn among the jobs of its user: the user of its asset (`data.id`)
-   * or its owner (`data.ownerId`), else of no one (who is one user too). A user's jobs take the turns after those it has
-   * in the backlog, from the turn of the next job to come out at the earliest: one who comes takes turns with those
-   * who wait
-   */
+  Adds jobs to the backlog of a queue, each with its turn among the jobs of its user: the user of its asset (`data.id`)
+  or its owner (`data.ownerId`), else of no one (who is one user too). A user's jobs take the turns after those it has
+  in the backlog, from the turn of the next job to come out at the earliest: one who comes takes turns with those
+  who wait
+  */
   @GenerateSql({
     params: [QueueName.ThumbnailGeneration, [{ name: JobName.AssetGenerateThumbnails, data: {}, priority: 0 }]],
   })
@@ -84,10 +84,10 @@ export class JobBacklogRepository {
   }
 
   /**
-   * Hands the next jobs of a queue to `use`, those without priority first, then the lowest, the users taking turns, each
-   * in the order they came; they leave the backlog once it resolved (should the process stop meanwhile, they are
-   * handed over again)
-   */
+  Hands the next jobs of a queue to `use`, those without priority first, then the lowest, the users taking turns, each
+  in the order they came; they leave the backlog once it resolved (should the process stop meanwhile, they are
+  handed over again)
+  */
   async take(queueName: QueueName, limit: number, use: (jobs: BacklogJob[]) => Promise<void>): Promise<number> {
     return this.db.transaction().execute(async (trx) => {
       const rows = await trx

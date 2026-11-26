@@ -5,9 +5,9 @@ export const STALL_MS = 10 * 60 * 1000;
 const CHECK_MS = 30 * 1000;
 
 /**
- * The bytes a process read and wrote so far (rchar, wchar of /proc/<pid>/io, proc_pid_io(5): what it passed to read()
- * and write() and their kind, from files and pipes alike); null where it cannot be read (not Linux)
- */
+The bytes a process read and wrote so far (rchar, wchar of /proc/<pid>/io, proc_pid_io(5): what it passed to read()
+and write() and their kind, from files and pipes alike); null where it cannot be read (not Linux)
+*/
 export const readProcessIo = async (pid: number): Promise<number | null> => {
   try {
     const text = await readFile(`/proc/${pid}/io`, 'utf8');
@@ -20,11 +20,11 @@ export const readProcessIo = async (pid: number): Promise<number | null> => {
 };
 
 /**
- * Watches a program that works through its input (ffmpeg, immich-thumbnail) for progress rather than for the time it
- * takes, which grows with the input and the slowness of the machine: as long as it reads or writes (its input, its
- * output, what it reports) or `beat` is called, it goes on; when nothing of that happens for `stallMs` it is stuck
- * (a decoder in a loop, a storage that does not answer), and `onStall` is called once. Returns what stops watching
- */
+Watches a program that works through its input (ffmpeg, immich-thumbnail) for progress rather than for the time it
+takes, which grows with the input and the slowness of the machine: as long as it reads or writes (its input, its
+output, what it reports) or `beat` is called, it goes on; when nothing of that happens for `stallMs` it is stuck
+(a decoder in a loop, a storage that does not answer), and `onStall` is called once. Returns what stops watching
+*/
 export const watchProgress = (
   pid: number | undefined,
   onStall: () => void,

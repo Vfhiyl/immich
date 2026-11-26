@@ -12,7 +12,6 @@ import {
 } from '@azure/storage-blob';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import type { StorageRequest } from 'src/utils/storage-metering.js';
 import {
   BlobDeleteResult,
   BlobGetOptions,
@@ -35,6 +34,7 @@ import {
   assertValidBlobPrefix,
   createVerifyingStream,
 } from 'src/repositories/blob-store.js';
+import type { StorageRequest } from 'src/utils/storage-metering.js';
 
 /** Blocks of 16 MiB, as the parts of S3: well within what a block may be (4000 MiB) */
 export const AZURE_BLOCK_SIZE = 16 * 1024 * 1024;
@@ -54,9 +54,9 @@ export interface AzureBackendOptions {
 }
 
 /**
- * The operation of a request, by the name Azure documents it with: what it is charged as (write and list operations,
- * reads, and deletes)
- */
+The operation of a request, by the name Azure documents it with: what it is charged as (write and list operations,
+reads, and deletes)
+*/
 export const toAzureOperation = ({ method, url }: { method: string; url: string }) => {
   const comp = new URL(url).searchParams.get('comp');
   switch (method) {
@@ -84,10 +84,10 @@ const contentLength = (headers: { get(name: string): string | undefined }) => {
 };
 
 /**
- * Report every request, with the bytes sent and received: what Azure charges for. Failed requests count too. Where the
- * SDK runs a policy of the pipeline is not documented: attempts that are retried may count once, which only makes the
- * estimate of the costs a little low while the service is busy.
- */
+Report every request, with the bytes sent and received: what Azure charges for. Failed requests count too. Where the
+SDK runs a policy of the pipeline is not documented: attempts that are retried may count once, which only makes the
+estimate of the costs a little low while the service is busy.
+*/
 const meteringPolicy = (onRequest: (request: StorageRequest) => void): RequestPolicyFactory => ({
   create: (next: RequestPolicy): RequestPolicy => ({
     sendRequest: async (request: WebResource) => {
@@ -140,11 +140,11 @@ const toBlockId = (uploadId: string, number: number) =>
   Buffer.from(`${uploadId}:${String(number).padStart(5, '0')}`).toString('base64');
 
 /**
- * Blob store on Azure Blob Storage, with the same minimum contract as the S3 store: block blobs written once under
- * unique keys (no conditional writes), no checksums of the service (Immich computes size and SHA-1), equal-sized
- * blocks, and every read verified. Uploads in parts are blocks that are committed at the end; Azure keeps uncommitted
- * blocks for a week, so an upload that is not completed goes by itself.
- */
+Blob store on Azure Blob Storage, with the same minimum contract as the S3 store: block blobs written once under
+unique keys (no conditional writes), no checksums of the service (Immich computes size and SHA-1), equal-sized
+blocks, and every read verified. Uploads in parts are blocks that are committed at the end; Azure keeps uncommitted
+blocks for a week, so an upload that is not completed goes by itself.
+*/
 export class AzureBlobStore implements BlobStore {
   readonly limits: BlobStoreLimits = {
     maxDeleteBatch: 256,
@@ -384,9 +384,9 @@ const assertValidRange = (key: string, range: BlobRange, size?: number) => {
   }
 };
 
-const getResponseSize = (key: string, range: BlobRange | undefined, contentRange?: string, contentLength?: number) => {
+const getResponseSize = (key: string, range: BlobRange | undefined, contentRange?: string, contentLength = 0) => {
   if (!range) {
-    return { total: contentLength ?? 0, length: contentLength ?? 0 };
+    return { total: contentLength, length: contentLength };
   }
 
   // a service that ignores the range would send the whole blob as if it were the range

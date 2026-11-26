@@ -2,8 +2,8 @@ import handlebar from 'handlebars';
 import { DateTime } from 'luxon';
 import { basename, extname, normalize } from 'node:path';
 import sanitize from 'sanitize-filename';
-import type { StorageAsset } from 'src/types.js';
 import { AssetType } from 'src/enum.js';
+import type { StorageAsset } from 'src/types.js';
 
 /** The date tokens of a storage template */
 export const storageTokens = {
@@ -30,9 +30,9 @@ export interface StorageTemplateMetadata {
 }
 
 /**
- * A storage template, ready to render: it names the files of the storage template migration, and, on storage backends
- * (where objects have opaque keys), the files of exports
- */
+A storage template, ready to render: it names the files of the storage template migration, and, on storage backends
+(where objects have opaque keys), the files of exports
+*/
 export const compileStorageTemplate = (template: string) => ({
   raw: template,
   compiled: handlebar.compile(template, { knownHelpers: undefined, strict: true }),
@@ -52,9 +52,9 @@ export const renderStorageTemplate = (template: HandlebarsTemplateDelegate<any>,
     assetIdShort: asset.id.slice(-12),
     //just throw into the root if it doesn't belong to an album
     album: (albumName && sanitize(albumName.replaceAll(/\.+/g, ''))) || '',
-    make: make ?? '',
-    model: model ?? '',
-    lensModel: lensModel ?? '',
+    make: sanitize(make ?? ''),
+    model: sanitize(model ?? ''),
+    lensModel: sanitize(lensModel ?? ''),
   };
 
   const dt = DateTime.fromJSDate(asset.fileCreatedAt);
@@ -88,9 +88,9 @@ export interface TemplateFile {
 }
 
 /**
- * The relative path a storage template gives a file, with its extension; null when it would leave the folder it is
- * relative to, or name no file. Album dates are not known here and render empty.
- */
+The relative path a storage template gives a file, with its extension; null when it would leave the folder it is
+relative to, or name no file. Album dates are not known here and render empty.
+*/
 export const toTemplatePath = (template: ReturnType<typeof compileStorageTemplate>, file: TemplateFile) => {
   const extension = extname(file.originalFileName);
   const stem = basename(file.originalFileName, extension);

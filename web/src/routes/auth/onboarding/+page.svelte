@@ -1,21 +1,9 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import { page } from '$app/state';
-  import OnboardingBackup from './OnboardingBackup.svelte';
-  import OnboardingCard from './OnboardingCard.svelte';
-  import OnboardingHello from './OnboardingHello.svelte';
-  import OnboardingLocale from './OnboardingLanguage.svelte';
-  import OnboardingMasterKey from './OnboardingMasterKey.svelte';
-  import OnboardingMobileApp from './OnboardingMobileApp.svelte';
-  import OnboardingServerPrivacy from './OnboardingServerPrivacy.svelte';
-  import OnboardingStorageTemplate from './OnboardingStorageTemplate.svelte';
-  import OnboardingTheme from './OnboardingTheme.svelte';
-  import OnboardingUserPrivacy from './OnboardingUserPrivacy.svelte';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
-  import { Route } from '$lib/route';
-  import { OnboardingRole } from '$lib/types';
+  import { authManager } from '#lib/managers/auth-manager.svelte.ts';
+  import { createPreloadedQuery, queryClient } from '#lib/queries/client.ts';
+  import { getServerConfigQuery } from '#lib/queries/server-info.query.ts';
+  import { Route } from '#lib/route.ts';
+  import { OnboardingRole } from '#lib/types.ts';
   import { getStorageConfiguration, setUserOnboarding, updateAdminOnboarding } from '@immich/sdk';
   import {
     mdiCellphoneArrowDownVariant,
@@ -28,6 +16,21 @@
   } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/state';
+  import OnboardingBackup from './OnboardingBackup.svelte';
+  import OnboardingCard from './OnboardingCard.svelte';
+  import OnboardingHello from './OnboardingHello.svelte';
+  import OnboardingLocale from './OnboardingLanguage.svelte';
+  import OnboardingMasterKey from './OnboardingMasterKey.svelte';
+  import OnboardingMobileApp from './OnboardingMobileApp.svelte';
+  import OnboardingServerPrivacy from './OnboardingServerPrivacy.svelte';
+  import OnboardingStorageTemplate from './OnboardingStorageTemplate.svelte';
+  import OnboardingTheme from './OnboardingTheme.svelte';
+  import OnboardingUserPrivacy from './OnboardingUserPrivacy.svelte';
+
+  const query = createPreloadedQuery(getServerConfigQuery);
+  const serverConfig = $derived(query.data);
 
   interface OnboardingStep {
     name: string;
@@ -118,36 +121,30 @@
     return temporaryIndex === -1 ? 0 : temporaryIndex;
   });
   let userRole = $derived(
-    authManager.user.isAdmin && !serverConfigManager.value.isOnboarded ? OnboardingRole.SERVER : OnboardingRole.USER,
+    authManager.user.isAdmin && !serverConfig.isOnboarded ? OnboardingRole.SERVER : OnboardingRole.USER,
   );
 
-  let onboardingStepCount = $derived(onboardingSteps.filter((step) => shouldRunStep(step.role, userRole)).length);
+  let onboardingStepCount = $derived(onboardingSteps.filter((step) => shouldRunStep(step.role)).length);
   let onboardingProgress = $derived(
-    onboardingSteps.filter((step, i) => shouldRunStep(step.role, userRole) && i <= index).length - 1,
+    onboardingSteps.filter((step, i) => shouldRunStep(step.role) && i <= index).length - 1,
   );
 
-  const shouldRunStep = (stepRole: OnboardingRole, userRole: OnboardingRole) => {
+  const shouldRunStep = (stepRole: OnboardingRole) => {
     return (
       stepRole === OnboardingRole.USER ||
-      (stepRole === OnboardingRole.SERVER &&
-        userRole === OnboardingRole.SERVER &&
-        !serverConfigManager.value.isOnboarded)
+      (stepRole === OnboardingRole.SERVER && userRole === OnboardingRole.SERVER && !serverConfig.isOnboarded)
     );
   };
 
-  const previousStepIndex = $derived(
-    onboardingSteps.findLastIndex((step, i) => shouldRunStep(step.role, userRole) && i < index),
-  );
+  const previousStepIndex = $derived(onboardingSteps.findLastIndex((step, i) => shouldRunStep(step.role) && i < index));
 
-  const nextStepIndex = $derived(
-    onboardingSteps.findIndex((step, i) => shouldRunStep(step.role, userRole) && i > index),
-  );
+  const nextStepIndex = $derived(onboardingSteps.findIndex((step, i) => shouldRunStep(step.role) && i > index));
 
   const handleNextClicked = async () => {
     if (nextStepIndex === -1) {
       if (authManager.user.isAdmin) {
         await updateAdminOnboarding({ adminOnboardingUpdateDto: { isOnboarded: true } });
-        await serverConfigManager.loadServerConfig();
+        await queryClient.invalidateQueries({ queryKey: getServerConfigQuery().queryKey });
       }
 
       await setUserOnboarding({
@@ -172,7 +169,6 @@
 
   onMount(async () => {
     if (userRole === OnboardingRole.SERVER) {
-      await systemConfigManager.init();
       try {
         const { masterKeyId } = await getStorageConfiguration();
         hasMasterKey = !!masterKeyId;

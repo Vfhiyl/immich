@@ -92,9 +92,9 @@ export const sendFile = async (
 };
 
 /**
- * A single byte range of a `Range` header, like `bytes=0-99`, `bytes=100-` or `bytes=-100`; null when the whole blob is
- * to be sent (no header, or a form that may be ignored, such as several ranges), or 'unsatisfiable'
- */
+A single byte range of a `Range` header, like `bytes=0-99`, `bytes=100-` or `bytes=-100`; null when the whole blob is
+to be sent (no header, or a form that may be ignored, such as several ranges), or 'unsatisfiable'
+*/
 export const parseRange = (header: string | undefined, size: number): Required<BlobRange> | null | 'unsatisfiable' => {
   const match = header?.match(/^bytes=(\d*)-(\d*)$/);
   if (!match || (match[1] === '' && match[2] === '')) {
@@ -112,9 +112,9 @@ export const parseRange = (header: string | undefined, size: number): Required<B
 };
 
 /**
- * Send a blob like `res.sendFile` sends a file: with ranges, HEAD and conditional requests. Keys never change, so the
- * key is a strong ETag. The read is verified against what was recorded, so a bad blob fails instead of being served.
- */
+Send a blob like `res.sendFile` sends a file: with ranges, HEAD and conditional requests. Keys never change, so the
+key is a strong ETag. The read is verified against what was recorded, so a bad blob fails instead of being served.
+*/
 const sendBlob = async (res: Response, blob: RemoteBlob) => {
   const { store, key, expect } = blob;
   const req = res.req;

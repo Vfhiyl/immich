@@ -10,7 +10,7 @@
 set -euo pipefail
 
 SERVER="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="${1:?Usage: install-native DIRECTORY|ARCHIVE [ROOT] (see native/README.md)}"
+SOURCE="${1:?Usage: install-native DIRECTORY|ARCHIVE [ROOT] (see native/LIBRARIES.md)}"
 ROOT="$(cd "${2:-$SERVER}" && pwd)"
 # in the repository, the packages are installed at its root
 if [[ ! -d "$ROOT/node_modules/.pnpm" && -e "$ROOT/node_modules/sharp" ]]; then

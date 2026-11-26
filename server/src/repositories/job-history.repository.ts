@@ -16,9 +16,9 @@ export interface JobFailureFilter {
 }
 
 /**
- * The jobs that ran and failed over time, for the admin: counts per hour and job, and each failure with its reason.
- * Counted in memory as jobs end (see JobHistoryRecorder), written by `flush`
- */
+The jobs that ran and failed over time, for the admin: counts per hour and job, and each failure with its reason.
+Counted in memory as jobs end (see JobHistoryRecorder), written by `flush`
+*/
 @Injectable()
 export class JobHistoryRepository {
   private recorder = new JobHistoryRecorder();

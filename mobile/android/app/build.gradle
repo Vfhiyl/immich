@@ -49,6 +49,7 @@ android {
     versionCode flutter.versionCode
     versionName flutter.versionName
     resValue "string", "app_name", "Immich"
+    buildConfigField "boolean", "PASSKEYS", "true"
 
     externalNativeBuild {
       cmake {
@@ -91,6 +92,7 @@ android {
   }
   namespace 'app.alextran.immich'
 
+  // our decoders for parts of large images (CMakeLists.txt)
   externalNativeBuild {
     cmake {
       path "CMakeLists.txt"
@@ -140,6 +142,8 @@ dependencies {
   implementation libs.guava
   implementation libs.glide
   implementation libs.kotlinx.serialization.json
+  implementation libs.credentials
+  implementation libs.credentials.play.services.auth
 
   ksp libs.glide.ksp
   coreLibraryDesugaring libs.desugar.jdk.libs
@@ -162,4 +166,6 @@ dependencies {
 // This is uncommented in F-Droid build script
 //f configurations.all {
 //f     exclude group: 'com.google.android.gms'
+//f     exclude group: 'androidx.credentials', module: 'credentials-play-services-auth'
 //f }
+//f android.defaultConfig.buildConfigField "boolean", "PASSKEYS", "false"

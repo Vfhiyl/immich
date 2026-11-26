@@ -31,6 +31,7 @@ import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getTestKyselyDB } from 'test/utils.js';
 
 const DAY = 24 * 60 * 60 * 1000;
+// eslint-disable-next-line unicorn/no-unnecessary-parameters
 const ago = (days: number) => new Date(Date.now() - days * DAY);
 
 describe(StorageCheckService.name, () => {

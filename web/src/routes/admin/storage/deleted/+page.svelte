@@ -1,16 +1,15 @@
 <script lang="ts">
-  import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
-  import StorageImportModal from '$lib/modals/StorageImportModal.svelte';
-  import StoragePurgeModal from '$lib/modals/StoragePurgeModal.svelte';
-  import { Route } from '$lib/route';
-  import { formatAge, handleImportDeletedOriginal } from '$lib/services/storage.service';
-  import { getByteUnitString } from '$lib/utils/byte-units';
+  import AdminPageLayout from '#lib/components/layouts/AdminPageLayout.svelte';
+  import StorageImportModal from '#lib/modals/StorageImportModal.svelte';
+  import StoragePurgeModal from '#lib/modals/StoragePurgeModal.svelte';
+  import { Route } from '#lib/route.ts';
+  import { formatAge, handleImportDeletedOriginal } from '#lib/services/storage.service.ts';
+  import { getByteUnitString } from '#lib/utils/byte-units.ts';
   import { getBaseUrl, getDeletedOriginals } from '@immich/sdk';
   import {
     Button,
     Container,
     HStack,
-    modalManager,
     Table,
     TableBody,
     TableCell,
@@ -18,6 +17,7 @@
     TableHeading,
     TableRow,
     Text,
+    modalManager,
   } from '@immich/ui';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
@@ -76,7 +76,7 @@
       </TableHeader>
       <TableBody>
         {#each originals.items as original (original.id)}
-          {@const fileName = original.originalFileName ?? original.id}
+          {const fileName = $derived(original.originalFileName ?? original.id)}
           <TableRow>
             <TableCell class="break-all">
               <a href={fileUrl(original.id)} target="_blank" rel="noreferrer" class="underline">{fileName}</a>

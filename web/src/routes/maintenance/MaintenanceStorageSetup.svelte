@@ -1,13 +1,13 @@
 <script lang="ts">
-  import StorageSetupReport from '$lib/components/storage/StorageSetupReport.svelte';
-  import { handleError } from '$lib/utils/handle-error';
+  import StorageSetupReport from '#lib/components/storage/StorageSetupReport.svelte';
+  import { handleError } from '#lib/utils/handle-error.ts';
   import {
     continueAfterStorageSetup,
     getMaintenanceStorageSetup,
     getServerConfig,
     type StorageSetupResponseDto,
   } from '@immich/sdk';
-  import { Button, Heading, HStack, LoadingSpinner, Text } from '@immich/ui';
+  import { Button, HStack, Heading, LoadingSpinner, Text } from '@immich/ui';
   import { mdiArrowRight, mdiRefresh } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';

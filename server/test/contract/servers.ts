@@ -33,9 +33,9 @@ const isFree = (port: number) =>
 const handedOut = new Set<number>();
 
 /**
- * A port that is free, and so is the port 10000 above it (services such as SeaweedFS derive their gRPC ports that way),
- * that no other service of this run was given; ports picked at random are tried until one is
- */
+A port that is free, and so is the port 10000 above it (services such as SeaweedFS derive their gRPC ports that way),
+that no other service of this run was given; ports picked at random are tried until one is
+*/
 export const freePort = async (): Promise<number> => {
   for (let attempt = 0; attempt < 100; attempt++) {
     // below the ports the system hands out for outgoing connections (32768 and up on Linux), which could take one

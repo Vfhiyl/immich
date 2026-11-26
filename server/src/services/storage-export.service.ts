@@ -1,27 +1,27 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { basename, dirname, join } from 'node:path';
-import type { StorageExportState } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
 import { mapNotification } from 'src/dtos/notification.dto.js';
 import { StorageExportResponseDto, StorageExportStartDto } from 'src/dtos/storage-export.dto.js';
 import { JobName, JobStatus, NotificationLevel, NotificationType, QueueName, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import type { StorageExportState } from 'src/types.js';
 import { ExportOptions, ExportedAsset, Exporter, toExportTarget, toSafeName } from 'src/utils/export-tool.js';
 import { compileStorageTemplate, toTemplatePath } from 'src/utils/storage-template.js';
 
 /**
- * An export runs in chunks of this long, each a job that queues the next one: so that the queue it runs in keeps
- * moving, and an export of years of photos survives restarts
- */
+An export runs in chunks of this long, each a job that queues the next one: so that the queue it runs in keeps
+moving, and an export of years of photos survives restarts
+*/
 const EXPORT_CHUNK_MS = 5 * 60 * 1000;
 /** Progress is saved, and a cancellation noticed, after this many originals */
 const EXPORT_SAVE_EVERY = 50;
 
 /**
- * Where an original goes by the storage template, within the folder of its owner: on storage backends, objects have
- * opaque keys, so the template only names the files of downloads and exports. A path that would leave the folder of
- * its owner goes where it would without a template.
- */
+Where an original goes by the storage template, within the folder of its owner: on storage backends, objects have
+opaque keys, so the template only names the files of downloads and exports. A path that would leave the folder of
+its owner goes where it would without a template.
+*/
 export const toTemplateTarget = (output: string, template: ReturnType<typeof compileStorageTemplate>) => {
   return (asset: ExportedAsset) => {
     const path = toTemplatePath(template, {
@@ -40,11 +40,11 @@ export const toTemplateTarget = (output: string, template: ReturnType<typeof com
 };
 
 /**
- * The export of the originals to a folder of the server (IMMICH_EXPORT_LOCATION, e.g. a mounted disk), started by an
- * administrator: the same folders, JSON files and XMP sidecars as `immich-export`, or the storage template's folders
- * when it is enabled. It goes on in chunks, can be cancelled, and keeps what it exported: an export started again skips
- * what was exported before and did not change.
- */
+The export of the originals to a folder of the server (IMMICH_EXPORT_LOCATION, e.g. a mounted disk), started by an
+administrator: the same folders, JSON files and XMP sidecars as `immich-export`, or the storage template's folders
+when it is enabled. It goes on in chunks, can be cancelled, and keeps what it exported: an export started again skips
+what was exported before and did not change.
+*/
 @Injectable()
 export class StorageExportService extends BaseService {
   async getExport(): Promise<StorageExportResponseDto> {

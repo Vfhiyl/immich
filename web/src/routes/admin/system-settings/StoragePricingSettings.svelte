@@ -1,19 +1,22 @@
 <script lang="ts">
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
-  import { SettingInputFieldType } from '$lib/constants';
-  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
-  import { pricedBackendIds, togglePricing } from '$lib/utils/storage-pricing';
+  import SettingInputField from '#lib/components/shared-components/settings/SettingInputField.svelte';
+  import SettingSwitch from '#lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingButtonsRow from '#lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
+  import { SettingInputFieldType } from '#lib/constants.ts';
+  import { featureFlagsManager } from '#lib/managers/feature-flags-manager.svelte.ts';
+  import { createPreloadedQuery } from '#lib/queries/client.ts';
+  import { getAdminConfigQuery } from '#lib/queries/config-admin.query.ts';
+  import { pricedBackendIds, togglePricing } from '#lib/utils/storage-pricing.ts';
   import { getStorageConfiguration } from '@immich/sdk';
   import { Text } from '@immich/ui';
+  import { cloneDeep } from 'lodash-es';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const query = createPreloadedQuery(getAdminConfigQuery);
+  let configToEdit = $state(cloneDeep(query.data));
   let configured = $state<string[]>([]);
 
   onMount(async () => {
@@ -41,7 +44,9 @@
           <Text size="small">{$t('admin.storage_no_backends')}</Text>
         {/if}
         {#each backendIds as backendId (backendId)}
-          {@const index = configToEdit.storagePricing.backends.findIndex((pricing) => pricing.backendId === backendId)}
+          {const index = $derived(
+            configToEdit.storagePricing.backends.findIndex((pricing) => pricing.backendId === backendId),
+          )}
           <SettingSwitch
             title={$t('admin.storage_pricing_backend', { values: { backendId } })}
             {disabled}

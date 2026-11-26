@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from immich_ml import allocator
-from immich_ml.config import log
+from immich_ml.config import clean_name, log
 from immich_ml.models.base import InferenceEntry, InferenceModel
 from immich_ml.resources import Memory, read_resources
 from immich_ml.schemas import Options
@@ -50,7 +50,8 @@ class ModelCache:
 
     @staticmethod
     def key[O: Options](entry: InferenceEntry[O]) -> Key:
-        return (entry.model, entry.name, entry.model.graph(entry.options))
+        # names that differ only in what cleaning drops, like an `immich-app/` prefix, are the same model
+        return (entry.model, clean_name(entry.name), entry.model.graph(entry.options))
 
     def get[O: Options](self, entry: InferenceEntry[O], ttl: int | None = None) -> InferenceModel[O]:
         key = self.key(entry)

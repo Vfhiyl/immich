@@ -53,9 +53,9 @@ export class StorageReplicaRepository {
   }
 
   /**
-   * Record which backends the replicas copy, as configured; returns the ones that are new. A replica that no longer
-   * copies a backend gets no new copies of it, and its copies are left alone.
-   */
+  Record which backends the replicas copy, as configured; returns the ones that are new. A replica that no longer
+  copies a backend gets no new copies of it, and its copies are left alone.
+  */
   async setSources(sources: ReplicaSource[]): Promise<ReplicaSource[]> {
     return this.db.transaction().execute(async (tx) => {
       const existing = await tx
@@ -84,10 +84,10 @@ export class StorageReplicaRepository {
   }
 
   /**
-   * Register copies of the originals on a backend that have none on a replica yet, a page of originals at a time after
-   * `afterAssetId`: what was recorded before the replica was configured, or slipped past the trigger while it was being
-   * configured. Returns the last original looked at, to continue after.
-   */
+  Register copies of the originals on a backend that have none on a replica yet, a page of originals at a time after
+  `afterAssetId`: what was recorded before the replica was configured, or slipped past the trigger while it was being
+  configured. Returns the last original looked at, to continue after.
+  */
   @GenerateSql({ params: [{ replicaBackendId: DummyValue.STRING, sourceBackendId: DummyValue.STRING }, 10_000] })
   async registerMissing(
     { replicaBackendId, sourceBackendId }: ReplicaSource,
@@ -115,9 +115,9 @@ export class StorageReplicaRepository {
   }
 
   /**
-   * Take copies that are due, the longest waiting first, for `leaseMs`: other workers skip them meanwhile. Only copies
-   * to replicas that are configured to copy their backend are taken.
-   */
+  Take copies that are due, the longest waiting first, for `leaseMs`: other workers skip them meanwhile. Only copies
+  to replicas that are configured to copy their backend are taken.
+  */
   @GenerateSql({ params: [{ now: DummyValue.DATE, limit: 100, leaseMs: 600_000 }] })
   claim({ now, limit, leaseMs }: { now: Date; limit: number; leaseMs: number }): Promise<ReplicaCopy[]> {
     return this.db

@@ -13,9 +13,9 @@ import { toClient } from 'test/contract/servers.js';
 import { stores, targets } from 'test/contract/stores.js';
 
 /**
- * The behavior every blob store must have, whatever stores the blobs. These tests are what lets the rest of the
- * server stay independent of storage services: any new backend has to pass them.
- */
+The behavior every blob store must have, whatever stores the blobs. These tests are what lets the rest of the
+server stay independent of storage services: any new backend has to pass them.
+*/
 const sha1 = (value: Buffer) => createHash('sha1').update(value).digest();
 const toStream = (value: Buffer) => Readable.from([value]);
 const chunked = (value: Buffer, size: number) =>

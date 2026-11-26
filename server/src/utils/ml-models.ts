@@ -1,11 +1,11 @@
+import { SystemConfig } from 'src/dtos/config.dto.js';
+import { DatabaseLock, JobName, SystemMetadataKey } from 'src/enum.js';
 import type { DatabaseRepository } from 'src/repositories/database.repository.js';
 import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { ModelTask } from 'src/repositories/machine-learning.repository.js';
 import type { MachineLearningModelRepository, RebuildSelection } from 'src/repositories/ml-model.repository.js';
 import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
-import { SystemConfig } from 'src/dtos/config.dto.js';
-import { DatabaseLock, JobName, SystemMetadataKey } from 'src/enum.js';
-import { ModelTask } from 'src/repositories/machine-learning.repository.js';
 
 /** The model that made a result, as the machine learning service reports it */
 export interface ReportedModel {
@@ -63,11 +63,11 @@ export const RECORDED_TASKS = [ModelTask.SEARCH, ModelTask.FACIAL_RECOGNITION, M
 export const RETURN_AFTER_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Whether results of `a` and `b` go together: the same model, and the same files where both are known; results made
- * before models were recorded, and those of a service that does not report its files, count as made by the files
- * of the same name (nothing else is known about them, and assuming otherwise would make every result again on the
- * upgrade to this version)
- */
+Whether results of `a` and `b` go together: the same model, and the same files where both are known; results made
+before models were recorded, and those of a service that does not report its files, count as made by the files
+of the same name (nothing else is known about them, and assuming otherwise would make every result again on the
+upgrade to this version)
+*/
 export const isCompatible = (
   a: { name: string; fingerprint: string | null },
   b: { name: string; fingerprint: string | null },
@@ -168,9 +168,9 @@ export interface ObservedModel {
 }
 
 /**
- * The models of the tasks of machine learning: which one each task makes its results with (the target), which
- * results are of it, and when the results of every photo are made again (a rebuild)
- */
+The models of the tasks of machine learning: which one each task makes its results with (the target), which
+results are of it, and when the results of every photo are made again (a rebuild)
+*/
 export class MachineLearningModels {
   constructor(
     private repositories: {
@@ -192,9 +192,9 @@ export class MachineLearningModels {
   }
 
   /**
-   * Which results count as of `ref`: those of the models whose files are its own (or unknown), and those made
-   * before models were recorded when they were of the same name
-   */
+  Which results count as of `ref`: those of the models whose files are its own (or unknown), and those made
+  before models were recorded when they were of the same name
+  */
   async getSelection(task: ModelTask, state: TaskModelState, ref: ModelRef = state.target): Promise<RebuildSelection> {
     const fingerprint = await this.getFingerprint(ref);
     const all = await this.models.getAll(task);
@@ -217,9 +217,9 @@ export class MachineLearningModels {
   }
 
   /**
-   * Records the model a result came from, and tells whether to keep the result: the result of new files of the
-   * target model starts a rebuild with them, and one of files that were replaced is not kept
-   */
+  Records the model a result came from, and tells whether to keep the result: the result of new files of the
+  target model starts a rebuild with them, and one of files that were replaced is not kept
+  */
   async observe(task: ModelTask, reported: ReportedModel, config: MachineLearningConfig): Promise<ObservedModel> {
     const model =
       (await this.models.find(task, reported.name, reported.fingerprint)) ??

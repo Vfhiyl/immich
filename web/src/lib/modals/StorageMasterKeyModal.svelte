@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { handleDownloadMasterKeys } from '$lib/services/storage.service';
+  import { handleDownloadMasterKeys } from '#lib/services/storage.service.ts';
   import { Field, FormModal, HelperText, PasswordInput, Stack, Text } from '@immich/ui';
   import { mdiKeyOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';

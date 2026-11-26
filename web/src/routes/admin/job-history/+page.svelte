@@ -1,7 +1,7 @@
 <script lang="ts">
-  import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
-  import { Route } from '$lib/route';
-  import { FAILURES_PAGE_SIZE, failureRate, historySeries, JOB_HISTORY_RANGES } from '$lib/utils/job-history';
+  import AdminPageLayout from '#lib/components/layouts/AdminPageLayout.svelte';
+  import { Route } from '#lib/route.ts';
+  import { FAILURES_PAGE_SIZE, JOB_HISTORY_RANGES, failureRate, historySeries } from '#lib/utils/job-history.ts';
   import { JobFailureCategory } from '@immich/sdk';
   import {
     Alert,

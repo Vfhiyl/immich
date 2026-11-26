@@ -1,9 +1,6 @@
+import { WorkflowTrigger } from '@immich/plugin-sdk';
 import { ShallowDehydrateObject } from 'kysely';
 import { Mocked } from 'vitest';
-import type { MemoryKillState } from 'src/utils/memory-kills.js';
-import type { BackoffLevel, ResourceSample } from 'src/utils/ml-backoff.js';
-import type { MachineLearningModelsState } from 'src/utils/ml-models.js';
-import type { SyncDeleteRetentionState } from 'src/utils/sync-retention.js';
 import { VECTOR_EXTENSIONS } from 'src/constants.js';
 import { AssetFile } from 'src/database.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
@@ -36,6 +33,10 @@ import {
   TranscodeTarget,
   UserMetadataKey,
 } from 'src/enum.js';
+import type { MemoryKillState } from 'src/utils/memory-kills.js';
+import type { BackoffLevel, ResourceSample } from 'src/utils/ml-backoff.js';
+import type { MachineLearningModelsState } from 'src/utils/ml-models.js';
+import type { SyncDeleteRetentionState } from 'src/utils/sync-retention.js';
 
 export type DeepPartial<T> = T extends Date
   ? T
@@ -47,19 +48,14 @@ export type DeepPartial<T> = T extends Date
 
 export type RepositoryInterface<T extends object> = Pick<T, keyof T>;
 
-export type FullsizeImageOptions = {
-  format: ImageFormat;
-  quality: number;
-  enabled: boolean;
-  progressive?: boolean;
-};
-
 export type ImageOptions = {
   format: ImageFormat;
   quality: number;
-  size: number;
   progressive?: boolean;
+  decodingTier: 0 | 1 | 2 | 3 | 4;
 };
+
+export type FullsizeImageOptions = ImageOptions & { enabled: boolean };
 
 export type RawImageInfo = {
   width: number;
@@ -71,7 +67,7 @@ export type Bitmap = {
   data: Buffer;
   info: RawImageInfo;
   /** The pixels are in this file (libvips' format, mapped into memory when read) rather than in `data`; it is removed
-   * by MediaRepository.releaseImage */
+  by MediaRepository.releaseImage */
   file?: string;
 };
 
@@ -99,9 +95,7 @@ export type ShrinkOptions = Pick<ImageColorOptions, 'colorspace'> & {
   edits?: AssetEditActionItem[];
 };
 
-export type GenerateThumbnailOptions = Pick<ImageOptions, 'format' | 'quality' | 'progressive'> &
-  ImageColorOptions &
-  TransformOptions;
+export type GenerateThumbnailOptions = ImageOptions & ImageColorOptions & TransformOptions;
 export type GenerateThumbhashOptions = ImageColorOptions & Pick<TransformOptions, 'edits'>;
 
 export interface VideoStreamInfo {
@@ -297,9 +291,9 @@ export interface IDeleteFilesJob extends IBaseJob {
   /** Local paths, for temporary files and files recorded before storage backends existed */
   files: Array<string | null | undefined>;
   /**
-   * Files on a storage backend. Files of the built-in backends are deleted right away; files on configured backends are
-   * registered to be deleted once their delay has passed
-   */
+  Files on a storage backend. Files of the built-in backends are deleted right away; files on configured backends are
+  registered to be deleted once their delay has passed
+  */
   locations?: Array<{ backendId: string; key: string }>;
   /** Delete files on configured backends right away, for files that were stored but never recorded */
   immediate?: boolean;
@@ -386,7 +380,6 @@ export interface JobCounts {
   failed: number;
   delayed: number;
   waiting: number;
-  paused: number;
 }
 
 export type JobItem =
@@ -471,6 +464,7 @@ export type JobItem =
 
   // Cleanup
   | { name: JobName.SessionCleanup; data?: IBaseJob }
+  | { name: JobName.AuthChallengeCleanup; data?: IBaseJob }
   | { name: JobName.HlsSessionCleanup; data?: IBaseJob }
 
   // Tags
@@ -506,7 +500,7 @@ export type JobItem =
   | { name: JobName.OcrRebuild; data: IModelRebuildJob }
 
   // Workflow
-  | { name: JobName.WorkflowAssetTrigger; data: { workflowId: string; assetId: string } }
+  | { name: JobName.WorkflowAssetTrigger; data: { workflowId: string; assetId: string; trigger: WorkflowTrigger } }
 
   // Integrity
   | { name: JobName.IntegrityUntrackedFilesQueueAll; data?: IIntegrityJob }

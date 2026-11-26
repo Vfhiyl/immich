@@ -45,9 +45,9 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 const missingKeyOf = (error: unknown) => /Master key ([0-9a-f]+) is not available/.exec(messageOf(error))?.[1];
 
 /**
- * Write a probe to a backend, read it back (decrypted, if the backend encrypts) and delete it with the credentials of
- * the cleanup; throws what went wrong
- */
+Write a probe to a backend, read it back (decrypted, if the backend encrypts) and delete it with the credentials of
+the cleanup; throws what went wrong
+*/
 export const probeStorageBackend = async (
   repository: StorageBackendRepository,
   backendId: string,
@@ -79,11 +79,11 @@ const firstFile = async (repository: StorageBackendRepository, backendId: string
 };
 
 /**
- * Check the storage of a server as it starts: the configuration file, the master keys, every backend (with a probe),
- * and what storage holds already (originals, database backups), which a new server finds when it replaces a lost
- * one. Configures `repository` as it goes. Every problem found is reported, rather than the first one thrown, so that
- * a deployer sees everything that is wrong at once.
- */
+Check the storage of a server as it starts: the configuration file, the master keys, every backend (with a probe),
+and what storage holds already (originals, database backups), which a new server finds when it replaces a lost
+one. Configures `repository` as it goes. Every problem found is reported, rather than the first one thrown, so that
+a deployer sees everything that is wrong at once.
+*/
 export const checkStorageSetup = async ({
   backendsFile,
   repository,

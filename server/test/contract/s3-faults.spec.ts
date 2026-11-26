@@ -13,9 +13,9 @@ import {
 import { S3Target, toClient } from 'test/contract/servers.js';
 
 /**
- * The S3 blob store must cope with every way the minimum common contract allows a service to behave. A proxy in front
- * of a real service injects those behaviors.
- */
+The S3 blob store must cope with every way the minimum common contract allows a service to behave. A proxy in front
+of a real service injects those behaviors.
+*/
 const sha1 = (value: Buffer) => createHash('sha1').update(value).digest();
 const toStream = (value: Buffer) => Readable.from([value]);
 

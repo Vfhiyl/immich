@@ -1,7 +1,7 @@
+import { authenticate } from '#lib/utils/auth.ts';
+import { getFormatter } from '#lib/utils/i18n.ts';
+import { FAILURES_PAGE_SIZE, sinceOf, toJobHistoryRange } from '#lib/utils/job-history.ts';
 import { getJobFailureLog, getJobHistory, type JobFailureCategory } from '@immich/sdk';
-import { authenticate } from '$lib/utils/auth';
-import { getFormatter } from '$lib/utils/i18n';
-import { FAILURES_PAGE_SIZE, sinceOf, toJobHistoryRange } from '$lib/utils/job-history';
 import type { PageLoad } from './$types';
 
 export const load = (async ({ url }) => {

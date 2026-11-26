@@ -223,9 +223,9 @@ export class LocalBlobStore implements BlobStore {
   }
 
   /**
-   * Remove what writes left behind that were cut off (e.g. the process was killed) before `before`: temporary files,
-   * and the parts of uploads that were neither completed nor dropped. Writes in progress are younger.
-   */
+  Remove what writes left behind that were cut off (e.g. the process was killed) before `before`: temporary files,
+  and the parts of uploads that were neither completed nor dropped. Writes in progress are younger.
+  */
   async sweepTemporaryFiles(before: Date, directory = this.root): Promise<number> {
     let entries;
     try {

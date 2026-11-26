@@ -1,8 +1,7 @@
 <script lang="ts">
-  import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
-  import MasterKeyBackup from '$lib/components/storage/MasterKeyBackup.svelte';
-  import { Route } from '$lib/route';
-  import StorageExportSection from './StorageExportSection.svelte';
+  import AdminPageLayout from '#lib/components/layouts/AdminPageLayout.svelte';
+  import MasterKeyBackup from '#lib/components/storage/MasterKeyBackup.svelte';
+  import { Route } from '#lib/route.ts';
   import {
     formatAge,
     handleFetchStoredDatabaseBackup,
@@ -10,9 +9,9 @@
     handleRetryReplicaCopies,
     handleStartStorageCheck,
     toPercent,
-  } from '$lib/services/storage.service';
-  import { getByteUnitString } from '$lib/utils/byte-units';
-  import { getStorageDeletionStatus, getStorageReplicas, StorageCheckKind, type StorageCheckRunDto } from '@immich/sdk';
+  } from '#lib/services/storage.service.ts';
+  import { getByteUnitString } from '#lib/utils/byte-units.ts';
+  import { StorageCheckKind, getStorageDeletionStatus, getStorageReplicas, type StorageCheckRunDto } from '@immich/sdk';
   import {
     Alert,
     Button,
@@ -29,6 +28,7 @@
   } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
+  import StorageExportSection from './StorageExportSection.svelte';
 
   type Props = {
     data: PageData;

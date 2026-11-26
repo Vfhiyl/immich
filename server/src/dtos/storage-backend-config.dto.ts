@@ -69,9 +69,9 @@ const S3BackendSchema = z
     addressing: z.enum(['virtual-host', 'path']).default('virtual-host'),
     credentials: S3CredentialsSchema,
     /**
-     * Credentials that may delete objects, used only by the cleanup of deleted files; `credentials` then need no delete
-     * permission, so that nothing else can delete objects
-     */
+    Credentials that may delete objects, used only by the cleanup of deleted files; `credentials` then need no delete
+    permission, so that nothing else can delete objects
+    */
     deletionCredentials: S3CredentialsSchema.optional(),
     /** Whether new files are encrypted, by default yes, since the files leave the server */
     encrypted: z.boolean().default(true),
@@ -135,10 +135,10 @@ const EncryptionConfigSchema = z
     /** Base64 encoded 256-bit master keys, one per line; the first one encrypts new files */
     masterKeyFile: absolutePath.optional(),
     /**
-     * A command that prints what a master key file holds, run when Immich starts: so that the keys can come from a key
-     * management service or a secret store (e.g. decrypted with its command line tool) and are never written to disk.
-     * The program, by its absolute path, and its arguments; no shell.
-     */
+    A command that prints what a master key file holds, run when Immich starts: so that the keys can come from a key
+    management service or a secret store (e.g. decrypted with its command line tool) and are never written to disk.
+    The program, by its absolute path, and its arguments; no shell.
+    */
     masterKeyCommand: z.array(z.string().min(1)).min(1).optional(),
   })
   .strict()
@@ -162,9 +162,9 @@ export const MIN_DELETION_DELAY_DAYS = 30;
 const DeletionConfigSchema = z
   .object({
     /**
-     * How long deleted originals stay on their backend before they are deleted, so that they can be recovered. A longer
-     * delay applies to originals deleted before too; a shorter one only to originals deleted after the change.
-     */
+    How long deleted originals stay on their backend before they are deleted, so that they can be recovered. A longer
+    delay applies to originals deleted before too; a shorter one only to originals deleted after the change.
+    */
     delayDays: z.int().min(MIN_DELETION_DELAY_DAYS).default(360),
   })
   .strict();
@@ -172,9 +172,9 @@ const DeletionConfigSchema = z
 const DatabaseBackupsConfigSchema = z
   .object({
     /**
-     * How many database backups the backend for backups keeps: a backup is deleted once this many newer ones exist. A
-     * larger number applies to backups taken before too; a smaller one only to backups taken after the change.
-     */
+    How many database backups the backend for backups keeps: a backup is deleted once this many newer ones exist. A
+    larger number applies to backups taken before too; a smaller one only to backups taken after the change.
+    */
     keepLast: z.int().min(1).default(14),
   })
   .strict();

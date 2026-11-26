@@ -140,10 +140,10 @@ export class UserAdminService extends BaseService {
   }
 
   /**
-   * A one-time code to sign a user's phone in, shown as a QR code that the mobile app scans: it holds the server (the
-   * external domain of the settings) and a code that is valid for a few minutes, once. The phone gets a session of its
-   * own; the user's password is not in it.
-   */
+  A one-time code to sign a user's phone in, shown as a QR code that the mobile app scans: it holds the server (the
+  external domain of the settings) and a code that is valid for a few minutes, once. The phone gets a session of its
+  own; the user's password is not in it.
+  */
   async createLoginCode(auth: AuthDto, id: string): Promise<LoginCodeResponseDto> {
     const user = await this.findOrFail(id, { withDeleted: false });
     const { server } = await this.getConfig({ withCache: false });

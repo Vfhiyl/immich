@@ -40,9 +40,9 @@ void main() {
       await db.customStatement('''
         WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < $remoteCount - 1)
         INSERT INTO remote_asset_entity (id, name, type, created_at, updated_at, checksum, owner_id, visibility,
-          local_date_time, is_favorite, is_edited)
+          local_date_time, group_date, is_favorite, is_edited)
         SELECT printf('remote-%08d', i), 'IMG_' || i || '.jpg', 1, $time, $time, 'checksum-' || i, 'user-' || (i % 10),
-          0, $time, 0, 0
+          0, $time, substr($time, 1, 10), 0, 0
         FROM n''');
       for (var i = 0; i < 30; i++) {
         await db.customStatement(
@@ -54,10 +54,11 @@ void main() {
       await db.customStatement('''
         WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < $localCount - 1)
         INSERT INTO local_asset_entity (id, name, type, created_at, updated_at, checksum, is_favorite, orientation,
-          playback_style)
+          playback_style, group_date)
         SELECT printf('local-%08d', i), 'LOCAL_' || i || '.jpg', 1,
           strftime('%Y-%m-%dT%H:%M:%S.000Z', 1700000000 - i * 300, 'unixepoch'), '2024-01-01T00:00:00.000Z',
-          CASE WHEN i % 2 = 0 THEN 'checksum-' || i ELSE 'local-checksum-' || i END, 0, 0, 0
+          CASE WHEN i % 2 = 0 THEN 'checksum-' || i ELSE 'local-checksum-' || i END, 0, 0, 0,
+          strftime('%Y-%m-%d', 1700000000 - i * 300, 'unixepoch', 'localtime')
         FROM n''');
       await db.customStatement(
         "INSERT INTO local_album_asset_entity (asset_id, album_id, marker) SELECT id, 'album-0', 0 FROM local_asset_entity",

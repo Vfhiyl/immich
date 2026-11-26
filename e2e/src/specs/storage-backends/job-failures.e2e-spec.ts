@@ -30,12 +30,16 @@ describe('files that jobs fail on', () => {
   };
   // a queue that runs takes no command to start
   const queueMissingThumbnails = async () => {
-    await eventually(async () => {
-      const { body } = await api.json<{ statistics: { active: number; waiting: number } }>(
-        '/queues/thumbnailGeneration',
-      );
-      expect(body.statistics).toMatchObject({ active: 0, waiting: 0 });
-    });
+    await eventually(
+      async () => {
+        const { body } = await api.json<{ statistics: { active: number; waiting: number } }>(
+          '/queues/thumbnailGeneration',
+        );
+        expect(body.statistics).toMatchObject({ active: 0, waiting: 0 });
+        // (a job that waits for memory is active meanwhile, as it is on a machine busy with other tests)
+      },
+      { timeout: 120_000 },
+    );
     const { status } = await api.json('/jobs/thumbnailGeneration', {
       method: 'PUT',
       body: { command: 'start', force: false },
@@ -104,5 +108,5 @@ describe('files that jobs fail on', () => {
     await eventually(async () => expect(await attempts()).toBe(1));
     const { body: after } = await api.json<Failures>('/admin/job-failures');
     expect(after.jobs).toEqual([]);
-  });
+  }, 300_000);
 });

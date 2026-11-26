@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { THUMBNAIL_DECODING_TIER } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { StorageBackendRole, StorageFolder } from 'src/enum.js';
@@ -44,6 +45,7 @@ export const generateProfileImage = async (
       progressive: image.thumbnail.progressive,
       size: image.thumbnail.size,
       processInvalidImages: false,
+      decodingTier: THUMBNAIL_DECODING_TIER,
     },
     output.path,
   );

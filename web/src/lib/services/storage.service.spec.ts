@@ -1,12 +1,12 @@
-import { purgeDeletedOriginal, retryStorageReplicaCopies } from '@immich/sdk';
-import { DateTime, Settings } from 'luxon';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   formatAge,
   handlePurgeDeletedOriginal,
   handleRetryReplicaCopies,
   toPercent,
-} from '$lib/services/storage.service';
+} from '#lib/services/storage.service.ts';
+import { purgeDeletedOriginal, retryStorageReplicaCopies } from '@immich/sdk';
+import { DateTime, Settings } from 'luxon';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@immich/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@immich/sdk')>()),
@@ -14,7 +14,7 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
   retryStorageReplicaCopies: vi.fn(),
 }));
 
-vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
+vi.mock('#lib/utils/handle-error.ts', () => ({ handleError: vi.fn() }));
 
 describe('storage service', () => {
   beforeEach(() => {

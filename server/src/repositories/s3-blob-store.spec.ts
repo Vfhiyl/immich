@@ -3,9 +3,9 @@ import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import type { StorageRequest } from 'src/utils/storage-metering.js';
 import { BlobUploadNotFoundError } from 'src/repositories/blob-store.js';
 import { S3BackendOptions, S3BlobStore, createS3Client, meterS3Client } from 'src/repositories/s3-blob-store.js';
+import type { StorageRequest } from 'src/utils/storage-metering.js';
 
 // how the client talks to a service is checked here; how the store behaves against services is checked by the
 // contract tests in test/contract

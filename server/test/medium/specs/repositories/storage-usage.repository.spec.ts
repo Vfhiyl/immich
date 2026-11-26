@@ -10,6 +10,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getTestKyselyDB } from 'test/utils.js';
 
+// eslint-disable-next-line unicorn/no-unnecessary-parameters
 const usage = (day: string, requests: number, purpose = 'api') => ({
   day,
   backendId: 'originals',

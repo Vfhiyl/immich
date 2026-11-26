@@ -1,4 +1,4 @@
-import { Column, type Int8, PrimaryColumn, Table } from '@immich/sql-tools';
+import { Column, PrimaryColumn, Table, type Int8 } from '@immich/sql-tools';
 import { StorageUsageCategory } from 'src/enum.js';
 
 /** Requests to the storage service of a backend, per UTC day, operation and purpose (the job, or `api`) */

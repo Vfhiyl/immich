@@ -1,5 +1,5 @@
 <script lang="ts">
-  import MasterKeyBackup from '$lib/components/storage/MasterKeyBackup.svelte';
+  import MasterKeyBackup from '#lib/components/storage/MasterKeyBackup.svelte';
   import { getStorageConfiguration } from '@immich/sdk';
   import { t } from 'svelte-i18n';
 </script>

@@ -2,11 +2,11 @@ import {
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
-  type Generated,
   Index,
   Int8,
   Table,
   Timestamp,
+  type Generated,
 } from '@immich/sql-tools';
 import { BuiltinStorageBackend } from 'src/enum.js';
 import { StorageBackendTable } from 'src/schema/tables/storage-backend.table.js';

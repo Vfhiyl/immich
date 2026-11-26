@@ -18,9 +18,9 @@ export enum BackoffLevel {
 }
 
 /**
- * When the jobs give way: the share of the memory limit in use, and the share of time tasks waited for memory over
- * the last 10 seconds (PSI, in percent; `some`: at least one task, `full`: all of them). Engineering values, fixed here
- */
+When the jobs give way: the share of the memory limit in use, and the share of time tasks waited for memory over
+the last 10 seconds (PSI, in percent; `some`: at least one task, `full`: all of them). Engineering values, fixed here
+*/
 export const BACKOFF_THRESHOLDS = {
   pause: { memory: 0.95, full: 5 },
   reduce: { memory: 0.85, some: 10 },
@@ -57,10 +57,10 @@ export const assessSample = ({ memory, pressure }: ResourceSample): BackoffLevel
 };
 
 /**
- * The next state after a sample: the jobs give way at once, and come back one step at a time after enough calm
- * checks in a row (so that they do not swing back and forth at a threshold). Without a sample (the service did not
- * answer) nothing changes.
- */
+The next state after a sample: the jobs give way at once, and come back one step at a time after enough calm
+checks in a row (so that they do not swing back and forth at a threshold). Without a sample (the service did not
+answer) nothing changes.
+*/
 export const nextBackoff = (state: BackoffState, sample: ResourceSample | null): BackoffState => {
   if (!sample) {
     return state;
@@ -80,11 +80,11 @@ export const nextBackoff = (state: BackoffState, sample: ResourceSample | null):
 };
 
 /**
- * With too little memory for all of its models, the machine learning service unloads one to load another: the server
- * then runs one task of machine learning at a time (smart search, faces, text recognition), each for WINDOW_MS while
- * it has jobs, so that a model is loaded once for many photos rather than once for each. It does so until the service
- * unloaded none for WINDOW_CALM_MS
- */
+With too little memory for all of its models, the machine learning service unloads one to load another: the server
+then runs one task of machine learning at a time (smart search, faces, text recognition), each for WINDOW_MS while
+it has jobs, so that a model is loaded once for many photos rather than once for each. It does so until the service
+unloaded none for WINDOW_CALM_MS
+*/
 export const WINDOW_MS = 2 * 60 * 1000;
 export const WINDOW_CALM_MS = 10 * 60 * 1000;
 

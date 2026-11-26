@@ -3,10 +3,10 @@ import { buffer } from 'node:stream/consumers';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 /**
- * An HTTP proxy in front of an S3 service that misbehaves on request, in the ways the minimum common contract says
- * any service may: throttling, truncated or ignored reads, errors in successful responses, expired uploads, slow
- * responses and objects that are not readable yet after they were written.
- */
+An HTTP proxy in front of an S3 service that misbehaves on request, in the ways the minimum common contract says
+any service may: throttling, truncated or ignored reads, errors in successful responses, expired uploads, slow
+responses and objects that are not readable yet after they were written.
+*/
 export type Fault =
   /** answer with an S3 error instead of forwarding */
   | { kind: 'error'; status: number; code: string }

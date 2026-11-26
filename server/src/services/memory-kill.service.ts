@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
 import { mapNotification } from 'src/dtos/notification.dto.js';
 import { ImmichWorker, NotificationLevel, NotificationType, SystemMetadataKey } from 'src/enum.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
   MEMORY_KILL_NOTIFY_EVERY_MS,
@@ -19,10 +19,10 @@ import { WORKER_LAST_EXIT_ENV } from 'src/utils/worker-restart.js';
 const CHECK_MS = 60 * 1000;
 
 /**
- * Notices when the background work runs out of memory, and tells the admin (the resources on the welcome and jobs
- * pages, and a notification at most once a day): the background worker killed (SIGKILL, as the kernel's OOM killer
- * does), a program of a job killed, or the kernel counting more processes killed for memory
- */
+Notices when the background work runs out of memory, and tells the admin (the resources on the welcome and jobs
+pages, and a notification at most once a day): the background worker killed (SIGKILL, as the kernel's OOM killer
+does), a program of a job killed, or the kernel counting more processes killed for memory
+*/
 @Injectable()
 export class MemoryKillService extends BaseService {
   private interval?: ReturnType<typeof setInterval>;

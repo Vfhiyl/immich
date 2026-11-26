@@ -1,7 +1,7 @@
+import { authenticate } from '#lib/utils/auth.ts';
+import { getFormatter } from '#lib/utils/i18n.ts';
+import { rangeOf, toUsageRange } from '#lib/utils/storage-usage.ts';
 import { getStorageUsage } from '@immich/sdk';
-import { authenticate } from '$lib/utils/auth';
-import { getFormatter } from '$lib/utils/i18n';
-import { rangeOf, toUsageRange } from '$lib/utils/storage-usage';
 import type { PageLoad } from './$types';
 
 export const load = (async ({ url }) => {

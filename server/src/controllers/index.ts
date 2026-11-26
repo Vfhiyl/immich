@@ -28,6 +28,7 @@ import { NotificationAdminController } from 'src/controllers/notification-admin.
 import { NotificationController } from 'src/controllers/notification.controller.js';
 import { OAuthController } from 'src/controllers/oauth.controller.js';
 import { PartnerController } from 'src/controllers/partner.controller.js';
+import { PasskeyController } from 'src/controllers/passkey.controller.js';
 import { PersonController } from 'src/controllers/person.controller.js';
 import { PluginController } from 'src/controllers/plugin.controller.js';
 import { QueueController } from 'src/controllers/queue.controller.js';
@@ -85,6 +86,7 @@ export const controllers = [
   NotificationAdminController,
   OAuthController,
   PartnerController,
+  PasskeyController,
   PersonController,
   PluginController,
   QueueController,

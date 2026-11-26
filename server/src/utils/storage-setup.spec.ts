@@ -17,6 +17,7 @@ describe(checkStorageSetup.name, () => {
   let key: string;
 
   const keyFile = () => join(folder, 'master.key');
+  // eslint-disable-next-line unicorn/no-unnecessary-parameters
   const writeConfig = async (backends: object[], extra: object = {}) => {
     const path = join(folder, 'storage.json');
     await fs.writeFile(path, JSON.stringify({ backends, encryption: { masterKeyFile: keyFile() }, ...extra }));

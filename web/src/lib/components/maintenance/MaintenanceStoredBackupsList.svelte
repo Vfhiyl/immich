@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { handleRestoreDatabaseBackup } from '$lib/services/database-backups.service';
-  import { getByteUnitString } from '$lib/utils/byte-units';
-  import { handleError } from '$lib/utils/handle-error';
+  import { handleRestoreDatabaseBackup } from '#lib/services/database-backups.service.ts';
+  import { getByteUnitString } from '#lib/utils/byte-units.ts';
+  import { handleError } from '#lib/utils/handle-error.ts';
   import {
     fetchMaintenanceStoredDatabaseBackup,
     getMaintenanceStoredDatabaseBackups,

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import { ChokidarOptions, watch as chokidarWatch } from 'chokidar';
 import fastGlob from 'fast-glob';
 import {
@@ -129,7 +129,7 @@ export class StorageRepository {
   }
 
   createZipStream(): ImmichZipStream {
-    const archive = archiver('zip', { store: true });
+    const archive = new ZipArchive({ store: true });
 
     const addFile = (input: string, filename: string) => {
       archive.file(input, { name: filename, mode: 0o644 });
@@ -277,6 +277,7 @@ export class StorageRepository {
       absolute: true,
       caseSensitiveMatch: false,
       onlyFiles: true,
+      followSymbolicLinks: false,
       dot: includeHidden,
       ignore: exclusionPatterns,
     });
@@ -296,6 +297,7 @@ export class StorageRepository {
       absolute: true,
       caseSensitiveMatch: false,
       onlyFiles: true,
+      followSymbolicLinks: false,
       dot: includeHidden,
       ignore: exclusionPatterns,
     });
@@ -324,7 +326,12 @@ export class StorageRepository {
       strictSlashes: false,
     });
 
-    const watcher = chokidarWatch(paths, { ...options, ignored: (path) => matchesIgnoredPath(path) });
+    const watcher = chokidarWatch(paths, {
+      ...options,
+      followSymlinks: false,
+      // Chokidar still emits events for symlinks when followSymlinks is false.
+      ignored: (path, stats) => !!stats?.isSymbolicLink() || matchesIgnoredPath(path),
+    });
 
     watcher.on('ready', () => events.onReady?.());
     watcher.on('add', (path) => events.onAdd?.(path));

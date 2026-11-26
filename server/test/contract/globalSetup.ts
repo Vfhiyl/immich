@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { AzureTarget, S3Target, startAzurite, startSeaweedfs, startVersitygw } from 'test/contract/servers.js';
 
 /**
- * A real S3 service to run the contract tests against as well, e.g. the bucket a deployment will use, from a JSON file
- * named by IMMICH_CONTRACT_REAL_S3: name, endpoint, region, bucket, addressing, accessKeyId and secretAccessKeyFile.
- * The tests write below a prefix of their own and remove what they wrote. Not run unless asked for.
- */
+A real S3 service to run the contract tests against as well, e.g. the bucket a deployment will use, from a JSON file
+named by IMMICH_CONTRACT_REAL_S3: name, endpoint, region, bucket, addressing, accessKeyId and secretAccessKeyFile.
+The tests write below a prefix of their own and remove what they wrote. Not run unless asked for.
+*/
 const readRealS3Target = async (): Promise<S3Target | undefined> => {
   const path = process.env.IMMICH_CONTRACT_REAL_S3;
   if (!path) {
@@ -20,7 +20,7 @@ const readRealS3Target = async (): Promise<S3Target | undefined> => {
 };
 
 /** The same for a container of Azure Blob Storage, named by IMMICH_CONTRACT_REAL_AZURE: name, endpoint, container,
- * accountName and accountKeyFile */
+accountName and accountKeyFile */
 const readRealAzureTarget = async (): Promise<AzureTarget | undefined> => {
   const path = process.env.IMMICH_CONTRACT_REAL_AZURE;
   if (!path) {
@@ -32,9 +32,9 @@ const readRealAzureTarget = async (): Promise<AzureTarget | undefined> => {
 };
 
 /**
- * Start the services that blob store contract tests run against; tests find them in CONTRACT_S3_TARGETS and
- * CONTRACT_AZURE_TARGETS. With IMMICH_CONTRACT_REAL_ONLY, only the real services asked for.
- */
+Start the services that blob store contract tests run against; tests find them in CONTRACT_S3_TARGETS and
+CONTRACT_AZURE_TARGETS. With IMMICH_CONTRACT_REAL_ONLY, only the real services asked for.
+*/
 export default async function setup() {
   const root = await mkdtemp(join(tmpdir(), 'immich-contract-'));
   const realS3 = await readRealS3Target();

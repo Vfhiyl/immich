@@ -325,7 +325,7 @@ describe(MachineLearningModelRepository.name, () => {
       });
       await ocr.update(assetId, [], [line('kept'), line('gone')], 'kept gone');
       const [kept, gone] = await ocr.getByAssetId(assetId, {});
-      await ocr.updateOcrVisibilities(assetId, [], [kept]);
+      await ocr.updateOcrVisibilities(assetId, [], [kept], 'gone');
 
       await ocr.update(assetId, [gone.id], [line('new')], 'kept new');
 

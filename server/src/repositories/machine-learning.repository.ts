@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Duration } from 'luxon';
 import { readFile } from 'node:fs/promises';
-import type { ResourceSample } from 'src/utils/ml-backoff.js';
-import type { ReportedModel } from 'src/utils/ml-models.js';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningUnavailableError } from 'src/utils/job-retry.js';
+import type { ResourceSample } from 'src/utils/ml-backoff.js';
+import type { ReportedModel } from 'src/utils/ml-models.js';
 
 export interface BoundingBox {
   x1: number;
@@ -80,9 +80,9 @@ export interface Face {
 
 export type FacialRecognitionResponse = { [ModelTask.FACIAL_RECOGNITION]: Face[] } & VisualResponse;
 /**
- * The model of a task that made an answer: the files of all its models (detection and recognition) in one
- * fingerprint, none when the service does not tell them (upstream's)
- */
+The model of a task that made an answer: the files of all its models (detection and recognition) in one
+fingerprint, none when the service does not tell them (upstream's)
+*/
 export const getReportedModel = (response: ModelsResponse, task: ModelTask, name: string): ReportedModel => {
   const models = Object.entries(response.models?.[task] ?? {}).toSorted(([a], [b]) => a.localeCompare(b));
   if (models.length === 0 || models.some(([, model]) => !model?.fingerprint)) {

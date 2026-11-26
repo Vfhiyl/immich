@@ -1,9 +1,8 @@
 import { getQueueToken } from '@nestjs/bullmq';
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
-import { DelayedError, Job, JobsOptions, Queue, Worker } from 'bullmq';
+import { DelayedError, Job, JobType, JobsOptions, Queue, Worker } from 'bullmq';
 import { setTimeout } from 'node:timers/promises';
-import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { serverVersion } from 'src/constants.js';
 import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
@@ -13,6 +12,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobBacklogRepository } from 'src/repositories/job-backlog.repository.js';
 import { JobFailureRepository } from 'src/repositories/job-failure.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { getTrackedAssetId } from 'src/utils/job-failure.js';
 import { JobRetryLater, withJobRetryData } from 'src/utils/job-retry.js';
 import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
@@ -28,10 +28,10 @@ type JobMapItem = {
 const WORKER_WATCH_INTERVAL_MS = 30_000;
 
 /**
- * How many jobs a queue keeps waiting in redis. The rest of a large batch (a job for every asset of the library, say)
- * waits in the database (`job_backlog`), and comes into the queue as it runs low: redis holds a window of each queue
- * instead of the whole library, in memory
- */
+How many jobs a queue keeps waiting in redis. The rest of a large batch (a job for every asset of the library, say)
+waits in the database (`job_backlog`), and comes into the queue as it runs low: redis holds a window of each queue
+instead of the whole library, in memory
+*/
 export const JOB_WINDOW = 200;
 
 /** How often the queues are filled up from the backlog, besides as their jobs end */
@@ -133,10 +133,10 @@ export class JobRepository {
   }
 
   /**
-   * Runs a job; one put back for later (JobRetryLater) is moved to the delayed jobs of its queue, with what it keeps
-   * for when it runs again, so that the next job takes its place meanwhile (BullMQ's "process step jobs": the job's
-   * attempts are not counted)
-   */
+  Runs a job; one put back for later (JobRetryLater) is moved to the delayed jobs of its queue, with what it keeps
+  for when it runs again, so that the next job takes its place meanwhile (BullMQ's "process step jobs": the job's
+  attempts are not counted)
+  */
   private async process(queueName: QueueName, job: Job, token?: string) {
     try {
       return await this.eventRepository.emit('JobRun', queueName, job as JobItem);
@@ -215,9 +215,9 @@ export class JobRepository {
   }
 
   /**
-   * Stops this process taking jobs of a queue (the queue itself, and other processes, go on), for a `reason`: it takes
-   * them again once no reason is left (see resumeWorker)
-   */
+  Stops this process taking jobs of a queue (the queue itself, and other processes, go on), for a `reason`: it takes
+  them again once no reason is left (see resumeWorker)
+  */
   async pauseWorker(queueName: QueueName, reason = 'backoff') {
     const reasons = this.pauseReasons[queueName] ?? new Set<string>();
     reasons.add(reason);
@@ -237,7 +237,7 @@ export class JobRepository {
     }
     const worker = this.workers[queueName];
     if (worker?.isPaused()) {
-      worker.resume();
+      void worker.resume();
     }
   }
 
@@ -276,7 +276,6 @@ export class JobRepository {
       'failed',
       'delayed',
       'waiting',
-      'paused',
       'prioritized',
     );
     // jobs with a priority (those of a rebuild of a model) wait in a list of their own, and the rest of a large batch
@@ -338,12 +337,8 @@ export class JobRepository {
 
   /** The jobs of a queue waiting in redis */
   private async getWaiting(queueName: QueueName) {
-    const {
-      waiting = 0,
-      prioritized = 0,
-      paused = 0,
-    } = await this.getQueue(queueName).getJobCounts('waiting', 'prioritized', 'paused');
-    return waiting + prioritized + paused;
+    const { waiting = 0, prioritized = 0 } = await this.getQueue(queueName).getJobCounts('waiting', 'prioritized');
+    return waiting + prioritized;
   }
 
   /** Fills a queue up from the backlog once it has less than half a window waiting; returns how many came */
@@ -431,7 +426,12 @@ export class JobRepository {
   }
 
   async searchJobs(name: QueueName, dto: QueueJobSearchDto): Promise<QueueJobResponseDto[]> {
-    const jobs = await this.getQueue(name).getJobs(dto.status ?? Object.values(QueueJobStatus), 0, 1000);
+    const items = new Set<QueueJobStatus>(dto.status ?? Object.values(QueueJobStatus));
+    if (items.delete(QueueJobStatus.Paused)) {
+      items.add(QueueJobStatus.Waiting);
+    }
+
+    const jobs = await this.getQueue(name).getJobs([...items] as JobType[], 0, 1000);
     return jobs.map((job) => {
       const { id, name, timestamp, data } = job;
       return { id, name: name as JobName, timestamp, data };

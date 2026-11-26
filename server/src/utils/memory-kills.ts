@@ -41,9 +41,9 @@ export const countMemoryKills = (state: MemoryKillState | null, now: Date, days 
   (state?.kills ?? []).filter((kill) => now.getTime() - Date.parse(kill.at) < days * DAY).length;
 
 /**
- * Whether a job failed because a program it ran was killed (SIGKILL) by something else than this server: as the
- * kernel does when memory runs out. (A program the server stops as stuck fails with "made no progress")
- */
+Whether a job failed because a program it ran was killed (SIGKILL) by something else than this server: as the
+kernel does when memory runs out. (A program the server stops as stuck fails with "made no progress")
+*/
 export const isKilledProgram = (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   return /\bSIGKILL\b/.test(message) && !message.includes('made no progress');

@@ -62,6 +62,7 @@ const setup = ({ waiting = 0, backlog = [] as BacklogJob[], events = {} as Event
   return { sut, queueOf, jobBacklog };
 };
 
+// eslint-disable-next-line unicorn/no-unnecessary-parameters
 const thumbnails = (count: number) =>
   Array.from({ length: count }, (_, index) => ({
     name: JobName.AssetGenerateThumbnails,

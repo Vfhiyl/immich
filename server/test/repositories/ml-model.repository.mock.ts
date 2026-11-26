@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { Mocked, vitest } from 'vitest';
-import type { RepositoryInterface } from 'src/types.js';
 import { MachineLearningModelRepository } from 'src/repositories/ml-model.repository.js';
+import type { RepositoryInterface } from 'src/types.js';
 
 type Model = Awaited<ReturnType<MachineLearningModelRepository['create']>>;
 
 /**
- * Keeps the models and the results of photos in memory, so that services record and find them as with a database;
- * nothing is rebuilt (no photos to select) unless a test says so
- */
+Keeps the models and the results of photos in memory, so that services record and find them as with a database;
+nothing is rebuilt (no photos to select) unless a test says so
+*/
 export const newMachineLearningModelRepositoryMock = (): Mocked<
   RepositoryInterface<MachineLearningModelRepository>
 > => {

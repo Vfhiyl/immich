@@ -1,10 +1,12 @@
+import { YuccaService } from '@futo-org/backups-orchestrator-api';
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { parse } from 'cookie';
+import { ModuleRef } from '@nestjs/core';
+import { parseCookie } from 'cookie';
 import { NextFunction, Request, Response } from 'express';
 import { jwtVerify } from 'jose';
 import { readFileSync } from 'node:fs';
 import { IncomingHttpHeaders } from 'node:http';
-import type { MaintenanceModeState } from 'src/types.js';
+import { basename } from 'node:path';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
@@ -32,15 +34,15 @@ import { type BaseService as _BaseService } from 'src/services/base.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { type ServerService as _ServerService } from 'src/services/server.service.js';
 import { type VersionService as _VersionService } from 'src/services/version.service.js';
+import type { MaintenanceModeState } from 'src/types.js';
 import { getConfig } from 'src/utils/config.js';
 import { createMaintenanceLoginUrl, detectPriorInstall } from 'src/utils/maintenance.js';
 import { getExternalDomain } from 'src/utils/misc.js';
 import { checkStorageSetup } from 'src/utils/storage-setup.js';
+import { detectMediaLocation } from 'src/utils/storage.js';
 import { fetchStoredDatabaseBackup, listStoredDatabaseBackups } from 'src/utils/stored-database-backups.js';
 
-/**
- * This service is available inside of maintenance mode to manage maintenance mode
- */
+/** This service is available inside of maintenance mode to manage maintenance mode */
 @Injectable()
 export class MaintenanceWorkerService {
   #secret: string | null = null;
@@ -62,6 +64,7 @@ export class MaintenanceWorkerService {
     private databaseBackupService: DatabaseBackupService,
     private userRepository: UserRepository,
     private storageBackendRepository: StorageBackendRepository,
+    private moduleRef: ModuleRef,
   ) {
     this.logger.setContext(this.constructor.name);
   }
@@ -89,14 +92,19 @@ export class MaintenanceWorkerService {
 
     await this.logSecret();
 
+    this.moduleRef.get(YuccaService, { strict: false }).setDatabaseHooks({
+      tagName: 'yucca.v1.immichBackupFileName',
+      dump: (signal) => this.databaseBackupService.createDatabaseBackup('', signal),
+      cleanup: () => this.databaseBackupService.cleanupDatabaseBackups(),
+      restore: (fileName) => this.databaseBackupService.restoreDatabaseBackup(basename(fileName)),
+    });
+
     if (state.action) {
       void this.runAction(state.action);
     }
   }
 
-  /**
-   * {@link _BaseService.configRepos}
-   */
+  /** {@link _BaseService.configRepos} */
   private get configRepos() {
     return {
       configRepo: this.configRepository,
@@ -105,25 +113,19 @@ export class MaintenanceWorkerService {
     };
   }
 
-  /**
-   * {@link _BaseService.prototype.getConfig}
-   */
+  /** {@link _BaseService.prototype.getConfig} */
   private getConfig(options: { withCache: boolean }) {
     return getConfig(this.configRepos, options);
   }
 
-  /**
-   * {@link _ServerService.getSystemConfig}
-   */
+  /** {@link _ServerService.getSystemConfig} */
   getSystemConfig() {
     return {
       maintenanceMode: true,
     } as ServerConfigDto;
   }
 
-  /**
-   * {@link _VersionService.getVersion}
-   */
+  /** {@link _VersionService.getVersion} */
   getVersion() {
     return ServerVersionResponseDto.fromSemVer(serverVersion);
   }
@@ -132,9 +134,7 @@ export class MaintenanceWorkerService {
     return { res: 'pong' };
   }
 
-  /**
-   * {@link _ApiService.ssr}
-   */
+  /** {@link _ApiService.ssr} */
   ssr(excludePaths: string[]) {
     const { resourcePaths } = this.configRepository.getEnv();
 
@@ -165,30 +165,9 @@ export class MaintenanceWorkerService {
     };
   }
 
-  /**
-   * {@link _StorageService.detectMediaLocation}
-   */
   detectMediaLocation(): string {
     const envData = this.configRepository.getEnv();
-    if (envData.storage.mediaLocation) {
-      return envData.storage.mediaLocation;
-    }
-
-    const targets: string[] = [];
-    const candidates = ['/data', '/usr/src/app/upload'];
-
-    for (const candidate of candidates) {
-      const isExists = this.storageRepository.existsSync(candidate);
-      if (isExists) {
-        targets.push(candidate);
-      }
-    }
-
-    if (targets.length === 1) {
-      return targets[0];
-    }
-
-    return '/usr/src/app/upload';
+    return detectMediaLocation(envData.storage.mediaLocation, (path) => this.storageRepository.existsSync(path));
   }
 
   private get secret() {
@@ -247,7 +226,7 @@ export class MaintenanceWorkerService {
   }
 
   async authenticate(headers: IncomingHttpHeaders): Promise<MaintenanceAuthDto> {
-    const jwtToken = parse(headers.cookie || '')[ImmichCookie.MaintenanceToken];
+    const jwtToken = parseCookie(headers.cookie || '')[ImmichCookie.MaintenanceToken];
     return this.login(jwtToken);
   }
 
@@ -265,9 +244,9 @@ export class MaintenanceWorkerService {
   }
 
   /**
-   * Check the storage configuration and the storage: anyone may see it on a new server (as anyone may start setting it
-   * up, or restore it), only who is logged into maintenance mode once an administrator exists
-   */
+  Check the storage configuration and the storage: anyone may see it on a new server (as anyone may start setting it
+  up, or restore it), only who is logged into maintenance mode once an administrator exists
+  */
   async getStorageSetup(headers: IncomingHttpHeaders, { probe = true } = {}): Promise<StorageSetupResponseDto> {
     if (await this.userRepository.hasAdmin()) {
       await this.authenticate(headers);
@@ -348,6 +327,9 @@ export class MaintenanceWorkerService {
       case MaintenanceAction.RestoreDatabase: {
         return this.runRestoreDatabase(action);
       }
+      case MaintenanceAction.Rollback: {
+        return this.runRollback(action);
+      }
     }
   }
 
@@ -404,6 +386,67 @@ export class MaintenanceWorkerService {
     await this.setAction({
       action: MaintenanceAction.End,
     });
+  }
+
+  private async runRollback(action: SetMaintenanceModeDto) {
+    const isLock = await this.databaseRepository.tryLock(DatabaseLock.MaintenanceOperation);
+    if (!isLock) {
+      return;
+    }
+
+    this.logger.log(`Running maintenance action ${action.action}`);
+
+    await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, {
+      isMaintenanceMode: true,
+      secret: this.secret,
+      action: {
+        action: MaintenanceAction.Start,
+      },
+    });
+
+    try {
+      if (!action.rollbackRepositoryId || !action.rollbackSnapshotId) {
+        throw new Error("Expected rollbackRepositoryId and rollbackSnapshotId but they're missing!");
+      }
+
+      await this.rollback(action.rollbackRepositoryId, action.rollbackSnapshotId);
+    } catch (error) {
+      this.logger.error(`Encountered error running action: ${error}`);
+      this.setStatus({
+        active: true,
+        action: action.action,
+        task: 'error',
+        error: String(error),
+        futoBackupsJobId: this.#status.futoBackupsJobId,
+      });
+    }
+  }
+
+  private async rollback(repositoryId: string, snapshotId: string): Promise<void> {
+    this.setStatus({
+      active: true,
+      action: MaintenanceAction.Rollback,
+    });
+
+    const futoBackups = this.moduleRef.get(YuccaService, { strict: false });
+    const { jobId, task, immichBackupFileName } = await futoBackups.restoreSnapshotInplace(repositoryId, snapshotId);
+
+    this.setStatus({
+      active: true,
+      action: MaintenanceAction.Rollback,
+      futoBackupsJobId: jobId,
+    });
+
+    await task;
+
+    if (!immichBackupFileName) {
+      return this.setAction({
+        action: MaintenanceAction.SelectDatabaseRestore,
+      });
+    }
+
+    const backupFileName = basename(immichBackupFileName);
+    await this.restoreBackup(backupFileName);
   }
 
   private async endMaintenance(): Promise<void> {

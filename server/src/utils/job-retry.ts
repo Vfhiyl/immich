@@ -1,9 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 /**
- * A job put back in its queue to run later, rather than failed: its place in the queue goes to the next job meanwhile,
- * and it does not count as an attempt on its file. `data` is kept in the job for when it runs again
- */
+A job put back in its queue to run later, rather than failed: its place in the queue goes to the next job meanwhile,
+and it does not count as an attempt on its file. `data` is kept in the job for when it runs again
+*/
 export class JobRetryLater extends Error {
   constructor(
     message: string,
@@ -58,10 +58,10 @@ const ENVIRONMENT_CODES = new Set([
 ]);
 
 /**
- * Whether a job failed because of where it ran rather than of its file: the disk is full, the machine learning
- * service or a storage service does not answer or answers that it is busy or broken (HTTP 429, 5xx). The job is put
- * back for later, and it does not count as an attempt on its file (see JobService.onJobRun)
- */
+Whether a job failed because of where it ran rather than of its file: the disk is full, the machine learning
+service or a storage service does not answer or answers that it is busy or broken (HTTP 429, 5xx). The job is put
+back for later, and it does not count as an attempt on its file (see JobService.onJobRun)
+*/
 export const isEnvironmentFailure = (error: unknown): boolean => {
   for (let current = error, depth = 0; current && typeof current === 'object' && depth < 5; depth++) {
     if (current instanceof MachineLearningUnavailableError) {
