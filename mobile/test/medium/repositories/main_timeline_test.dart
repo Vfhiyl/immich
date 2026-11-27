@@ -300,6 +300,18 @@ void main() {
     );
   });
 
+  test('has only the photos of the phone without users, as while signing in', () async {
+    random = Random(7);
+    await seed();
+    final timeline = MainTimeline(db, const []);
+
+    final buckets = await timeline.watchBuckets(GroupAssetsBy.day).first;
+    final count = buckets.fold(0, (sum, bucket) => sum + bucket.assetCount);
+    final assets = await timeline.getAssets(offset: 0, count: count + 10);
+    expect(assets, hasLength(count));
+    expect(assets, everyElement(isA<LocalAsset>()));
+  });
+
   test('stops watching when the timeline is closed', () async {
     random = Random(6);
     await seed();

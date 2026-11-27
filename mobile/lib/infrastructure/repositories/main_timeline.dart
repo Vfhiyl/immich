@@ -74,7 +74,9 @@ GROUP BY 1''';
 
   Selectable<({String day, int count})> _selectDays() => _db
       .customSelect(
-        'WITH users(id) AS (VALUES ${List.filled(_userIds.length, '(?)').join(', ')}) $_daysSql',
+        // (no users, e.g. while signing in: no rows, as `VALUES` takes none)
+        'WITH users(id) AS (${_userIds.isEmpty ? 'SELECT NULL WHERE 0' : 'VALUES ${List.filled(_userIds.length, '(?)').join(', ')}'}) '
+        '$_daysSql',
         variables: [for (final id in _userIds) Variable.withString(id)],
         readsFrom: _tables,
       )
