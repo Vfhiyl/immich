@@ -78,7 +78,38 @@ void main() {
 
     setUp(() async {
       when(() => apiService.setDeviceInfoHeader()).thenAnswer((_) async => {});
+      when(() => networkService.setPinnedServer(any(), any())).thenAnswer((_) async {});
       await Store.delete(StoreKey.serverHidden);
+    });
+
+    test('trusts the key of a server in self-signed mode before it reaches the server, for that server only', () async {
+      when(() => apiService.resolveAndSetEndpoint('https://203.0.113.7:2283')).thenAnswer((_) async {
+        // the server is reached only with its key trusted
+        verify(() => networkService.setPinnedServer('https://203.0.113.7:2283', 'the-pin')).called(1);
+        return 'https://203.0.113.7:2283/api';
+      });
+      when(() => authApiRepository.loginWithCode('the-code')).thenAnswer((_) async => response);
+
+      await expectLater(
+        sut.loginWithCode('https://203.0.113.7:2283', 'the-code', pin: 'the-pin'),
+        completion(response),
+      );
+
+      verifyNever(() => networkService.setPinnedServer(null, null));
+    });
+
+    test('trusts the key no more when the code does not sign in', () async {
+      when(
+        () => apiService.resolveAndSetEndpoint('https://203.0.113.7:2283'),
+      ).thenAnswer((_) async => 'https://203.0.113.7:2283/api');
+      when(() => authApiRepository.loginWithCode('expired')).thenThrow(ApiException(401, 'expired'));
+
+      await expectLater(
+        sut.loginWithCode('https://203.0.113.7:2283', 'expired', pin: 'the-pin'),
+        throwsA(isA<ApiException>()),
+      );
+
+      verify(() => networkService.setPinnedServer(null, null)).called(1);
     });
 
     test('signs in to the server of the QR code with its code, and hides the address', () async {
@@ -112,6 +143,7 @@ void main() {
     setUp(() {
       when(() => backgroundSyncManager.cancel()).thenAnswer((_) async {});
       when(() => authRepository.clearLocalData()).thenAnswer((_) async {});
+      when(() => networkService.setPinnedServer(any(), any())).thenAnswer((_) async {});
     });
 
     test('forgets the address of a server signed in with a QR code, so that a new code signs in again', () async {
@@ -126,6 +158,8 @@ void main() {
       expect(Store.tryGet(StoreKey.serverHidden), isNull);
       // the logs hold it too
       verify(() => logRepository.deleteAll()).called(1);
+      // and its key is trusted no more (self-signed mode)
+      verify(() => networkService.setPinnedServer(null, null)).called(1);
     });
 
     test('keeps the address of a server that was typed in', () async {

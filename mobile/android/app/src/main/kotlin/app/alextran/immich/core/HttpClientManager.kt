@@ -60,6 +60,7 @@ private const val PREFS_CERT_ALIAS = "immich.client_cert"
 private const val PREFS_HEADERS = "immich.request_headers"
 private const val PREFS_SERVER_URLS = "immich.server_urls"
 private const val PREFS_COOKIES = "immich.cookies"
+private const val PREFS_PINNED_SERVER = "immich.pinned_server"
 private const val COOKIE_EXPIRY_DAYS = 400L
 
 private enum class AuthCookie(val cookieName: String, val httpOnly: Boolean) {
@@ -106,6 +107,14 @@ object HttpClientManager {
 
   val isMtls: Boolean get() = keyChainAlias != null || keyStore.containsAlias(CERT_ALIAS)
 
+  /** The server whose key the app trusts instead of a certificate authority (self-signed mode), from its QR code */
+  @Volatile
+  var pinnedServer: ServerKeyPin? = null
+    private set
+
+  /** Cronet trusts only certificate authorities and has no client certificates: then everything goes through OkHttp */
+  val needsOkHttp: Boolean get() = isMtls || pinnedServer != null
+
   fun initialize(context: Context) {
     if (initialized) return
     synchronized(this) {
@@ -114,6 +123,8 @@ object HttpClientManager {
       appContext = context.applicationContext
       prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
       keyChainAlias = prefs.getString(PREFS_CERT_ALIAS, null)
+      pinnedServer = prefs.getString(PREFS_PINNED_SERVER, null)?.split(" ", limit = 2)
+        ?.takeIf { it.size == 2 }?.let { (url, pin) -> ServerKeyPin.of(url, pin) }
 
       cookieJar.init(prefs)
       System.setProperty("http.agent", USER_AGENT)
@@ -211,6 +222,32 @@ object HttpClientManager {
     }
   }
 
+  /**
+   * Trust the key `pin` (SHA-256 of the public key, base64) for the HTTPS server `url` instead of certificate
+   * authorities, or nothing more (null): self-signed mode, signed in with a QR code
+   */
+  fun setPinnedServer(url: String?, pin: String?) {
+    synchronized(this) {
+      val wasOkHttpOnly = needsOkHttp
+      val pinned = if (url != null && pin != null) {
+        ServerKeyPin.of(url, pin) ?: throw IllegalArgumentException("Only an HTTPS server has a key to trust")
+      } else {
+        null
+      }
+      pinnedServer = pinned
+      prefs.edit {
+        if (pinned != null) putString(PREFS_PINNED_SERVER, "https://${pinned.host}:${pinned.port} ${pinned.pin}")
+        else remove(PREFS_PINNED_SERVER)
+      }
+      // no connection made with the trust before (closing them is network, which the main thread must not do)
+      val pool = client.connectionPool
+      client.dispatcher.executorService.execute { pool.evictAll() }
+      if (wasOkHttpOnly != needsOkHttp) {
+        clientChangedListeners.forEach { it() }
+      }
+    }
+  }
+
   private var clientGlobalRef: Long = 0L
 
   @JvmStatic
@@ -298,7 +335,7 @@ object HttpClientManager {
 
   @OptIn(UnstableApi::class)
   fun createDataSourceFactory(headers: Map<String, String>): DataSource.Factory {
-    return if (isMtls) {
+    return if (needsOkHttp) {
       OkHttpDataSource.Factory(client.newBuilder().cache(null).build())
     } else {
       ResolvingDataSource.Factory(
@@ -353,11 +390,16 @@ object HttpClientManager {
 
     val managerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
     managerFactory.init(null as KeyStore?)
-    val trustManager = managerFactory.trustManagers.filterIsInstance<X509TrustManager>().first()
+    val systemTrust = managerFactory.trustManagers.filterIsInstance<X509TrustManager>().first()
+    // the system's trust, but the key of a pinned server (self-signed mode), and the same for its host name
+    val trustManager = PinningTrustManager(systemTrust) { pinnedServer }
+    val hostnameVerifier = PinningHostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier()) { pinnedServer }
 
     val sslContext = SSLContext.getInstance("TLS")
       .apply { init(arrayOf(DynamicKeyManager()), arrayOf(trustManager), null) }
+    // HttpURLConnection too (the home screen widget)
     HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.socketFactory)
+    HttpsURLConnection.setDefaultHostnameVerifier(hostnameVerifier)
 
     return OkHttpClient.Builder()
       .cookieJar(cookieJar)
@@ -376,6 +418,7 @@ object HttpClientManager {
       .dispatcher(Dispatcher().apply { maxRequestsPerHost = MAX_REQUESTS_PER_HOST })
       .cache(Cache(cacheDir.apply { mkdirs() }, CACHE_SIZE_BYTES))
       .sslSocketFactory(sslContext.socketFactory, trustManager)
+      .hostnameVerifier(hostnameVerifier)
       .build()
   }
 

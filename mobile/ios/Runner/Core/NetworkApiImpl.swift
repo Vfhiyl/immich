@@ -65,6 +65,12 @@ class NetworkApiImpl: NetworkApi {
     return Bundle.main.object(forInfoDictionaryKey: "AppGroupId") as! String
   }
 
+  func setPinnedServer(serverUrl: String?, pin: String?) throws {
+    try ServerKeyPin.store(url: serverUrl, pin: pin)
+    // no connection made with the trust before
+    URLSessionManager.shared.recreateSession()
+  }
+
   func setRequestHeaders(headers: [String : String], serverUrls: [String], token: String?) throws {
     URLSessionManager.setServerUrls(serverUrls)
 

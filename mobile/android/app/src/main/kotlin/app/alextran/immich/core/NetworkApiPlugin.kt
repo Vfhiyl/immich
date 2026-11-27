@@ -81,6 +81,10 @@ private class NetworkApiImpl(private val context: Context) : NetworkApi {
     return HttpClientManager.getClientPointer()
   }
 
+  override fun setPinnedServer(serverUrl: String?, pin: String?) {
+    HttpClientManager.setPinnedServer(serverUrl, pin)
+  }
+
   override fun setRequestHeaders(headers: Map<String, String>, serverUrls: List<String>, token: String?) {
     HttpClientManager.setRequestHeaders(headers, serverUrls, token)
   }

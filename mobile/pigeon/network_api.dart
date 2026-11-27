@@ -45,5 +45,9 @@ abstract class NetworkApi {
 
   void setRequestHeaders(Map<String, String> headers, List<String> serverUrls, String? token);
 
+  /// Trust the key [pin] (SHA-256 of its public key, base64) for the HTTPS server [serverUrl] instead of certificate
+  /// authorities (self-signed mode, from the QR code that signed the phone in); nulls: no such server
+  void setPinnedServer(String? serverUrl, String? pin);
+
   String getAppGroupId();
 }

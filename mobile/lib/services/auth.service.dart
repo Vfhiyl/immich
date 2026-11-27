@@ -86,15 +86,24 @@ class AuthService {
 
   /// Sign in to [server] with the one-time code of a QR code an administrator showed; the app then does not show the
   /// address of the server
-  Future<LoginResponse> loginWithCode(String server, String code) async {
+  /// Sign in with the code of a QR code; [pin]: the key of the server in self-signed mode, which the user confirmed and
+  /// which is trusted from then on, for this server only
+  Future<LoginResponse> loginWithCode(String server, String code, {String? pin}) async {
     try {
+      if (pin != null) {
+        await _networkService.setPinnedServer(server, pin);
+      }
       await validateServerUrl(server);
       final response = await _authApiRepository.loginWithCode(code);
       await Store.put(StoreKey.serverHidden, true);
       return response;
     } catch (_) {
-      // the address of a QR code is not left for the login screen to show
-      await Future.wait([Store.delete(StoreKey.serverEndpoint), Store.delete(StoreKey.serverUrl)]);
+      // the address of a QR code is not left for the login screen to show, nor its key trusted
+      await Future.wait([
+        Store.delete(StoreKey.serverEndpoint),
+        Store.delete(StoreKey.serverUrl),
+        if (pin != null) _networkService.setPinnedServer(null, null),
+      ]);
       rethrow;
     }
   }
@@ -140,6 +149,8 @@ class AuthService {
         Store.delete(StoreKey.serverHidden),
         // the logs, which the login screen shows, hold the address too
         LogService.I.clearLogs(),
+        // and its key (self-signed mode) is trusted no more
+        _networkService.setPinnedServer(null, null),
       ]);
     }
     await Future.wait([

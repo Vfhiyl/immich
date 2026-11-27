@@ -88,8 +88,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Sign in with a QR code an administrator showed
-  Future<LoginResponse> loginWithCode(String server, String code) async {
-    final response = await _authService.loginWithCode(server, code);
+  Future<LoginResponse> loginWithCode(String server, String code, {String? pin}) async {
+    final response = await _authService.loginWithCode(server, code, pin: pin);
     await saveAuthInfo(accessToken: response.accessToken);
     return response;
   }

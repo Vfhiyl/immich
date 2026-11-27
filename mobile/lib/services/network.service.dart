@@ -1,4 +1,5 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/providers/infrastructure/platform.provider.dart';
 import 'package:immich_mobile/repositories/network.repository.dart';
 import 'package:immich_mobile/repositories/permission.repository.dart';
 
@@ -35,6 +36,12 @@ class NetworkService {
     }
 
     return await _repository.getWifiName();
+  }
+
+  /// Trust the key [pin] for the HTTPS server [serverUrl] instead of certificate authorities (self-signed mode, from
+  /// the QR code that signs the phone in); nulls: no such server
+  Future<void> setPinnedServer(String? serverUrl, String? pin) {
+    return networkApi.setPinnedServer(serverUrl, pin);
   }
 
   Future<bool> openSettings() {

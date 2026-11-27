@@ -36,6 +36,7 @@ import 'package:immich_mobile/utils/version_compatibility.dart';
 import 'package:immich_mobile/widgets/common/immich_logo.dart';
 import 'package:immich_mobile/widgets/common/immich_title_text.dart';
 import 'package:immich_mobile/widgets/common/immich_toast.dart';
+import 'package:immich_mobile/widgets/forms/login/server_key_dialog.dart';
 import 'package:immich_ui/immich_ui.dart';
 import 'package:logging/logging.dart';
 import 'package:openapi/api.dart';
@@ -290,11 +291,22 @@ class LoginForm extends HookConsumerWidget {
       await finishLogin();
     }
 
-    /// Sign in with a QR code an administrator showed; the address of the server is not shown
+    /// Sign in with a QR code an administrator showed; the address of the server is not shown. In self-signed mode the
+    /// user compares the key of the server with the administrator's first.
     Future<void> loginWithQr(QrLogin qr) async {
+      final pin = qr.pin;
+      if (pin != null) {
+        final trusted = await showDialog<bool>(
+          context: context,
+          builder: (_) => ServerKeyDialog(pin: pin),
+        );
+        if (trusted != true || !context.mounted) {
+          return;
+        }
+      }
       invalidateAllApiRepositoryProviders(ref);
       try {
-        await ref.read(authProvider.notifier).loginWithCode(qr.server, qr.code);
+        await ref.read(authProvider.notifier).loginWithCode(qr.server, qr.code, pin: pin);
         await ref.read(serverInfoProvider.notifier).getServerInfo();
         if (!context.mounted) {
           return;
@@ -315,7 +327,7 @@ class LoginForm extends HookConsumerWidget {
       }
     }
 
-    // a QR code opened with the camera of the phone signs in right away
+    // a QR code opened with the camera of the phone signs in right away, also while the login screen is open
     useEffect(() {
       final qr = ref.read(pendingQrLoginProvider);
       if (qr != null) {
@@ -324,6 +336,12 @@ class LoginForm extends HookConsumerWidget {
       }
       return null;
     }, []);
+    ref.listen(pendingQrLoginProvider, (_, qr) {
+      if (qr != null) {
+        ref.read(pendingQrLoginProvider.notifier).state = null;
+        unawaited(loginWithQr(qr));
+      }
+    });
 
     Future<void> scanQr() async {
       final scanned = await context.pushRoute<QrLogin>(const QrScanRoute());

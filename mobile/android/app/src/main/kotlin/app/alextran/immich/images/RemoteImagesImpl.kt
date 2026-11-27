@@ -261,7 +261,7 @@ private object ImageFetcherManager {
   }
 
   private fun build(): ImageFetcher {
-    return if (HttpClientManager.isMtls) {
+    return if (HttpClientManager.needsOkHttp) {
       OkHttpImageFetcher.create(cacheDir)
     } else {
       CronetImageFetcher()

@@ -10,6 +10,7 @@ import es.antonborri.home_widget.HomeWidgetPlugin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.OutputStreamWriter
+import app.alextran.immich.core.HttpClientManager
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -20,6 +21,8 @@ class ImmichAPI(cfg: ServerConfig) {
 
   companion object {
     fun getServerConfig(context: Context): ServerConfig? {
+      // the trust of the app (the key of a server signed in with a QR code in self-signed mode) for HttpURLConnection
+      HttpClientManager.initialize(context)
       val prefs = HomeWidgetPlugin.getData(context)
 
       val serverURL = prefs.getString("widget_server_url", "") ?: ""

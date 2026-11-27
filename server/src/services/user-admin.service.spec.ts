@@ -68,7 +68,9 @@ describe(UserAdminService.name, () => {
       const { url, pin } = await sut.createLoginCode(authStub.admin, 'user-id');
 
       expect(pin).toBe(getPin(key));
-      expect(new URL(url).searchParams.get('pin')).toBe(pin);
+      // in the link as base64url, which survives any decoding of the link
+      expect(new URL(url).searchParams.get('pin')).toBe(Buffer.from(pin!, 'base64').toString('base64url'));
+      expect(new URL(url).searchParams.get('pin')).toMatch(/^[\w-]{43}$/);
       expect(mocks.storage.readFile).toHaveBeenCalledWith('/data/tls/key.pem');
     });
 

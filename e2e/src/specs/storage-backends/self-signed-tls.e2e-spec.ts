@@ -69,7 +69,13 @@ describe('self-signed mode', () => {
     });
     expect(status).toBe(201);
     const url = new URL(body.url);
-    return { code: url.searchParams.get('code')!, pin: url.searchParams.get('pin'), response: body };
+    // (base64url in the link)
+    const pin = url.searchParams.get('pin');
+    return {
+      code: url.searchParams.get('code')!,
+      pin: pin && Buffer.from(pin, 'base64url').toString('base64'),
+      response: body,
+    };
   };
 
   beforeAll(async () => {

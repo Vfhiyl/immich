@@ -511,7 +511,8 @@ export class BaseService {
     url.searchParams.set('server', server.externalDomain);
     url.searchParams.set('code', code);
     if (pin) {
-      url.searchParams.set('pin', pin);
+      // base64url: no `+`, which some scanners and apps turn into a space
+      url.searchParams.set('pin', Buffer.from(pin, 'base64').toString('base64url'));
     }
     return { url: url.href, server: server.externalDomain, pin, expiresAt: expiresAt.toISOString() };
   }

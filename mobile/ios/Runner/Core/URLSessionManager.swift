@@ -227,6 +227,12 @@ class URLSessionManagerDelegate: NSObject, URLSessionTaskDelegate, URLSessionWeb
     task: URLSessionTask? = nil
   ) {
     switch challenge.protectionSpace.authenticationMethod {
+    case NSURLAuthenticationMethodServerTrust:
+      // the key of a server signed in with a QR code in self-signed mode, the system's trust for any other
+      if let (disposition, credential) = ServerKeyPin.evaluate(challenge) {
+        return completionHandler(disposition, credential)
+      }
+      completionHandler(.performDefaultHandling, nil)
     case NSURLAuthenticationMethodClientCertificate: handleClientCertificate(session, completion: completionHandler)
     case NSURLAuthenticationMethodHTTPBasic: handleBasicAuth(session, task: task, completion: completionHandler)
     default: completionHandler(.performDefaultHandling, nil)
