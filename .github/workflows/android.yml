@@ -3,8 +3,8 @@ name: Android app
 # of the run; publish them as a release by hand.
 #
 # Secrets (Settings → Secrets and variables → Actions):
-#   KEY_JKS                 the keystore (PKCS12), base64
-#   ALIAS                   the alias of the key in it
+#   KEY_JKS                 the keystore (PKCS12), base64, with the key under the alias `immich` (not a secret, as
+#                           GitHub would mask the word everywhere in the log)
 #   ANDROID_KEY_PASSWORD    the password of the key
 #   ANDROID_STORE_PASSWORD  the password of the keystore (with PKCS12 the same as the key's)
 # The run fails unless the APK is signed by the certificate below: an update must be signed by the same key as the app
@@ -25,6 +25,7 @@ jobs:
     permissions:
       contents: read
     env:
+      BUILD_TOOLS: 36.0.0
       CERTIFICATE_SHA256: f061fcd905aaaf2a630d615a50184527644830c158c8ca8b0ccea4963a034da2
       RELEASE: ${{ inputs.release }}
     steps:
@@ -55,7 +56,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
-          packages: ''
+          packages: build-tools;${{ env.BUILD_TOOLS }}
 
       - name: Install dependencies
         run: mise //mobile:install:ci
@@ -76,7 +77,7 @@ jobs:
       - name: Build
         working-directory: ./mobile
         env:
-          ALIAS: ${{ secrets.ALIAS }}
+          ALIAS: immich
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           CODE: ${{ steps.version.outputs.code }}
@@ -90,11 +91,14 @@ jobs:
         env:
           CODE: ${{ steps.version.outputs.code }}
         run: |
-          build_tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          build_tools="$ANDROID_HOME/build-tools/$BUILD_TOOLS"
           apk=mobile/build/app/outputs/flutter-apk/app-release.apk
-          signer="$("$build_tools/apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
-          if [[ "$signer" != "$CERTIFICATE_SHA256" ]]; then
-            echo "The APK is signed by $signer, not by the release key ($CERTIFICATE_SHA256)" >&2
+          # every signer's certificate (whatever apksigner calls the signer) must be the release key's
+          certificates="$("$build_tools/apksigner" verify --print-certs "$apk")"
+          echo "$certificates"
+          signers="$(grep -oE 'certificate SHA-256 digest: [0-9a-f]{64}' <<< "$certificates" | cut -d' ' -f4 | sort -u)"
+          if [[ "$signers" != "$CERTIFICATE_SHA256" ]]; then
+            echo "The APK is signed by '${signers//$'\n'/ }', not only by the release key ($CERTIFICATE_SHA256)" >&2
             exit 1
           fi
           abis="$(unzip -Z1 "$apk" 'lib/*' | cut -d/ -f2 | sort -u | tr '\n' ' ')"
