@@ -52,6 +52,7 @@
         {#each job.assets as asset (asset.assetId)}
           <Text size="small">
             <Link href="/photos/{asset.assetId}">{asset.originalFileName}</Link>
+            · {$t('admin.job_failure_owner', { values: { name: asset.ownerName, email: asset.ownerEmail } })}
             · {formatAge(asset.failedAt)} · {asset.error ?? $t('admin.job_failures_stopped')}
           </Text>
         {/each}

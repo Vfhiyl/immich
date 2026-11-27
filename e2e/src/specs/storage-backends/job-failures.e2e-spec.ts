@@ -8,7 +8,14 @@ type Failures = {
   jobs: Array<{
     jobName: string;
     count: number;
-    assets: Array<{ assetId: string; originalFileName: string; attempts: number; error: string | null }>;
+    assets: Array<{
+      assetId: string;
+      originalFileName: string;
+      ownerName: string;
+      ownerEmail: string;
+      attempts: number;
+      error: string | null;
+    }>;
   }>;
 };
 
@@ -84,6 +91,9 @@ describe('files that jobs fail on', () => {
           {
             assetId,
             originalFileName: 'broken.jpg',
+            // whose file it is (the admin uploaded it)
+            ownerName: 'Admin',
+            ownerEmail: 'admin@immich.cloud',
             attempts: 3,
             error: expect.any(String),
             failedAt: expect.any(String),

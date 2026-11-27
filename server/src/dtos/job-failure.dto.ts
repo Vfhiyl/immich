@@ -11,6 +11,8 @@ const JobFailureAssetSchema = z
   .object({
     assetId: z.string(),
     originalFileName: z.string(),
+    ownerName: z.string().describe('Whose the file is'),
+    ownerEmail: z.string(),
     attempts: z.int(),
     error: z.string().nullable().describe('Why the last attempt failed; null when the server stopped while it ran'),
     failedAt: z.string(),

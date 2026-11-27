@@ -5,15 +5,36 @@ import {
   JobFailureListResponseDto,
   JobHistoryQueryDto,
   JobHistoryResponseDto,
+  ProcessingResponseDto,
+  ProcessingStep,
 } from 'src/dtos/job-history.dto.js';
 import { mapNotification } from 'src/dtos/notification.dto.js';
-import { ImmichWorker, NotificationLevel, NotificationType, SystemMetadataKey } from 'src/enum.js';
+import { ImmichWorker, JobName, NotificationLevel, NotificationType, SystemMetadataKey } from 'src/enum.js';
+import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { JobHistoryUnit } from 'src/repositories/job-history.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { JobFailureCategory } from 'src/utils/job-history.js';
-import { handlePromiseError } from 'src/utils/misc.js';
+import {
+  handlePromiseError,
+  isDuplicateDetectionEnabled,
+  isFacialRecognitionEnabled,
+  isOcrEnabled,
+  isSmartSearchEnabled,
+} from 'src/utils/misc.js';
 
 const FLUSH_MS = 10 * 1000;
+/** The photos are counted again at most this often: counting a large library takes a moment */
+const PROCESSING_COUNTED_MS = 30 * 1000;
+
+/** The job that does each step for one photo, whose runs tell how fast the step goes */
+const PROCESSING_JOBS: Record<ProcessingStep, JobName> = {
+  [ProcessingStep.Metadata]: JobName.AssetExtractMetadata,
+  [ProcessingStep.Thumbnails]: JobName.AssetGenerateThumbnails,
+  [ProcessingStep.SmartSearch]: JobName.SmartSearch,
+  [ProcessingStep.Faces]: JobName.AssetDetectFaces,
+  [ProcessingStep.Ocr]: JobName.Ocr,
+  [ProcessingStep.Duplicates]: JobName.AssetDetectDuplicates,
+};
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
@@ -104,6 +125,48 @@ export class JobHistoryService extends BaseService {
     await this.systemMetadataRepository.set(SystemMetadataKey.JobHistoryAlerts, notified);
   }
 
+  private processing?: { at: number; counts: Awaited<ReturnType<AssetJobRepository['getProcessingCounts']>> };
+
+  /**
+  How far the library is processed, step by step, and how fast each step went lately (since the start of the
+  previous hour, from the counts of jobs), for the admin to see what is left and how long it takes
+  */
+  async getProcessing(now = new Date()): Promise<ProcessingResponseDto> {
+    if (!this.processing || now.getTime() - this.processing.at >= PROCESSING_COUNTED_MS) {
+      this.processing = { at: now.getTime(), counts: await this.assetJobRepository.getProcessingCounts() };
+    }
+    const { counts } = this.processing;
+
+    const since = new Date(Math.floor(now.getTime() / HOUR) * HOUR - HOUR);
+    const hours = (now.getTime() - since.getTime()) / HOUR;
+    const succeeded = await this.jobHistoryRepository.getSucceededSince(since, Object.values(PROCESSING_JOBS));
+
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    const steps: Array<[ProcessingStep, boolean, number, number]> = [
+      [ProcessingStep.Metadata, true, counts.all, counts.metadata],
+      [ProcessingStep.Thumbnails, true, counts.all, counts.thumbnails],
+      [ProcessingStep.SmartSearch, isSmartSearchEnabled(machineLearning), counts.withPreview, counts.smartSearch],
+      [ProcessingStep.Faces, isFacialRecognitionEnabled(machineLearning), counts.withPreview, counts.faces],
+      [ProcessingStep.Ocr, isOcrEnabled(machineLearning), counts.all, counts.ocr],
+      [
+        ProcessingStep.Duplicates,
+        isDuplicateDetectionEnabled(machineLearning),
+        counts.withEmbedding,
+        counts.duplicates,
+      ],
+    ];
+    return {
+      steps: steps.map(([step, enabled, total, done]) => ({
+        step,
+        enabled,
+        total,
+        done,
+        perHour: Math.round((succeeded.get(PROCESSING_JOBS[step]) ?? 0) / hours),
+      })),
+      countedAt: new Date(this.processing.at).toISOString(),
+    };
+  }
+
   async getHistory({ since }: JobHistoryQueryDto, now = new Date()): Promise<JobHistoryResponseDto> {
     // what was counted in this process and not yet written (the api's own jobs are none: it runs no jobs)
     await this.jobHistoryRepository.flush();
@@ -152,6 +215,8 @@ export class JobHistoryService extends BaseService {
         category: item.category as JobFailureCategory,
         createdAt: new Date(item.createdAt).toISOString(),
         originalFileName: item.originalFileName ?? null,
+        ownerName: item.ownerName ?? null,
+        ownerEmail: item.ownerEmail ?? null,
       })),
     };
   }

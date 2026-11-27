@@ -209,6 +209,9 @@
                 {when(item.createdAt)} · {item.jobName} · {$t(categories[item.category])}
                 {#if item.assetId && item.originalFileName}
                   · <Link href="/photos/{item.assetId}">{item.originalFileName}</Link>
+                  {#if item.ownerName}
+                    · {$t('admin.job_failure_owner', { values: { name: item.ownerName, email: item.ownerEmail } })}
+                  {/if}
                 {/if}
               </Text>
               <Text size="small" color="muted" class="break-all">{item.error}</Text>

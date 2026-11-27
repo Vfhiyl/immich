@@ -505,6 +505,59 @@ export class AssetJobRepository {
       .stream();
   }
 
+  /**
+  How far the library is processed, step by step: of the photos a step is for, those it is done for (the same photos
+  as the jobs that queue the missing ones: not deleted, not hidden; machine learning and duplicates need a preview)
+  */
+  @GenerateSql()
+  async getProcessingCounts() {
+    const row = await this.db
+      .selectFrom('asset')
+      .innerJoin('asset_job_status as job_status', 'job_status.assetId', 'asset.id')
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .select((eb) => {
+        const hasFile = (type: AssetFileType) =>
+          eb.exists(
+            eb
+              .selectFrom('asset_file')
+              .whereRef('asset_file.assetId', '=', 'asset.id')
+              .where('asset_file.type', '=', type)
+              .where('asset_file.isEdited', '=', false),
+          );
+        const hasPreview = hasFile(AssetFileType.Preview);
+        const hasEmbedding = eb.exists(eb.selectFrom('smart_search').whereRef('smart_search.assetId', '=', 'asset.id'));
+        return [
+          eb.fn.countAll<string>().as('all'),
+          eb.fn.countAll<string>().filterWhere('job_status.metadataExtractedAt', 'is not', null).as('metadata'),
+          eb.fn
+            .countAll<string>()
+            .filterWhere((eb) => eb.and([hasFile(AssetFileType.Thumbnail), hasPreview]))
+            .as('thumbnails'),
+          eb.fn.countAll<string>().filterWhere(hasPreview).as('withPreview'),
+          eb.fn
+            .countAll<string>()
+            .filterWhere((eb) => eb.and([hasPreview, hasEmbedding]))
+            .as('smartSearch'),
+          eb.fn
+            .countAll<string>()
+            .filterWhere((eb) => eb.and([hasPreview, eb('job_status.facesRecognizedAt', 'is not', null)]))
+            .as('faces'),
+          eb.fn.countAll<string>().filterWhere('job_status.ocrAt', 'is not', null).as('ocr'),
+          eb.fn.countAll<string>().filterWhere(hasEmbedding).as('withEmbedding'),
+          eb.fn
+            .countAll<string>()
+            .filterWhere((eb) => eb.and([hasEmbedding, eb('job_status.duplicatesDetectedAt', 'is not', null)]))
+            .as('duplicates'),
+        ];
+      })
+      .executeTakeFirstOrThrow();
+    return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, Number(value)])) as Record<
+      keyof typeof row,
+      number
+    >;
+  }
+
   @GenerateSql({ params: [DummyValue.DATE], stream: true })
   streamForMigrationJob() {
     return this.db.selectFrom('asset').select(['id']).where('asset.deletedAt', 'is', null).stream();

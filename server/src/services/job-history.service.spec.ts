@@ -1,4 +1,5 @@
-import { NotificationLevel, SystemMetadataKey } from 'src/enum.js';
+import { ProcessingStep } from 'src/dtos/job-history.dto.js';
+import { JobName, NotificationLevel, SystemMetadataKey } from 'src/enum.js';
 import { JobHistoryService, getHistoryUnit } from 'src/services/job-history.service.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -83,5 +84,76 @@ describe(JobHistoryService.name, () => {
     await expect(sut.getFailures({ jobName: 'Ocr', page: 3, size: 50 })).resolves.toEqual({ total: 120, items: [] });
 
     expect(mocks.jobHistory.getFailures).toHaveBeenCalledWith({ jobName: 'Ocr', since: undefined }, 50, 100);
+  });
+
+  describe('getProcessing', () => {
+    const counts = {
+      all: 1000,
+      metadata: 1000,
+      thumbnails: 990,
+      withPreview: 990,
+      smartSearch: 400,
+      faces: 380,
+      ocr: 300,
+      withEmbedding: 400,
+      duplicates: 400,
+    };
+
+    it('should tell for each step the photos it is for, those done, and how many per hour lately', async () => {
+      // since the start of the previous hour (11:00), 1.5 hours ago at 12:30
+      const at = new Date('2026-11-02T12:30:00Z');
+      mocks.assetJob.getProcessingCounts.mockResolvedValue(counts);
+      mocks.jobHistory.getSucceededSince.mockResolvedValue(
+        new Map([
+          [JobName.SmartSearch, 300],
+          [JobName.AssetDetectFaces, 150],
+        ]),
+      );
+
+      const { steps, countedAt } = await sut.getProcessing(at);
+
+      expect(mocks.jobHistory.getSucceededSince).toHaveBeenCalledWith(
+        new Date('2026-11-02T11:00:00Z'),
+        expect.arrayContaining([JobName.SmartSearch, JobName.AssetDetectFaces, JobName.Ocr]),
+      );
+      expect(countedAt).toBe(at.toISOString());
+      expect(steps).toEqual([
+        { step: ProcessingStep.Metadata, enabled: true, total: 1000, done: 1000, perHour: 0 },
+        { step: ProcessingStep.Thumbnails, enabled: true, total: 1000, done: 990, perHour: 0 },
+        // machine learning is for photos with a preview
+        { step: ProcessingStep.SmartSearch, enabled: true, total: 990, done: 400, perHour: 200 },
+        { step: ProcessingStep.Faces, enabled: true, total: 990, done: 380, perHour: 100 },
+        { step: ProcessingStep.Ocr, enabled: true, total: 1000, done: 300, perHour: 0 },
+        // duplicates are found among the photos with an embedding
+        { step: ProcessingStep.Duplicates, enabled: true, total: 400, done: 400, perHour: 0 },
+      ]);
+    });
+
+    it('should tell the steps that are turned off', async () => {
+      mocks.assetJob.getProcessingCounts.mockResolvedValue(counts);
+      mocks.jobHistory.getSucceededSince.mockResolvedValue(new Map());
+      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { enabled: false } });
+
+      const { steps } = await sut.getProcessing(now);
+
+      expect(steps.filter(({ enabled }) => !enabled).map(({ step }) => step)).toEqual([
+        ProcessingStep.SmartSearch,
+        ProcessingStep.Faces,
+        ProcessingStep.Ocr,
+        ProcessingStep.Duplicates,
+      ]);
+    });
+
+    it('should count the photos at most every 30 seconds', async () => {
+      mocks.assetJob.getProcessingCounts.mockResolvedValue(counts);
+      mocks.jobHistory.getSucceededSince.mockResolvedValue(new Map());
+
+      await sut.getProcessing(now);
+      await sut.getProcessing(new Date(now.getTime() + 29_000));
+      expect(mocks.assetJob.getProcessingCounts).toHaveBeenCalledTimes(1);
+
+      await sut.getProcessing(new Date(now.getTime() + 30_000));
+      expect(mocks.assetJob.getProcessingCounts).toHaveBeenCalledTimes(2);
+    });
   });
 });

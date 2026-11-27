@@ -1,10 +1,12 @@
 import { Kysely } from 'kysely';
-import { AssetFileType, AssetType } from 'src/enum.js';
+import { AssetFileType, AssetType, AssetVisibility } from 'src/enum.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
+import { newEmbedding } from 'test/small.factory.js';
 import { getKyselyDB, getTestKyselyDB } from 'test/utils.js';
 
 const consume = async <T>(generator: AsyncIterableIterator<T>) => {
@@ -29,6 +31,80 @@ beforeAll(async () => {
 });
 
 describe(AssetJobRepository.name, () => {
+  describe('getProcessingCounts', () => {
+    it('should count, of the photos each step is for, those it is done for', async () => {
+      const { ctx, sut } = setup(await getTestKyselyDB());
+      const { user } = await ctx.newUser();
+      const at = new Date();
+      const photo = async (
+        dto: Parameters<typeof ctx.newAsset>[0],
+        {
+          status = {},
+          files = [],
+          editedPreview = false,
+          embedding = false,
+        }: {
+          status?: { metadataExtractedAt?: Date; facesRecognizedAt?: Date; ocrAt?: Date; duplicatesDetectedAt?: Date };
+          files?: AssetFileType[];
+          editedPreview?: boolean;
+          embedding?: boolean;
+        } = {},
+      ) => {
+        const { asset } = await ctx.newAsset({ ownerId: user.id, ...dto });
+        await ctx.get(AssetRepository).upsertJobStatus({
+          assetId: asset.id,
+          metadataExtractedAt: null,
+          facesRecognizedAt: null,
+          ocrAt: null,
+          duplicatesDetectedAt: null,
+          ...status,
+        });
+        for (const type of files) {
+          await ctx.newAssetFile({ assetId: asset.id, type, path: `${asset.id}-${type}.jpg` });
+        }
+        if (editedPreview) {
+          await ctx.newAssetFile({
+            assetId: asset.id,
+            type: AssetFileType.Preview,
+            path: `${asset.id}-e.jpg`,
+            isEdited: true,
+          });
+        }
+        if (embedding) {
+          await ctx.database
+            .insertInto('smart_search')
+            .values({ assetId: asset.id, embedding: newEmbedding() })
+            .execute();
+        }
+      };
+      const everything = {
+        status: { metadataExtractedAt: at, facesRecognizedAt: at, ocrAt: at, duplicatesDetectedAt: at },
+        files: [AssetFileType.Thumbnail, AssetFileType.Preview],
+        embedding: true,
+      };
+      await photo({}, everything);
+      await photo({}, { status: { metadataExtractedAt: at } });
+      await photo({}, { status: { metadataExtractedAt: at }, files: everything.files, embedding: true });
+      // the preview of an edit is not the photo's
+      await photo({}, { editedPreview: true });
+      // not counted: deleted, or the video of a live photo
+      await photo({ deletedAt: at }, everything);
+      await photo({ visibility: AssetVisibility.Hidden }, everything);
+
+      await expect(sut.getProcessingCounts()).resolves.toEqual({
+        all: 4,
+        metadata: 3,
+        thumbnails: 2,
+        withPreview: 2,
+        smartSearch: 2,
+        faces: 1,
+        ocr: 1,
+        withEmbedding: 2,
+        duplicates: 1,
+      });
+    });
+  });
+
   describe('streamLongImages', () => {
     it('should stream the images longer than a ratio, either way', async () => {
       const { ctx, sut } = setup(await getTestKyselyDB());

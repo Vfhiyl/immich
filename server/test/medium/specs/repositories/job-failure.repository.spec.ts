@@ -24,12 +24,12 @@ const setup = async () => {
       await sut.start(job, assetId, version);
     }
   };
-  return { db, sut, newAsset, attempt };
+  return { db, sut, newAsset, attempt, user };
 };
 
 describe(JobFailureRepository.name, () => {
   it('should hold a job back from an asset after attempts in a row that did not finish', async () => {
-    const { sut, newAsset, attempt } = await setup();
+    const { sut, newAsset, attempt, user } = await setup();
     const [bad, good] = [await newAsset('bad.heic'), await newAsset()];
 
     await attempt(bad, JOB_FAILURE_ATTEMPTS - 1);
@@ -49,6 +49,9 @@ describe(JobFailureRepository.name, () => {
       {
         assetId: bad,
         originalFileName: 'bad.heic',
+        // whose file it is
+        ownerName: user.name,
+        ownerEmail: user.email,
         attempts: JOB_FAILURE_ATTEMPTS,
         error: 'cannot decode',
         failedAt: expect.any(Date),

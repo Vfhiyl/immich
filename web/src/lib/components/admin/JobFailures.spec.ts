@@ -19,6 +19,8 @@ const failures: JobFailuresResponseDto = {
         {
           assetId: 'asset-1',
           originalFileName: 'panorama.tif',
+          ownerName: 'Ann',
+          ownerEmail: 'ann@immich.cloud',
           attempts: 3,
           error: null,
           failedAt: new Date().toISOString(),
@@ -26,6 +28,8 @@ const failures: JobFailuresResponseDto = {
         {
           assetId: 'asset-2',
           originalFileName: 'broken.heic',
+          ownerName: 'Bob',
+          ownerEmail: 'bob@immich.cloud',
           attempts: 4,
           error: 'Input file has corrupt header',
           failedAt: new Date().toISOString(),
@@ -46,6 +50,8 @@ describe('JobFailures component', () => {
       .toHaveAttribute('href', '/photos/asset-1');
     await expect.element(thumbnails.getByText(/admin.job_failures_stopped/)).toBeInTheDocument();
     await expect.element(thumbnails.getByText(/Input file has corrupt header/)).toBeInTheDocument();
+    // whose file it is
+    await expect.element(thumbnails.getByText(/admin.job_failure_owner/).first()).toBeInTheDocument();
     await expect.element(thumbnails.getByText('admin.job_failures_more')).toBeInTheDocument();
   });
 

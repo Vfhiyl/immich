@@ -1,13 +1,14 @@
 <script lang="ts">
   import OnEvents from '#lib/components/OnEvents.svelte';
   import JobFailures from '#lib/components/admin/JobFailures.svelte';
+  import LibraryProcessing from '#lib/components/admin/LibraryProcessing.svelte';
   import MachineLearningModels from '#lib/components/admin/MachineLearningModels.svelte';
   import ResourceCheckReport from '#lib/components/admin/ResourceCheckReport.svelte';
   import AdminPageLayout from '#lib/components/layouts/AdminPageLayout.svelte';
   import { queueManager } from '#lib/managers/queue-manager.svelte.ts';
   import { Route } from '#lib/route.ts';
   import { getQueuesActions } from '#lib/services/queue.service.ts';
-  import { getJobFailures, getMachineLearningModels, type QueueResponseDto } from '@immich/sdk';
+  import { getJobFailures, getMachineLearningModels, getProcessing, type QueueResponseDto } from '@immich/sdk';
   import { Alert, CommandPaletteDefaultProvider, Container, Link, type ActionItem } from '@immich/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -26,9 +27,12 @@
   let models = $state(data.models);
   // the files that jobs failed on again and again
   let failures = $state(data.failures);
+  // how far the library is processed (the server counts at most every 30 seconds)
+  let processing = $state(data.processing);
   const refresh = async () => {
     models = await getMachineLearningModels().catch(() => models);
     failures = await getJobFailures().catch(() => failures);
+    processing = await getProcessing().catch(() => processing);
   };
   onMount(() => {
     const interval = setInterval(() => void refresh(), 15_000);
@@ -61,6 +65,11 @@
   actions={[ResumePaused, JobHistory, CreateJob, ManageConcurrency]}
 >
   <Container size="medium" center>
+    {#if processing}
+      <div class="mb-8">
+        <LibraryProcessing steps={processing.steps} {queues} />
+      </div>
+    {/if}
     {#if models.tasks.some(({ enabled }) => enabled)}
       <div class="mb-8">
         <MachineLearningModels tasks={models.tasks} backoff={models.backoff} onChange={() => void refresh()} />

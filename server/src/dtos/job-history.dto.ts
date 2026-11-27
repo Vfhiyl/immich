@@ -84,6 +84,8 @@ const JobFailureListResponseSchema = z
           error: z.string(),
           assetId: z.string().nullable(),
           originalFileName: z.string().nullable().describe('Of the asset, if the job was for one that is still there'),
+          ownerName: z.string().nullable().describe('Whose the asset is, if it is still there'),
+          ownerEmail: z.string().nullable(),
         })
         .meta({ id: 'JobFailureLogDto' }),
     ),
@@ -94,3 +96,31 @@ export class JobHistoryQueryDto extends createZodDto(JobHistoryQuerySchema) {}
 export class JobHistoryResponseDto extends createZodDto(JobHistoryResponseSchema) {}
 export class JobFailureListQueryDto extends createZodDto(JobFailureListQuerySchema) {}
 export class JobFailureListResponseDto extends createZodDto(JobFailureListResponseSchema) {}
+
+export enum ProcessingStep {
+  Metadata = 'metadata',
+  Thumbnails = 'thumbnails',
+  SmartSearch = 'smart-search',
+  Faces = 'faces',
+  Ocr = 'ocr',
+  Duplicates = 'duplicates',
+}
+
+const ProcessingStepSchema = z
+  .object({
+    step: z.enum(ProcessingStep).meta({ id: 'ProcessingStep' }),
+    enabled: z.boolean().describe('Whether the step runs (machine learning and duplicate detection can be turned off)'),
+    total: z.int().describe('The photos the step is for'),
+    done: z.int().describe('Of them, those it is done for'),
+    perHour: z.int().describe('The photos the step did per hour lately (since the start of the previous hour)'),
+  })
+  .meta({ id: 'ProcessingStepDto' });
+
+const ProcessingResponseSchema = z
+  .object({
+    steps: z.array(ProcessingStepSchema),
+    countedAt: z.string().describe('When the photos were counted (at most every 30 seconds)'),
+  })
+  .meta({ id: 'ProcessingResponseDto' });
+
+export class ProcessingResponseDto extends createZodDto(ProcessingResponseSchema) {}

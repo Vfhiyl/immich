@@ -124,9 +124,12 @@ export class JobFailureRepository {
     return this.db
       .selectFrom('asset_job_failure')
       .innerJoin('asset', 'asset.id', 'asset_job_failure.assetId')
+      .innerJoin('user', 'user.id', 'asset.ownerId')
       .select([
         'asset_job_failure.assetId',
         'asset.originalFileName',
+        'user.name as ownerName',
+        'user.email as ownerEmail',
         'asset_job_failure.attempts',
         'asset_job_failure.error',
         'asset_job_failure.updatedAt as failedAt',

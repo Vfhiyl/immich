@@ -36,6 +36,19 @@ export class JobHistoryRepository {
     await this.addFailures(failures);
   }
 
+  /** How many jobs of `jobNames` succeeded since `since` (the start of an hour), per job */
+  @GenerateSql({ params: [DummyValue.DATE, [DummyValue.STRING]] })
+  async getSucceededSince(since: Date, jobNames: string[]) {
+    const rows = await this.db
+      .selectFrom('job_run_hourly')
+      .select((eb) => ['jobName', eb.fn.sum<string>('succeeded').as('succeeded')])
+      .where('hour', '>=', since)
+      .where('jobName', 'in', jobNames)
+      .groupBy('jobName')
+      .execute();
+    return new Map(rows.map(({ jobName, succeeded }) => [jobName, Number(succeeded)]));
+  }
+
   @GenerateSql({ params: [[]] })
   async addRuns(counts: JobRunCount[]) {
     if (counts.length === 0) {
@@ -124,6 +137,7 @@ export class JobHistoryRepository {
     return this.db
       .selectFrom('job_failure_log')
       .leftJoin('asset', 'asset.id', 'job_failure_log.assetId')
+      .leftJoin('user', 'user.id', 'asset.ownerId')
       .select([
         'job_failure_log.id',
         'job_failure_log.createdAt',
@@ -133,6 +147,8 @@ export class JobHistoryRepository {
         'job_failure_log.error',
         'job_failure_log.assetId',
         'asset.originalFileName',
+        'user.name as ownerName',
+        'user.email as ownerEmail',
       ])
       .$if(!!since, (qb) => qb.where('job_failure_log.createdAt', '>=', since!))
       .$if(!!jobName, (qb) => qb.where('job_failure_log.jobName', '=', jobName!))

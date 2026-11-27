@@ -6,6 +6,7 @@ import {
   JobFailureListResponseDto,
   JobHistoryQueryDto,
   JobHistoryResponseDto,
+  ProcessingResponseDto,
 } from 'src/dtos/job-history.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Authenticated } from 'src/middleware/auth.guard.js';
@@ -27,6 +28,18 @@ export class JobHistoryController {
   @Authenticated({ permission: Permission.QueueJobRead, admin: true })
   getJobHistory(@Query() dto: JobHistoryQueryDto): Promise<JobHistoryResponseDto> {
     return this.service.getHistory(dto);
+  }
+
+  @Get('processing')
+  @Endpoint({
+    summary: 'Get how far the library is processed',
+    description:
+      'Step by step (metadata, thumbnails, smart search, faces, text recognition, duplicates): the photos the step is for, those it is done for, and how many it did per hour lately',
+    history: new HistoryBuilder().added('v3.4.2').alpha('v3.4.2'),
+  })
+  @Authenticated({ permission: Permission.QueueJobRead, admin: true })
+  getProcessing(): Promise<ProcessingResponseDto> {
+    return this.service.getProcessing();
   }
 
   @Get('failures')

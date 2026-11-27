@@ -16,7 +16,15 @@ describe(JobFailureService.name, () => {
     const failedAt = new Date('2026-10-26T01:00:00.000Z');
     mocks.jobFailure.getCounts.mockResolvedValue([{ jobName: JobName.AssetGenerateThumbnails, count: 120 }]);
     mocks.jobFailure.getHeldBackAssets.mockResolvedValue([
-      { assetId: 'asset-1', originalFileName: 'bad.heic', attempts: 3, error: null, failedAt },
+      {
+        assetId: 'asset-1',
+        originalFileName: 'bad.heic',
+        ownerName: 'Ann',
+        ownerEmail: 'ann@immich.cloud',
+        attempts: 3,
+        error: null,
+        failedAt,
+      },
     ]);
 
     await expect(sut.getFailures()).resolves.toEqual({
@@ -29,6 +37,8 @@ describe(JobFailureService.name, () => {
             {
               assetId: 'asset-1',
               originalFileName: 'bad.heic',
+              ownerName: 'Ann',
+              ownerEmail: 'ann@immich.cloud',
               attempts: 3,
               error: null,
               failedAt: failedAt.toISOString(),

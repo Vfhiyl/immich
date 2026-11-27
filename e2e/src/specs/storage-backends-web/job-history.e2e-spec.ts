@@ -54,6 +54,8 @@ test.describe('job history', () => {
     await expect(page.getByTestId('job-history-totals')).toContainText('failed');
     await expect(page.getByText('AssetGenerateThumbnails').first()).toBeVisible();
     await expect(page.getByTestId('job-history-failure').first()).toContainText('broken.jpg');
+    // whose file it is
+    await expect(page.getByTestId('job-history-failure').first()).toContainText('admin@immich.cloud');
 
     // by its reason
     await page
