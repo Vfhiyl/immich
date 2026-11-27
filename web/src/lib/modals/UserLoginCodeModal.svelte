@@ -23,6 +23,15 @@
   let modalWidth = $state(0);
 
   const isExpired = $derived(!!loginCode && now >= new Date(loginCode.expiresAt).getTime());
+  // in self-signed mode, the key of the server's HTTPS port as the app shows it: 16 groups of 4 hexadecimal digits
+  const key = $derived(
+    loginCode?.pin
+      ? Array.from(atob(loginCode.pin), (character) => character.codePointAt(0)!.toString(16).padStart(2, '0'))
+          .join('')
+          .toUpperCase()
+          .match(/.{4}/g)
+      : undefined,
+  );
 
   const create = async () => {
     try {
@@ -77,6 +86,14 @@
                 },
               })}
         </Text>
+        {#if key}
+          <Text size="small">{$t('admin.user_login_code_key')}</Text>
+          <code class="grid grid-cols-4 gap-x-3 text-sm" data-testid="login-code-key">
+            {#each key as group, index (index)}
+              <span>{group}</span>
+            {/each}
+          </code>
+        {/if}
         {#if isExpired}
           <div>
             <Button size="small" leadingIcon={mdiRefresh} onclick={create}>{$t('admin.user_login_code_new')}</Button>

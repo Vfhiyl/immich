@@ -1,5 +1,6 @@
 import { GrantAdminCommand, PromptEmailQuestion, RevokeAdminCommand } from 'src/commands/grant-admin.js';
 import { ListUsersCommand } from 'src/commands/list-users.command.js';
+import { LoginCodeCommand } from 'src/commands/login-code.command.js';
 import { DisableMaintenanceModeCommand, EnableMaintenanceModeCommand } from 'src/commands/maintenance-mode.js';
 import {
   ChangeMediaLocationCommand,
@@ -23,6 +24,7 @@ export const commandsAndQuestions = [
   EnableOAuthLogin,
   DisableOAuthLogin,
   ListUsersCommand,
+  LoginCodeCommand,
   VersionCommand,
   GrantAdminCommand,
   RevokeAdminCommand,

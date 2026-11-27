@@ -22,6 +22,8 @@ async function bootstrap() {
   void configureExpress(app, {
     permitSwaggerWrite: false,
     ssr: MaintenanceWorkerService,
+    // in self-signed mode, the mobile app sees only that the server is in maintenance
+    appPortPaths: (path) => ['/api/server/ping', '/api/server/version', '/api/server/config'].includes(path),
   });
 }
 

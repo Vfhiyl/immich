@@ -13,7 +13,7 @@ export class AppController {
 
   @ApiExcludeEndpoint()
   @Get('.well-known/immich')
-  @Authenticated({ public: true })
+  @Authenticated({ public: true, app: true })
   getImmichWellKnown() {
     return {
       api: {

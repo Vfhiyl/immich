@@ -1272,6 +1272,8 @@ export type CalendarHeatmapResponseDto = {
 export type LoginCodeResponseDto = {
     /** When the code expires, unless it was used before */
     expiresAt: string;
+    /** In self-signed mode, the SHA-256 of the public key of the HTTPS port (base64), which the app trusts from then on */
+    pin?: string;
     /** The server the mobile app signs in to: the external domain */
     server: string;
     /** What the QR code holds: a link that the mobile app opens to sign in, with the server and the code */

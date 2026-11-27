@@ -12,7 +12,7 @@ export class ConfigPublicController {
   constructor(private service: SystemConfigService) {}
 
   @Get()
-  @Authenticated({ public: true })
+  @Authenticated({ public: true, app: true })
   @Endpoint({
     summary: 'Get the public configuration',
     description: 'Retrieve the system configuration properties that are visible to everyone.',

@@ -2,6 +2,7 @@ import { schemaDiff } from '@immich/sql-tools';
 import { Injectable } from '@nestjs/common';
 import { isAbsolute, join } from 'node:path';
 import { SALT_ROUNDS } from 'src/constants.js';
+import { LoginCodeResponseDto } from 'src/dtos/login-code.dto.js';
 import { MaintenanceAuthDto } from 'src/dtos/maintenance.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
@@ -147,6 +148,15 @@ export class CliService extends BaseService {
       authUrl: await createMaintenanceLoginUrl(baseUrl, payload, secret),
       alreadyEnabled: false,
     };
+  }
+
+  /** A QR code to sign the user's phone in, with the pin of the HTTPS port in self-signed mode */
+  async createLoginCode(email: string): Promise<LoginCodeResponseDto> {
+    const user = await this.userRepository.getByEmail(email);
+    if (!user) {
+      throw new Error('User does not exist');
+    }
+    return this.issueLoginCode(user);
   }
 
   async grantAdminAccess(email: string): Promise<void> {

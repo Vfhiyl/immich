@@ -24,7 +24,7 @@ export class LoginCodeTable {
   @ForeignKeyColumn(() => UserTable, { onUpdate: 'CASCADE', onDelete: 'CASCADE' })
   userId!: string;
 
-  /** The administrator who showed the code */
+  /** The administrator who showed the code (none: the command line) */
   @ForeignKeyColumn(() => UserTable, { onUpdate: 'CASCADE', onDelete: 'SET NULL', nullable: true })
   createdById!: string | null;
 

@@ -1,12 +1,15 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { generateKeyPairSync } from 'node:crypto';
 import { describe } from 'vitest';
 import { mapUserAdmin } from 'src/dtos/user.dto.js';
 import { JobName, UserStatus } from 'src/enum.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
+import { getPin } from 'src/utils/tls.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { userStub } from 'test/fixtures/user.stub.js';
+import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(UserAdminService.name, () => {
@@ -46,6 +49,39 @@ describe(UserAdminService.name, () => {
         expiresAt: expect.any(Date),
       });
       expect(mocks.crypto.hashSha256).toHaveBeenCalledWith(link.searchParams.get('code'));
+    });
+
+    it('should give the app the key of the HTTPS port in self-signed mode, which it trusts from then on', async () => {
+      const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+      const key = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+      mocks.config.getEnv.mockReturnValue(
+        mockEnvData({
+          selfSignedTls: { adminHost: '127.0.0.1', adminPort: 2284 },
+          storage: { ignoreMountCheckErrors: false, mediaLocation: '/data' },
+        }),
+      );
+      mocks.storage.readFile.mockResolvedValue(Buffer.from(key));
+      mocks.user.get.mockResolvedValue(UserFactory.create());
+      mocks.systemMetadata.get.mockResolvedValue({ server: { externalDomain: 'https://203.0.113.7:2283' } });
+      mocks.session.createLoginCode.mockResolvedValue();
+
+      const { url, pin } = await sut.createLoginCode(authStub.admin, 'user-id');
+
+      expect(pin).toBe(getPin(key));
+      expect(new URL(url).searchParams.get('pin')).toBe(pin);
+      expect(mocks.storage.readFile).toHaveBeenCalledWith('/data/tls/key.pem');
+    });
+
+    it('should give no key without self-signed mode', async () => {
+      mocks.user.get.mockResolvedValue(UserFactory.create());
+      mocks.systemMetadata.get.mockResolvedValue({ server: { externalDomain: 'https://photos.example.com' } });
+      mocks.session.createLoginCode.mockResolvedValue();
+
+      const { url, pin } = await sut.createLoginCode(authStub.admin, 'user-id');
+
+      expect(pin).toBeUndefined();
+      expect(new URL(url).searchParams.has('pin')).toBe(false);
+      expect(mocks.storage.readFile).not.toHaveBeenCalled();
     });
 
     it('should need the external domain, which the phone signs in to', async () => {

@@ -30,6 +30,16 @@ export const FAILED_JOBS_KEPT = 1000;
 export interface EnvData {
   host?: string;
   port: number;
+  /**
+  Self-signed mode (docs: administration/self-signed-tls): the port is HTTPS with a certificate of the server's own, for the
+  mobile app only, which pins its key; the web and the administration are on a port of their own, for this machine
+  */
+  selfSignedTls?: {
+    adminHost: string;
+    adminPort: number;
+    /** Folder of the key and certificate; by default `tls` in the media location */
+    location?: string;
+  };
   environment: ImmichEnvironment;
   configFile?: string;
   logLevel?: LogLevel;
@@ -314,6 +324,13 @@ const getEnv = (): EnvData => {
   return {
     host: dto.IMMICH_HOST,
     port: dto.IMMICH_PORT || 2283,
+    selfSignedTls: dto.IMMICH_SELF_SIGNED_TLS
+      ? {
+          adminHost: dto.IMMICH_ADMIN_HOST || '127.0.0.1',
+          adminPort: dto.IMMICH_ADMIN_PORT || 2284,
+          location: dto.IMMICH_TLS_LOCATION,
+        }
+      : undefined,
     environment,
     configFile: dto.IMMICH_CONFIG_FILE,
     logLevel: dto.IMMICH_LOG_LEVEL,

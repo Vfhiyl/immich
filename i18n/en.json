@@ -700,6 +700,7 @@
     "user_details": "User Details",
     "user_login_code_description": "Scan this code with the Immich app (Scan QR code on its login screen): it signs the phone in as this user, without the password. The code works once, for ten minutes; show it only to that user.",
     "user_login_code_expired": "The code expired",
+    "user_login_code_key": "The app shows the key of the server, which must be this one:",
     "user_login_code_needs_domain": "Set the external domain in the server settings first: it is the address phones sign in to, e.g. https://photos.example.com",
     "user_login_code_new": "Show a new code",
     "user_login_code_open_settings": "Open the server settings",

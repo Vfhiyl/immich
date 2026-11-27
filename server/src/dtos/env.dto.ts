@@ -46,6 +46,12 @@ export const EnvSchema = z
     IMMICH_HELMET_FILE: z.string().optional(),
     IMMICH_ENV: ImmichEnvironmentSchema.optional(),
     IMMICH_HOST: z.string().optional(),
+    // self-signed mode: the port of IMMICH_PORT is HTTPS for the mobile app only, the web and the administration are
+    // on IMMICH_ADMIN_HOST:IMMICH_ADMIN_PORT (plain HTTP, for this machine or an SSH tunnel)
+    IMMICH_SELF_SIGNED_TLS: stringBool.optional(),
+    IMMICH_ADMIN_HOST: z.string().optional(),
+    IMMICH_ADMIN_PORT: z.coerce.number().int().optional(),
+    IMMICH_TLS_LOCATION: absolutePath,
     IMMICH_IGNORE_MOUNT_CHECK_ERRORS: stringBool.optional(),
     IMMICH_LOG_LEVEL: LogLevelSchema.optional(),
     IMMICH_LOG_FORMAT: LogFormatSchema.optional(),

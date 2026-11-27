@@ -21,6 +21,28 @@ describe(CliService.name, () => {
     });
   });
 
+  describe('createLoginCode', () => {
+    it('should make a code to sign the user in, shown by nobody in particular', async () => {
+      const user = UserFactory.create();
+      mocks.user.getByEmail.mockResolvedValue(user as never);
+      mocks.systemMetadata.get.mockResolvedValue({ server: { externalDomain: 'https://photos.example.com' } });
+      mocks.session.createLoginCode.mockResolvedValue();
+
+      const { url, server } = await sut.createLoginCode(user.email);
+
+      expect(server).toBe('https://photos.example.com');
+      expect(new URL(url).searchParams.get('code')).toBeTruthy();
+      expect(mocks.session.createLoginCode).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: user.id, createdById: null }),
+      );
+    });
+
+    it('should need the user to exist', async () => {
+      mocks.user.getByEmail.mockResolvedValue(void 0);
+      await expect(sut.createLoginCode('nobody@example.com')).rejects.toThrow('User does not exist');
+    });
+  });
+
   describe('resetAdminPassword', () => {
     it('should only work when there is an admin account', async () => {
       mocks.user.getAdmin.mockResolvedValue(void 0);

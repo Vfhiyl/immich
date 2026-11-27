@@ -35,7 +35,7 @@ export class AuthController {
       'Login with a one-time code that an administrator showed as a QR code, and receive a session token: for the mobile app.',
     history: new HistoryBuilder().added('v3.3.5').alpha('v3.3.5'),
   })
-  @Authenticated({ public: true })
+  @Authenticated({ public: true, app: true })
   loginWithCode(@Body() dto: LoginCodeDto, @GetLoginDetails() loginDetails: LoginDetails): Promise<LoginResponseDto> {
     return this.service.loginWithCode(dto, loginDetails);
   }

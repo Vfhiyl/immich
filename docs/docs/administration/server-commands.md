@@ -15,6 +15,7 @@ The `immich-server` docker image comes preinstalled with an administrative CLI (
 | `list-users`               | List Immich users                                             |
 | `grant-admin`              | Grant admin privileges to a user (by email)                   |
 | `revoke-admin`             | Revoke admin privileges from a user (by email)                |
+| `login-code`               | Print a QR code that signs a user's phone in (by email)       |
 | `version`                  | Print Immich version                                          |
 | `change-media-location`    | Change database file paths to align with a new media location |
 | `schema-check`             | Verify database migrations and check for schema drift         |

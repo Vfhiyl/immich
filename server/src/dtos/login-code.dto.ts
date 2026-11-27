@@ -7,6 +7,12 @@ const LoginCodeResponseSchema = z
       .string()
       .describe('What the QR code holds: a link that the mobile app opens to sign in, with the server and the code'),
     server: z.string().describe('The server the mobile app signs in to: the external domain'),
+    pin: z
+      .string()
+      .optional()
+      .describe(
+        'In self-signed mode, the SHA-256 of the public key of the HTTPS port (base64), which the app trusts from then on',
+      ),
     expiresAt: z.iso.datetime().describe('When the code expires, unless it was used before'),
   })
   .meta({ id: 'LoginCodeResponseDto' });

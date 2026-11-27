@@ -1,12 +1,14 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
 import { DateTime } from 'luxon';
+import { join } from 'node:path';
 import sanitize from 'sanitize-filename';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { StorageCore, StorageLocation } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
 import { mapLoginResponse } from 'src/dtos/auth.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
+import { LoginCodeResponseDto } from 'src/dtos/login-code.dto.js';
 import { JobName } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
@@ -90,6 +92,11 @@ import {
 } from 'src/utils/access.js';
 import { getConfig, updateConfig } from 'src/utils/config.js';
 import { MachineLearningModels } from 'src/utils/ml-models.js';
+import { detectMediaLocation } from 'src/utils/storage.js';
+import { getPin, getTlsLocation } from 'src/utils/tls.js';
+
+/** How long a code to sign a phone in is valid */
+const LOGIN_CODE_LIFETIME_MS = 10 * 60 * 1000;
 
 export const BASE_SERVICE_DEPENDENCIES = [
   LoggingRepository,
@@ -470,5 +477,53 @@ export class BaseService {
     });
 
     return mapLoginResponse(user, token);
+  }
+
+  /**
+  A one-time code to sign a user's phone in, shown as a QR code that the mobile app scans: it holds the server (the
+  external domain of the settings), a code that is valid for a few minutes, once, and in self-signed mode the pin of
+  the key of the HTTPS port, which the app trusts from then on. The phone gets a session of its own; the user's
+  password is not in it. `createdBy`: the administrator, none on the command line.
+  */
+  protected async issueLoginCode(
+    user: { id: string; email: string },
+    createdBy?: { id: string; email: string },
+  ): Promise<LoginCodeResponseDto> {
+    const { server } = await this.getConfig({ withCache: false });
+    if (!server.externalDomain) {
+      throw new BadRequestException(
+        'Set the external domain in the server settings first: it is the address the mobile app signs in to',
+      );
+    }
+
+    const code = this.cryptoRepository.randomBytesAsText(32);
+    const expiresAt = new Date(Date.now() + LOGIN_CODE_LIFETIME_MS);
+    await this.sessionRepository.createLoginCode({
+      code: this.cryptoRepository.hashSha256(code),
+      userId: user.id,
+      createdById: createdBy?.id ?? null,
+      expiresAt,
+    });
+    this.logger.log(`${createdBy?.email ?? 'The command line'} showed a code to sign in ${user.email}`);
+
+    const pin = await this.getTlsPin();
+    const url = new URL('immich://login');
+    url.searchParams.set('server', server.externalDomain);
+    url.searchParams.set('code', code);
+    if (pin) {
+      url.searchParams.set('pin', pin);
+    }
+    return { url: url.href, server: server.externalDomain, pin, expiresAt: expiresAt.toISOString() };
+  }
+
+  /** In self-signed mode, the pin of the key of the HTTPS port (made when the server started) */
+  protected async getTlsPin(): Promise<string | undefined> {
+    const { selfSignedTls, storage } = this.configRepository.getEnv();
+    if (!selfSignedTls) {
+      return;
+    }
+    const mediaLocation = detectMediaLocation(storage.mediaLocation, (path) => this.storageRepository.existsSync(path));
+    const key = await this.storageRepository.readFile(join(getTlsLocation(selfSignedTls, mediaLocation), 'key.pem'));
+    return getPin(key.toString('utf8'));
   }
 }

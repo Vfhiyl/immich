@@ -64,7 +64,7 @@ export class ServerController {
   }
 
   @Get('ping')
-  @Authenticated({ public: true })
+  @Authenticated({ public: true, app: true })
   @Endpoint({
     summary: 'Ping',
     description: 'Pong',
@@ -75,7 +75,7 @@ export class ServerController {
   }
 
   @Get('version')
-  @Authenticated({ public: true })
+  @Authenticated({ public: true, app: true })
   @Endpoint({
     summary: 'Get server version',
     description: 'Retrieve the current server version in semantic versioning (semver) format.',
@@ -97,7 +97,7 @@ export class ServerController {
   }
 
   @Get('features')
-  @Authenticated({ public: true })
+  @Authenticated({ public: true, app: true })
   @Endpoint({
     summary: 'Get features',
     description: 'Retrieve available features supported by this server.',
@@ -112,7 +112,7 @@ export class ServerController {
   }
 
   @Get('config')
-  @Authenticated({ public: true })
+  @Authenticated({ public: true, app: true })
   @Endpoint({
     summary: 'Get config',
     description: 'Retrieve the current server configuration.',
@@ -138,7 +138,7 @@ export class ServerController {
   }
 
   @Get('media-types')
-  @Authenticated({ public: true })
+  @Authenticated({ public: true, app: true })
   @Endpoint({
     summary: 'Get supported media types',
     description: 'Retrieve all media types supported by the server.',

@@ -393,13 +393,21 @@ const withDatabase = async <T>(database: string, fn: (client: pg.Client) => Prom
   }
 };
 
-const serverEnv = (environment: TestEnvironment, { backends = true } = {}) => ({
+/** In self-signed mode, the HTTPS port of the mobile app; the web and the administration stay on `port` */
+export const appPort = port + 1;
+
+const serverEnv = (environment: TestEnvironment, { backends = true, selfSignedTls = false } = {}) => ({
   ...process.env,
+  ...(selfSignedTls && {
+    IMMICH_SELF_SIGNED_TLS: 'true',
+    IMMICH_ADMIN_PORT: String(port),
+    IMMICH_ADMIN_HOST: '127.0.0.1',
+  }),
   DB_URL: `${postgresBase}/${environment.database}`,
   DB_VECTOR_EXTENSION: process.env.DB_VECTOR_EXTENSION ?? 'pgvector',
   REDIS_HOSTNAME: 'localhost',
   REDIS_PORT: String(redisPort),
-  IMMICH_PORT: String(port),
+  IMMICH_PORT: String(selfSignedTls ? appPort : port),
   IMMICH_MEDIA_LOCATION: environment.mediaLocation,
   ...(environment.usesConfigFile && { IMMICH_CONFIG_FILE: environment.configFile }),
   IMMICH_EXPORT_LOCATION: environment.exportLocation,
@@ -467,16 +475,23 @@ export const runCli = async (args: string[], { configDirectory, key }: { configD
 
 /** A running server; `start` resolves once both workers are ready, or rejects with the output if it exits */
 export class ImmichServer {
-  /** With `maintenance`, the server is expected to come up in maintenance mode (e.g. for its storage setup) */
+  /**
+  With `maintenance`, the server is expected to come up in maintenance mode (e.g. for its storage setup). With
+  `selfSignedTls`, the mobile app's API is HTTPS on `appPort`, the rest stays on `port` (`baseUrl`).
+  */
   static async start(
     environment: TestEnvironment,
-    { backends = true, maintenance = false }: { backends?: boolean; maintenance?: boolean } = {},
+    {
+      backends = true,
+      maintenance = false,
+      selfSignedTls = false,
+    }: { backends?: boolean; maintenance?: boolean; selfSignedTls?: boolean } = {},
   ) {
     const child = spawn(process.execPath, ['dist/main.js'], {
       cwd: serverRoot,
       // a process group, so that the workers are stopped with the server
       detached: true,
-      env: serverEnv(environment, { backends }),
+      env: serverEnv(environment, { backends, selfSignedTls }),
     });
 
     const server = new this(child);

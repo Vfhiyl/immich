@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   SetMetadata,
   applyDecorators,
@@ -13,6 +14,7 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ApiCustomExtension, ImmichQuery, MetadataKey, Permission } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AuthService, LoginDetails } from 'src/services/auth.service.js';
+import { isAppPortRequest } from 'src/utils/app-port.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
 
 type AdminRoute = { admin?: true };
@@ -20,7 +22,11 @@ type SharedLinkRoute = { sharedLink?: true };
 type AuthorizedRoute = { permission?: Permission | false; public?: never; setup?: never } & (
   AdminRoute | SharedLinkRoute
 );
-type PublicRoute = { public: true; setup?: true; permission?: never; admin?: never; sharedLink?: never };
+/**
+`app`: also on the port of the mobile app in self-signed mode, where the other public routes are closed (what the app
+needs before it is signed in by a QR code)
+*/
+type PublicRoute = { public: true; setup?: true; app?: true; permission?: never; admin?: never; sharedLink?: never };
 export type AuthenticatedOptions = AuthorizedRoute | PublicRoute;
 
 type ReflectorTarget = Parameters<Reflector['get']>[1];
@@ -28,7 +34,7 @@ type ReflectorTarget = Parameters<Reflector['get']>[1];
 /** Resolves the `@Authenticated()` options of a route handler, with the defaults applied. */
 export const getAuthenticatedOptions = (reflector: Reflector, targets: ReflectorTarget[]) => {
   const options = reflector.getAllAndOverride<AuthenticatedOptions | undefined>(MetadataKey.AuthRoute, targets);
-  return options && { sharedLink: false, admin: false, public: false, setup: false, ...options };
+  return options && { sharedLink: false, admin: false, public: false, setup: false, app: false, ...options };
 };
 
 export const Authenticated = (options: AuthenticatedOptions = {}): ReturnType<typeof applyDecorators> => {
@@ -102,6 +108,14 @@ export class AuthGuard implements CanActivate {
       throw new Error(`Route ${context.getHandler().name} does not declare @Authenticated()`);
     }
 
+    const request = context.switchToHttp().getRequest<AuthRequest>();
+    // the port of the mobile app in self-signed mode: no administration, no shared links, of the public routes only
+    // those the app needs to be signed in by a QR code
+    const appPort = isAppPortRequest(request);
+    if (appPort && (options.admin || (options.public && !options.app))) {
+      throw new ForbiddenException('Not available on this port');
+    }
+
     if (options.setup) {
       await this.authService.requireSetupAvailable();
     }
@@ -110,8 +124,8 @@ export class AuthGuard implements CanActivate {
       return true;
     }
 
-    const { admin: adminRoute, sharedLink: sharedLinkRoute, permission } = options;
-    const request = context.switchToHttp().getRequest<AuthRequest>();
+    const { admin: adminRoute, permission } = options;
+    const sharedLinkRoute = options.sharedLink && !appPort;
 
     request.user = await this.authService.authenticate({
       headers: request.headers,

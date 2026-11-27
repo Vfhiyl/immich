@@ -38,7 +38,7 @@ export class ResumableUploadController {
 
   // a preflight, which clients may send before they authenticate; it only tells the limits
   @Options()
-  @Authenticated({ public: true })
+  @Authenticated({ public: true, app: true })
   getUploadOptions(@Res() res: Response) {
     send(res, this.service.getOptions());
   }

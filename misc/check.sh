@@ -95,7 +95,7 @@ docs_format() {
   cd "$repo/docs"
   "$(bin "$repo/docs" prettier)" --check docs/administration/storage-backends.md \
     docs/administration/machine-learning-models.md docs/administration/jobs-workers.md \
-    docs/administration/native-libraries.md
+    docs/administration/native-libraries.md docs/administration/self-signed-tls.md
 }
 
 # the web app, against the SDK built from the generated client (see open_api)

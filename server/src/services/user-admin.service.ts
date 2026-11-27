@@ -22,7 +22,6 @@ import { findOrFail } from 'src/utils/misc.js';
 import { getPreferences, getPreferencesPartial, mergePreferences } from 'src/utils/preferences.js';
 
 /** A code to sign a phone in is shown for a short time and used right away; fixed in code */
-const LOGIN_CODE_LIFETIME_MS = 10 * 60 * 1000;
 
 @Injectable()
 export class UserAdminService extends BaseService {
@@ -146,27 +145,7 @@ export class UserAdminService extends BaseService {
   */
   async createLoginCode(auth: AuthDto, id: string): Promise<LoginCodeResponseDto> {
     const user = await this.findOrFail(id, { withDeleted: false });
-    const { server } = await this.getConfig({ withCache: false });
-    if (!server.externalDomain) {
-      throw new BadRequestException(
-        'Set the external domain in the server settings first: it is the address the mobile app signs in to',
-      );
-    }
-
-    const code = this.cryptoRepository.randomBytesAsText(32);
-    const expiresAt = new Date(Date.now() + LOGIN_CODE_LIFETIME_MS);
-    await this.sessionRepository.createLoginCode({
-      code: this.cryptoRepository.hashSha256(code),
-      userId: user.id,
-      createdById: auth.user.id,
-      expiresAt,
-    });
-    this.logger.log(`${auth.user.email} showed a code to sign in ${user.email}`);
-
-    const url = new URL('immich://login');
-    url.searchParams.set('server', server.externalDomain);
-    url.searchParams.set('code', code);
-    return { url: url.href, server: server.externalDomain, expiresAt: expiresAt.toISOString() };
+    return this.issueLoginCode(user, auth.user);
   }
 
   /** End a session of a user, e.g. of a phone that was lost */

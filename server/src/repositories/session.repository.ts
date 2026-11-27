@@ -150,7 +150,7 @@ export class SessionRepository {
       { code: DummyValue.BUFFER, userId: DummyValue.UUID, createdById: DummyValue.UUID, expiresAt: DummyValue.DATE },
     ],
   })
-  async createLoginCode(code: { code: Buffer; userId: string; createdById: string; expiresAt: Date }) {
+  async createLoginCode(code: { code: Buffer; userId: string; createdById: string | null; expiresAt: Date }) {
     await this.db.deleteFrom('login_code').where('expiresAt', '<=', DateTime.now().toJSDate()).execute();
     await this.db.insertInto('login_code').values(code).execute();
   }
