@@ -36,8 +36,21 @@ export class AuthController {
     history: new HistoryBuilder().added('v3.3.5').alpha('v3.3.5'),
   })
   @Authenticated({ public: true, app: true })
-  loginWithCode(@Body() dto: LoginCodeDto, @GetLoginDetails() loginDetails: LoginDetails): Promise<LoginResponseDto> {
-    return this.service.loginWithCode(dto, loginDetails);
+  async loginWithCode(
+    @Res({ passthrough: true }) res: Response,
+    @Body() dto: LoginCodeDto,
+    @GetLoginDetails() loginDetails: LoginDetails,
+  ): Promise<LoginResponseDto> {
+    const body = await this.service.loginWithCode(dto, loginDetails);
+    // as a sign-in with the password: the app (since v3.4) sends the session as the cookie it gets here
+    return respondWithCookie(res, body, {
+      isSecure: loginDetails.isSecure,
+      values: [
+        { key: ImmichCookie.AccessToken, value: body.accessToken },
+        { key: ImmichCookie.AuthType, value: AuthType.Password },
+        { key: ImmichCookie.IsAuthenticated, value: 'true' },
+      ],
+    });
   }
 
   @Post('login')

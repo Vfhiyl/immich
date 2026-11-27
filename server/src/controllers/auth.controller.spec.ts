@@ -91,6 +91,26 @@ describe(AuthController.name, () => {
     });
   });
 
+  describe('POST /auth/login-code', () => {
+    it('should give the session as cookies too, which the mobile app sends', async () => {
+      const loginResponse = mediumFactory.loginResponse();
+      service.loginWithCode.mockResolvedValue(loginResponse);
+      const { status, body, headers } = await request(ctx.getHttpServer())
+        .post('/auth/login-code')
+        .send({ code: 'the-code' });
+
+      expect(status).toEqual(201);
+      expect(body).toEqual(loginResponse);
+      expect(service.loginWithCode).toHaveBeenCalledWith({ code: 'the-code' }, expect.anything());
+      const cookies = headers['set-cookie'] as unknown as string[];
+      expect(cookies.map((cookie) => cookie.split(';', 1)[0])).toEqual([
+        `immich_access_token=${loginResponse.accessToken}`,
+        'immich_auth_type=password',
+        'immich_is_authenticated=true',
+      ]);
+    });
+  });
+
   describe('POST /auth/login', () => {
     it(`should require an email and password`, async () => {
       const { status, body } = await request(ctx.getHttpServer()).post('/auth/login').send({ name: 'admin' });
