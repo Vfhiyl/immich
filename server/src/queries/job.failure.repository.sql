@@ -78,12 +78,15 @@ order by
 select
   "asset_job_failure"."assetId",
   "asset"."originalFileName",
+  "user"."name" as "ownerName",
+  "user"."email" as "ownerEmail",
   "asset_job_failure"."attempts",
   "asset_job_failure"."error",
   "asset_job_failure"."updatedAt" as "failedAt"
 from
   "asset_job_failure"
   inner join "asset" on "asset"."id" = "asset_job_failure"."assetId"
+  inner join "user" on "user"."id" = "asset"."ownerId"
 where
   "asset_job_failure"."jobName" = $1
   and "asset_job_failure"."attempts" >= $2

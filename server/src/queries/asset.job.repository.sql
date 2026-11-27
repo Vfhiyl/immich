@@ -1131,6 +1131,118 @@ where
   and "asset"."deletedAt" is null
   and "asset"."visibility" != $1
 
+-- AssetJobRepository.getProcessingCounts
+select
+  count(*) as "all",
+  count(*) filter (
+    where
+      "job_status"."metadataExtractedAt" is not null
+  ) as "metadata",
+  count(*) filter (
+    where
+      (
+        exists (
+          select
+          from
+            "asset_file"
+          where
+            "asset_file"."assetId" = "asset"."id"
+            and "asset_file"."type" = $1
+            and "asset_file"."isEdited" = $2
+        )
+        and exists (
+          select
+          from
+            "asset_file"
+          where
+            "asset_file"."assetId" = "asset"."id"
+            and "asset_file"."type" = $3
+            and "asset_file"."isEdited" = $4
+        )
+      )
+  ) as "thumbnails",
+  count(*) filter (
+    where
+      exists (
+        select
+        from
+          "asset_file"
+        where
+          "asset_file"."assetId" = "asset"."id"
+          and "asset_file"."type" = $5
+          and "asset_file"."isEdited" = $6
+      )
+  ) as "withPreview",
+  count(*) filter (
+    where
+      (
+        exists (
+          select
+          from
+            "asset_file"
+          where
+            "asset_file"."assetId" = "asset"."id"
+            and "asset_file"."type" = $7
+            and "asset_file"."isEdited" = $8
+        )
+        and exists (
+          select
+          from
+            "smart_search"
+          where
+            "smart_search"."assetId" = "asset"."id"
+        )
+      )
+  ) as "smartSearch",
+  count(*) filter (
+    where
+      (
+        exists (
+          select
+          from
+            "asset_file"
+          where
+            "asset_file"."assetId" = "asset"."id"
+            and "asset_file"."type" = $9
+            and "asset_file"."isEdited" = $10
+        )
+        and "job_status"."facesRecognizedAt" is not null
+      )
+  ) as "faces",
+  count(*) filter (
+    where
+      "job_status"."ocrAt" is not null
+  ) as "ocr",
+  count(*) filter (
+    where
+      exists (
+        select
+        from
+          "smart_search"
+        where
+          "smart_search"."assetId" = "asset"."id"
+      )
+  ) as "withEmbedding",
+  count(*) filter (
+    where
+      (
+        exists (
+          select
+          from
+            "smart_search"
+          where
+            "smart_search"."assetId" = "asset"."id"
+        )
+        and "job_status"."duplicatesDetectedAt" is not null
+      )
+  ) as "duplicates"
+from
+  "asset"
+  inner join "asset_job_status" as "job_status" on "job_status"."assetId" = "asset"."id"
+where
+  "asset"."deletedAt" is null
+  and "asset"."visibility" != $11
+
 -- AssetJobRepository.streamForMigrationJob
 select
   "id"

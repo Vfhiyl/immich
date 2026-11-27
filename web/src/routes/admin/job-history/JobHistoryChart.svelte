@@ -33,10 +33,32 @@
     height: 220,
     legend: { show: true },
     cursor: { drag: { setScale: false } },
-    scales: { x: { time: true }, succeeded: { auto: true }, failed: { auto: true } },
+    scales: {
+      // a single bucket (e.g. all, on a new server): around it, rather than uPlot's spread over years
+      x: {
+        time: true,
+        // from the data itself: uPlot widens a single bucket to years before it asks
+        range: (u) => {
+          const buckets = u.data[0];
+          const first = buckets[0] ?? 0;
+          const last = buckets.at(-1) ?? first;
+          const pad = hourly ? 3600 : 86_400;
+          return first === last ? [first - pad, last + pad] : [first, last];
+        },
+      },
+      succeeded: { auto: true },
+      failed: { auto: true },
+    },
     series: [
       { value: (_, value) => (value === null ? '' : format(value)) },
-      { label: succeededLabel, scale: 'succeeded', stroke: '#4250af', width: 2, points: { show: false } },
+      {
+        label: succeededLabel,
+        scale: 'succeeded',
+        stroke: '#4250af',
+        width: 2,
+        // a line needs two buckets
+        points: { show: (u) => u.data[0].length < 2 },
+      },
       { label: failedLabel, scale: 'failed', stroke: '#dc2626', width: 2, points: { show: true } },
     ],
     axes: [

@@ -506,6 +506,9 @@ export type JobFailureAssetDto = {
     error: string | null;
     failedAt: string;
     originalFileName: string;
+    ownerEmail: string;
+    /** Whose the file is */
+    ownerName: string;
 };
 export type JobFailuresDto = {
     /** Those that failed last, at most 50 */
@@ -585,11 +588,30 @@ export type JobFailureLogDto = {
     jobName: string;
     /** Of the asset, if the job was for one that is still there */
     originalFileName: string | null;
+    ownerEmail: string | null;
+    /** Whose the asset is, if it is still there */
+    ownerName: string | null;
     reason: string;
 };
 export type JobFailureListResponseDto = {
     items: JobFailureLogDto[];
     total: number;
+};
+export type ProcessingStepDto = {
+    /** Of them, those it is done for */
+    done: number;
+    /** Whether the step runs (machine learning and duplicate detection can be turned off) */
+    enabled: boolean;
+    /** The photos the step did per hour lately (since the start of the previous hour) */
+    perHour: number;
+    step: ProcessingStep;
+    /** The photos the step is for */
+    total: number;
+};
+export type ProcessingResponseDto = {
+    /** When the photos were counted (at most every 30 seconds) */
+    countedAt: string;
+    steps: ProcessingStepDto[];
 };
 export type MachineLearningBackoffDto = {
     checkedAt: string;
@@ -4864,6 +4886,17 @@ export function getJobFailureLog({ category, jobName, page, reason, since, size 
         since,
         size
     }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get how far the library is processed
+ */
+export function getProcessing(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ProcessingResponseDto;
+    }>("/admin/job-history/processing", {
         ...opts
     }));
 }
@@ -9418,6 +9451,14 @@ export enum Unit {
     Hour = "hour",
     Day = "day",
     Month = "month"
+}
+export enum ProcessingStep {
+    Metadata = "metadata",
+    Thumbnails = "thumbnails",
+    SmartSearch = "smart-search",
+    Faces = "faces",
+    Ocr = "ocr",
+    Duplicates = "duplicates"
 }
 export enum MachineLearningBackoffLevel {
     Normal = "normal",

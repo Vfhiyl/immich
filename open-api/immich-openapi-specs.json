@@ -1274,6 +1274,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/job-history/processing": {
+      "get": {
+        "description": "Step by step (metadata, thumbnails, smart search, faces, text recognition, duplicates): the photos the step is for, those it is done for, and how many it did per hour lately",
+        "operationId": "getProcessing",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessingResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get how far the library is processed",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.4.2",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.2",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queueJob.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/machine-learning/faces/regroup/undo": {
       "post": {
         "description": "Puts the faces back with the people they had before the people were regrouped for a new face model, but for what users changed since",
@@ -25513,6 +25560,13 @@
           },
           "originalFileName": {
             "type": "string"
+          },
+          "ownerEmail": {
+            "type": "string"
+          },
+          "ownerName": {
+            "description": "Whose the file is",
+            "type": "string"
           }
         },
         "required": [
@@ -25520,7 +25574,9 @@
           "attempts",
           "error",
           "failedAt",
-          "originalFileName"
+          "originalFileName",
+          "ownerEmail",
+          "ownerName"
         ],
         "type": "object"
       },
@@ -25580,6 +25636,15 @@
             "nullable": true,
             "type": "string"
           },
+          "ownerEmail": {
+            "nullable": true,
+            "type": "string"
+          },
+          "ownerName": {
+            "description": "Whose the asset is, if it is still there",
+            "nullable": true,
+            "type": "string"
+          },
           "reason": {
             "type": "string"
           }
@@ -25592,6 +25657,8 @@
           "id",
           "jobName",
           "originalFileName",
+          "ownerEmail",
+          "ownerName",
           "reason"
         ],
         "type": "object"
@@ -29555,6 +29622,73 @@
         "required": [
           "config",
           "method"
+        ],
+        "type": "object"
+      },
+      "ProcessingResponseDto": {
+        "properties": {
+          "countedAt": {
+            "description": "When the photos were counted (at most every 30 seconds)",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessingStepDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "countedAt",
+          "steps"
+        ],
+        "type": "object"
+      },
+      "ProcessingStep": {
+        "enum": [
+          "metadata",
+          "thumbnails",
+          "smart-search",
+          "faces",
+          "ocr",
+          "duplicates"
+        ],
+        "type": "string"
+      },
+      "ProcessingStepDto": {
+        "properties": {
+          "done": {
+            "description": "Of them, those it is done for",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "enabled": {
+            "description": "Whether the step runs (machine learning and duplicate detection can be turned off)",
+            "type": "boolean"
+          },
+          "perHour": {
+            "description": "The photos the step did per hour lately (since the start of the previous hour)",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "step": {
+            "$ref": "#/components/schemas/ProcessingStep"
+          },
+          "total": {
+            "description": "The photos the step is for",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "done",
+          "enabled",
+          "perHour",
+          "step",
+          "total"
         ],
         "type": "object"
       },
